@@ -49,7 +49,7 @@ Cotal grants, as `cotal_orientation` reported them at 20:16 (broker-enforced, au
 
 | Milestone | State | Target | Review round |
 | --- | --- | --- | --- |
-| M0 re-anchor, scope, contract proposal, ownership map | written, frozen for review | [02-classifier-m0.md](02-classifier-m0.md); commit and SHA-256 manifest in the ledger | r1 |
+| M0 re-anchor, scope, contract proposal, ownership map | r1 open: gemini APPROVE, glm BLOCK (G1), grok pending | [02-classifier-m0.md](02-classifier-m0.md) at commit `d651ef8`; file hashes in [MANIFEST.sha256](../reviews/classifier/M0/r1/MANIFEST.sha256) | r1 |
 | M1 personal-history features and deterministic integration | not started | | |
 | M2 offline behavioural-model comparison | not started | | |
 | M3 Jev semantic assessments | not started; needs owner ruling O1 and contract P1 | | |
@@ -79,6 +79,11 @@ Jev through OpenRouter System One, `typesafe/jev-1.13-20260917`, provider pinned
 
 | Milestone | Round | Reviewer | Model / requested effort | Launch result | Target | Report | Verdict | Cleanup |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| M0 | r1 | classifier_review_grok | jcode grok-4.7 / high | launch 1: 21:30 foreground `cotal spawn --config`, launcher PID 6695, joined, then exit=1 in the connector with no report (evidence in `/private/tmp/classifier-review-reports/M0/r1/grok/launch1-evidence/`). Launch 2: 22:16, same model, tier, tree and brief, launcher PID 93053 (Claude Code task `bvpgalun1`), resumed jcode session `session_crab_1790278215234_c7a85d4d097dc0d1`, journal `/private/tmp/jc-502f9cec90b3/home/sessions/`, provider route cliproxy | `d651ef8`, base `ed2bc3c`, manifest [MANIFEST.sha256](../reviews/classifier/M0/r1/MANIFEST.sha256) | pending at 22:30, `/private/tmp/classifier-review-reports/M0/r1/grok/report.md` not yet written | pending | grading tree `/private/tmp/classifier-m0-r1-grok`, clean at `d651ef8` |
+| M0 | r1 | classifier_review_gemini | jcode gemini-3.8-flash / high | 21:31 same route, launcher PID 10043 (task `bmohyb8j3`), children 10212, 10218, 10372; jcode session `session_vole_1790278266685_0c9e46ca321f8704`, journal `/private/tmp/jc-42308d2e4536/home/sessions/`; launcher still alive after the verdict | same | [report.md](../reviews/classifier/M0/r1/gemini/report.md), SHA-256 `61ca79a6ba01bdf1efebd89cbd95d8fb167d9c721edd6c6746dc0cfd6357ffe9` | APPROVE `d651ef8` | grading tree `/private/tmp/classifier-m0-r1-gemini`, clean; launcher not yet stopped |
+| M0 | r1 | classifier_review_glm | jcode glm-5.3 / max | 21:31 same route, launcher PID 10235; jcode session `session_seedling_1790278266746_0ef44751a2c0c41b`, journal `/private/tmp/jc-fa84d885c314/home/sessions/`. Wrote its report, DM and verdict, then the launcher exited 1 on a journal error. Orphan 10374 stopped by exact PID (TERM), exit verified; 10447 reaped | same | [report.md](../reviews/classifier/M0/r1/glm/report.md), SHA-256 `f10f1a62fa6626bade7ab23411316c6529deace6b6d9ce8aa900fb5d096227b6`. Written first to the non-designated path `/private/tmp/classifier-m0-r1-glm-report/glm-m0-r1.md`. david_orch placed a byte-identical copy at `docs/reviews/m0-r1-glm.md` | BLOCK `d651ef8`, G1 (high) plus N1 to N5 | grading tree `/private/tmp/classifier-m0-r1-glm`, clean; no process left |
+
+The session-create record of each reviewer names jcode's default `gpt-5.6-sol`; every message record after it names the requested model. The effort values are the session's request settings, not observed provider behaviour.
 
 ## Log
 
@@ -88,3 +93,5 @@ Jev through OpenRouter System One, `typesafe/jev-1.13-20260917`, provider pinned
 2026-09-24 21:0x classifier_manager_live: reviewer personas now report to `classifier_manager_live`. Ran `scripts/classifier_m0_exact_name.py` with "27-inch monitor" and "27-inch computer monitor" (M0 section 2) and `scripts/classifier_m0_jev_probe.py` with `typesafe/jev-1.13-20260917` (HTTP 200) and `jev-1.13.0` (HTTP 400) (M0 section 9). Pack statistics in M0 section 5.
 2026-09-24 21:12 classifier_manager_live: merged origin/main as `1c0874b` (app #26), then as `6353982` (runner #25, `ed2bc3c`). Re-checked every M0 citation against `6353982`; the SCEN0004 output is identical.
 2026-09-24 21:28 classifier_manager_live: M0 written in [02-classifier-m0.md](02-classifier-m0.md). Frozen for review round r1; commit and manifest in the ledger.
+2026-09-24 21:36 classifier_manager_live: M0 r1 frozen at `d651ef8` (base `ed2bc3c`). Three detached grading worktrees and external report directories under `/private/tmp`. All three reviewers launched in the foreground on the requested model and tier; none refused. Ledger rows above.
+2026-09-24 22:30 classifier_manager_live: M0 r1 reports preserved under `docs/reviews/classifier/M0/r1/`: gemini APPROVE, glm BLOCK on G1 (split protocol refits on the selection month). Grok launch 1 crashed without a report; launch 2 is reviewing. No M0 edits until grok's findings are in. M0 line 88 says P2 was "agreed with engine_builder"; no agreement message exists, so r2 corrects it to proposed. Paused all new work and spawns at david_orch's request for the managed-agent migration.
