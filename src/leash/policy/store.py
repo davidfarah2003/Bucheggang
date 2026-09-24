@@ -330,6 +330,11 @@ class DraftStore:
             return revised
 
     def assert_current(self, draft_id: str, version: int, hash_value: str) -> dict[str, Any]:
+        return self._assert_current(draft_id, version, hash_value)
+
+    def _assert_current(
+        self, draft_id: str, version: int, hash_value: str, attempt_id: str | None = None
+    ) -> dict[str, Any]:
         draft = self.get(draft_id)
         if draft["version"] != version or draft["hash"] != hash_value:
             raise DraftConflict("draft version or hash changed; reload before confirming")
@@ -338,7 +343,63 @@ class DraftStore:
             raise DraftConflict("draft was already confirmed")
         if (folder / "rejection.json").exists():
             raise DraftConflict("draft was rejected")
+        pending_path = folder / "confirmation_pending.json"
+        if pending_path.exists():
+            pending = json.loads(pending_path.read_text())
+            if attempt_id is None or pending["attempt_id"] != attempt_id:
+                raise DraftConflict("draft confirmation is pending simulator reconciliation")
         return draft
+
+    def begin_confirmation(
+        self, draft_id: str, *, version: int, hash_value: str, confirmed_by: str
+    ) -> str:
+        """Reserve one draft before any external mandate call."""
+        with self._locked(draft_id) as folder:
+            self.assert_current(draft_id, version, hash_value)
+            if not confirmed_by:
+                raise InvalidDraft("confirmer is required")
+            attempt_id = str(uuid4())
+            pending = {
+                "attempt_id": attempt_id,
+                "draft_id": draft_id,
+                "version": version,
+                "hash": hash_value,
+                "confirmed_by": confirmed_by,
+                "started_at": _now(),
+            }
+            self._write_exclusive(folder / "confirmation_pending.json", pending)
+            self._audit(folder, "confirmation_started", **pending)
+            return attempt_id
+
+    def record_simulator_draft(
+        self,
+        draft_id: str,
+        *,
+        version: int,
+        hash_value: str,
+        attempt_id: str,
+        simulator_draft_id: str,
+    ) -> None:
+        """Preserve the simulator draft ID before its confirmation call."""
+        with self._locked(draft_id) as folder:
+            self._assert_current(draft_id, version, hash_value, attempt_id)
+            if not simulator_draft_id:
+                raise InvalidDraft("simulator draft ID is required")
+            record = {"attempt_id": attempt_id, "simulator_draft_id": simulator_draft_id}
+            self._write_exclusive(folder / "simulator_draft.json", record)
+            self._audit(folder, "simulator_draft_created", **record)
+
+    def get_pending_confirmation(self, draft_id: str) -> dict[str, Any]:
+        """Give an operator the pending IDs needed for reconciliation."""
+        folder = self._folder(draft_id)
+        pending_path = folder / "confirmation_pending.json"
+        if not pending_path.exists():
+            raise KeyError(draft_id)
+        pending = json.loads(pending_path.read_text())
+        simulator_path = folder / "simulator_draft.json"
+        if simulator_path.exists():
+            pending["simulator_draft_id"] = json.loads(simulator_path.read_text())["simulator_draft_id"]
+        return pending
 
     def record_confirmation(
         self,
@@ -349,11 +410,19 @@ class DraftStore:
         simulator_draft_id: str,
         mandate_id: str,
         confirmed_by: str,
+        attempt_id: str,
     ) -> dict[str, Any]:
         with self._locked(draft_id) as folder:
-            draft = self.assert_current(draft_id, version, hash_value)
+            draft = self._assert_current(draft_id, version, hash_value, attempt_id)
             if not simulator_draft_id or not mandate_id or not confirmed_by:
                 raise InvalidDraft("simulator draft ID, mandate ID and confirmer are required")
+            pending = json.loads((folder / "confirmation_pending.json").read_text())
+            recorded_simulator = json.loads((folder / "simulator_draft.json").read_text())
+            if pending["confirmed_by"] != confirmed_by or recorded_simulator != {
+                "attempt_id": attempt_id,
+                "simulator_draft_id": simulator_draft_id,
+            }:
+                raise DraftConflict("confirmation does not match the reserved simulator draft")
             record = {
                 "draft_id": draft_id,
                 "version": version,
@@ -368,6 +437,8 @@ class DraftStore:
             except FileExistsError as exc:
                 raise DraftConflict("draft was already confirmed") from exc
             self._audit(folder, "draft_confirmed", **record)
+            (folder / "confirmation_pending.json").unlink()
+            (folder / "simulator_draft.json").unlink()
             return {"draft": draft, "confirmation": record}
 
     def get_confirmation(self, draft_id: str) -> dict[str, Any]:
