@@ -196,6 +196,9 @@ Served by `leash.api`. Paths and shapes are what the app lane codes against.
 
 | Method and path | Body / returns |
 | --- | --- |
+| `POST /session` | `{ username: str }` with 1 to 80 non-whitespace characters → `{ username }` and an HttpOnly `leash_session` cookie for the local demo login |
+| `GET /session` | `{ username }` for the current cookie, or 401 if no valid session exists |
+| `DELETE /session` | 204 and clears the current cookie, or 401 if no valid session exists |
 | `GET /drafts/{draft_id}` | `PolicyDraft` |
 | `POST /drafts/{draft_id}/confirm` | `{ version, hash, answers: { question: answer } }` → `Mandate`, or 409 on hash or version mismatch |
 | `POST /drafts/{draft_id}/reject` | `{ version, hash, reason }` → 204, or 409 on hash or version mismatch |
@@ -207,4 +210,4 @@ Served by `leash.api`. Paths and shapes are what the app lane codes against.
 | `POST /step-ups/{authorization_id}/answer` | `StepUpAnswer` → accepted result |
 | `GET /decisions/{authorization_id}` | `Decision` + `Event` + state before and after |
 
-Confirmation, tightening, revocation and step-up answers are only reachable through these authenticated app routes. None of them is an MCP tool.
+All customer routes except `POST /session` require a valid local session cookie and return 401 without one. The demo login identifies a customer by username without a password. Confirmation, tightening, revocation and step-up answers are only reachable through these authenticated app routes. None of them is an MCP tool.
