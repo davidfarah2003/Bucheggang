@@ -1,0 +1,143 @@
+The stopped researcher's final dossier, corrected and completed.
+
+I recovered it from its transcript, which ended on an interrupt before it wrote a report. I read `README.md` and the current `primary-findings.json`, re-checked the key papers and the live leaderboards, and ran read-only checks on the data. Nothing was trained here. Tavily was not used.
+
+**What the data shows (checked this session unless noted)**
+
+- **835 versus 832 cards.** `cards.csv` lists 835 cards, including 57 replacement cards numbered CA9000 and up. The history contains 832 distinct cards, and all 57 replacements are among them.
+  - Three reference cards never appear in the history: CA1150 (prepaid, active), CA1506 (debit, expired) and CA1690 (prepaid, blocked).
+  - CA1556 has only 2 declined purchases on an expired card. So only 831 cards have an approved-purchase baseline.
+  - 629 of the 630 accounts and all 500 customers appear in the history.
+  - Any claim about per-card behaviour covers at most 831 cards, never all 835.
+- **The derived columns are per card and count from the start of the file.** I checked this against my own recomputation, and it matches on 100% of rows:
+  - `approved_spend_before_chf` is lifetime approved spend on the card.
+  - The merchant count is approved rows for the same card and merchant.
+  - The device count is approved rows for the same card and device, with blank devices excluded.
+- **Leakage and confounding risks:**
+  - `cards.csv.status` is the card's state at the end of the period. For 8,569 rows on 67 cards, the card was active at the time of the transaction but is non-active in the snapshot. Using the snapshot as a feature leaks the future.
+  - `customer_persona_name` takes 500 unique values, one per customer, so it works as a customer ID.
+  - "New merchant" depends on how long the file has been running. The share of purchases with no prior approved same-card merchant falls from 57.3% (September 2025) to 6.2% (July 2026). A time split without a burn-in period changes what that feature means.
+  - The retry figure in the transcript (35.7% declined when the previous row on the card was declined within 10 minutes, n=2,877) was computed over all rows. Blocked or expired cards are retried and declined again, so it overstates the effect.
+- **Hard issuer rules decide most of what is learnable.** From the transcript, over the 500-customer pack:
+  - Over the per-transaction limit: 99.5% declined (n=182).
+  - Foreign merchant with international use disabled: 96.8% declined (n=3,043).
+  - Blocked or expired card: 100% declined (n=267).
+  - These rules cover 40.8% of all declines. On purchases they don't cover, the decline rate is about 3.4 to 3.6%.
+- **Behaviour signals on purchases outside the hard rules.** These are associations with the simulated issuer outcome. They are not fraud labels or wallet-policy labels.
+  - Each single feature scores AUC 0.48 to 0.58.
+  - Two or more prior transactions on the card in 10 minutes: 14.8% declined (n=128). Three or more: 19.7% (n=66).
+  - Amount more than 5 standard deviations above the card's own history: 9.1% (n=1,971), against 3.4% overall.
+  - Hours 0 to 5: 5.9%. Recurring channel: 6.2%.
+  - Same card, merchant and amount within 10 minutes: 29% declined (n=3,087), all rows.
+  - Across 201 merchants with at least 200 rows, the decline rate runs from 1.2% (5th percentile) to 9.1% (95th).
+- **The scenario cards sit outside the 145k pack.** CA0001, CA0011, CA0023 and CA0039 are only in the base pack, with 104 to 151 approved purchases each. The two packs share no customers or cards. All 45 attempts are ecommerce, dated 9 to 22 August 2026, after both histories end on 31 July 2026. All 13 attempt merchants appear in the 145k pack.
+
+**How learnable `status` is**
+
+- The organizers' README reports a regularised logistic regression with a customer holdout: AUC 0.81 / AP 0.56 overall, and AUC 0.65 / AP 0.08 where no hard rule fires. This is their own result. The feature set, seed and split are not published.
+- A sibling session re-ran something similar (`/tmp/learnab2.py`): 12 hand-built features, one random 30% customer split with seed 0, and a test window of May to July 2026. On 11,788 purchases outside the hard rules (about 3.5% declined), with customer and time both held out:
+  - Logistic regression: AUC 0.654, AP 0.069, ECE 0.018.
+  - Histogram gradient boosting: AUC 0.668, AP 0.083, ECE 0.0055.
+- That is one split, no confidence intervals and about 410 positives. It is an approximate re-run by the same team. It does not replicate the README result, and it does not show which model family is better.
+
+**Model families: what transfers**
+
+- **TabArena v0.1** (arXiv 2506.16791 v4, 3 Nov 2025, NeurIPS 2025 D&B)
+  - Covers 51 IID datasets only. It excludes time-split and group-split tasks, so it cannot rank models for this data.
+  - Table A.1 Elo, where 1000 is a default random forest: CatBoost default 1427, TabICL default 1383, TabPFNv2 default 1309, EBM default 1198, EBM tuned and ensembled 1286, Linear default 836.
+  - The benchmark authors include developers of some of the evaluated models.
+- **BeyondArena** (arXiv 2606.30410 v1, 29 Jun 2026)
+  - 142 datasets: 21 temporal, 18 grouped. Binary tasks are scored by ROC AUC.
+  - Foundation models were run in-context only. TabPFN-2.6 and TabDPT were run only up to 100k training rows, and a default random forest's score was imputed above that.
+  - Top method: RealMLP tuned and ensembled on the temporal and grouped subsets. For grouped, only 5.1% of pairwise comparisons were significant.
+  - Foundation-model error rises sharply at about 100k rows (large versus all other sizes, adjusted p<0.001). Dataset size correlates with a gradient-boosting advantage at rho=+0.60.
+  - Disclosed: four authors are affiliated with Prior Labs and one with probabl.
+- **Live BeyondArena leaderboard** (Hugging Face, fetched today, v0.1.9.2 dated 2026-09-22; 1000 = default XGBoost)
+  - Temporal subset: RealMLP tuned and ensembled 1249 (+129/-100), LightGBM tuned and ensembled 1185, CatBoost tuned 1162, CatBoost default 1088, TabPFN-3 default 1049, TabICLv2 default 835, Linear default 582.
+  - Large subset: CatBoost default 1112, TabPFN-3 935, TabICLv2 724.
+  - The predict-time column is a per-1,000-row median on mixed CPU and GPU hardware. It says nothing about this service's latency.
+- **TabPFN-3.5 report** (Prior Labs, dated 14 Sep 2026; vendor)
+  - Claims first of 29 on BeyondArena overall.
+  - Its own text concedes that tuned and ensembled MLPs still lead on grouped, temporal and large data. It says TabPFN-3.5 only matches the best baselines on the subset of 100k rows or fewer.
+  - It gives TabPFN models the group ID on label-per-sample grouped tasks. The standard BeyondArena protocol drops it.
+  - TabPFN-3.5 is not on the live BeyondArena leaderboard.
+  - The weight licence forbids using outputs as inputs to commercial decisions. It allows testing and evaluation.
+- **TabICLv2** (arXiv 2602.11139; GitHub `soda-inria/tabicl`)
+  - The developers claim it beats tuned GBDTs on about 80% of TabArena (IID) datasets. They also claim under 10 seconds to fit and predict 50k by 100 on an H100. Both are developer claims.
+  - The licence is permissive.
+- **What transfers:** 140,096 purchases with a customer and time holdout is exactly the regime where the published evidence favours GBDTs and tuned MLPs over in-context foundation models.
+- **What doesn't transfer:** any IID Elo gap, including the EBM gap. Here the residual signal is weak and the hard rules are deterministic.
+
+**Sequence models and graph neural networks**
+
+- **EBES** (arXiv 2410.03399 v2, 25 Feb 2025, KDD 2025; 10 datasets, targets are per sequence)
+  - GRU-based models rank top.
+  - An MLP on aggregated statistics comes within about 5% of the best on most real-world datasets.
+  - Shuffling the order of events causes only small drops on real event-sequence data.
+- **Jurgovsky et al. 2018** (DOI 10.1016/j.eswa.2018.01.037; I read the abstract only)
+  - LSTM beat random forest only on card-present transactions, and both models relied heavily on aggregated features. All 45 attempts here are ecommerce, so this gain doesn't apply.
+- **Booking.com** (arXiv 2405.13692 v2; internal company data)
+  - Test AP over 10 seeds: LightGBM 0.471 ± 0.003 versus a self-supervised FT-Transformer-large 0.491 ± 0.012.
+  - An A/B test showed a 19.55% uplift on an internal metric, at about 20 times the latency. The result depends on large-scale pretraining and a selection-biased label setup, neither of which exists here.
+- **PRAGMA** (Revolut, arXiv 2604.08649 v2, 24 Aug 2026): relative gains on internal tasks with unpublished baselines. It can't be reproduced or transferred.
+- **GADBench** (arXiv 2306.12251 v2, 29 models, 10 graphs)
+  - Tree ensembles with neighbour aggregation beat specialised graph neural networks. XGB-Graph averages AUROC 86.53 against 85.10 for BWGNN, over the first 9 datasets.
+  - IBM's synthetic anti-money-laundering data (arXiv 2306.16424 v3) is relational by construction. The issuer decline here is not.
+- **Contrary evidence:** RelBench's user study (arXiv 2407.20060 v1) had relational deep learning match or beat a data scientist on 11 of 15 tasks, with 12.3 hours of work cut to 0.5.
+- **Assessment:** this schema is small and the per-card features are already computed, so that advantage is limited. Merchant-level variation can be captured by encoding the merchant, without a graph model.
+
+**Anomaly scores versus issuer labels**
+
+- ADBench (arXiv 2206.09426 v2; 30 algorithms, 57 datasets) found no unsupervised detector statistically better than the others. With 1% labelled anomalies, most semi-supervised methods beat the best unsupervised one.
+- Here there are no anomaly labels. The README says the approved rows include unlabelled anomaly bursts and that declines have latent causes. So "approved" is not a clean picture of normal behaviour, and `status` can't validate an anomaly score.
+- Calibrating to the probability of an issuer decline is not calibrating to the probability of a policy violation.
+- CalArena (arXiv 2605.30188 v2):
+  - On classical tabular binary models, no calibration method reliably beat the uncalibrated model (top win rate about 0.6 versus about 0.5).
+  - On advanced models, quadratic, spline and beta calibration reached above 0.7.
+  - Logistic methods applied to log-probabilities ranked best on average.
+
+**What can be claimed from this dataset alone**
+
+- Hard issuer conditions are near-deterministic in the history. Rules reproduce them.
+- Outside those rules, `status` is weakly predictable, with AUC around 0.62 to 0.73 across the single splits above.
+- Velocity, deviation from the card's usual amount, duplicate submission and merchant decline rate are associated with that simulated outcome.
+- Per-card familiarity baselines can be built for 831 cards, and for the 4 scenario cards from the base pack.
+
+**What needs a target-specific experiment**
+
+- Whether any behaviour score improves approve, decline or step-up decisions against the wallet policy. The 45 attempts have no expected labels, so this needs human-labelled or rubric-labelled outcomes, or injected ground truth.
+- Anomaly-detector quality.
+- Step-up thresholds.
+- Whether a model trained on the 500 customers transfers to the scenario customers.
+- End-to-end p95 latency in the service itself.
+
+**Recommendation hypotheses (untested)**
+
+1. Hard rules plus per-card behaviour features, computed only from earlier rows, give explainable evidence. Any learned score only routes a purchase to step-up and never approves one on its own.
+2. If a learned issuer-decline prior is used, logistic regression, EBM or LightGBM/CatBoost with logistic post-hoc calibration fits the published evidence for this size and shift. A foundation model would be a side experiment on 100k rows or fewer, subject to the licence.
+3. Sequence and graph models are not justified by the evidence found.
+
+**Minimal ablation (not run)**
+
+- Splits: customer-grouped folds crossed with forward monthly time folds, with a 2 to 3 month burn-in for familiarity features.
+- Test only on purchases outside the hard rules, with confidence intervals from a customer-level bootstrap.
+- Leave out the snapshot status, persona name and IDs.
+- Compare: prevalence baseline, single features, logistic, EBM, LightGBM, CatBoost, and TabICLv2 on at most 100k rows.
+- Report agent-initiated rows separately: 18,577 residual agent purchases, 4.8% declined.
+- A cross-pack test is also possible: train on the 500 customers, then test on the 4,701-row base history. It has few positives.
+
+**Unresolved gaps**
+
+- `additional-data/README.md` and the generator code are not available locally or in the public repo, so the mechanism behind the anomaly bursts is undocumented.
+- The README baseline's exact setup is unknown.
+- The claims about TabPFN-3.5 and TabICLv2 have not been checked by anyone independent.
+- The TabArena imbalanced subsets could not be fetched: the file paths returned "Entry not found".
+- Not read: FoMo-0D's numbers, arXiv 2506.02703, ScoringBench, and the full text of Jurgovsky et al.
+
+Scratch files:
+- `/tmp/rec_dump.txt`: extracted transcript results
+- `/tmp/beyond.txt`
+- `/tmp/tabpfn35.txt`
+- `/tmp/ba_{full,temporal,grouped,large,random}.csv`
+- `/tmp/learnab2.py`
+- `/Users/david/.claude/projects/-Users-david-Projects-Bucheggang/1405c971-033e-4ca4-9eac-fca14dd7e06d/subagents/workflows/wf_298a0679-425/agent-a389722e40d505bc1.jsonl`

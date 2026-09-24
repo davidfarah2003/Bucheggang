@@ -1,0 +1,80 @@
+{
+  "research_date": "2026-09-24",
+  "scope": "Independent preparation research for the Viseca Agent on a Leash hackathon. This is not an official organizer report.",
+  "method": "Public primary-source research through Tavily and TinyFish; selected WebFetch fallback. Local read-only CSV/manifest verification. No candidate model benchmark, training, live simulator run, or real payment executed.",
+  "user_requested_structure": {"technical_part_1": "Policy definition: interpret, clarify, confirm and store customer permissions", "technical_part_2": "Purchase classification: approve/decline/ask from policy, purchase facts and state", "product_decision": "Compare the hackathon angle separately from the technical architecture; user explicitly asked to organize the work this way while research was running.", "writing": "User invoked humanizer. Use plain prose without bold lead-in labels, staged contrasts, aphorisms or repeated caveats."},
+  "local_evidence": {
+    "git_head_observed": "587ba07375a6b3ef71591218ee190c371cd9445e",
+    "manifest_checks": "All 18 entries in data/metadata.json and all 8 entries in additional-data-history/metadata.json have matching SHA-256 hashes. Every listed CSV row count matches.",
+    "base_history": {"rows": 4701, "customers": 20, "cards_in_history": 41, "agent_purchases": 453, "agent_approved": 416, "agent_declined": 37},
+    "additional_history": {"rows": 144674, "customers": 500, "cards_in_reference": 835, "cards_in_history": 832, "agent_purchases": 19037, "agent_approved": 17696, "agent_declined": 1341},
+    "overlap": "Zero authorization/customer/account/card ID overlap between history packs. Base scenario card histories remain in the original pack.",
+    "scenarios": {"attempts": 45, "cart_lines": 56, "counts": [1,10,12,11,11], "period_counter_null_rows": 45, "has_supplied_expected_action_labels": false},
+    "reported_baseline": "Additional README reports logistic regression customer-holdout AUC 0.81 / AP 0.56 overall and AUC 0.65 / AP 0.08 after hard-rule cases are removed. This is the pack author's result, not independently reproduced and not a performance ceiling. Target is historical authorization outcome, not fraud or mandate compliance."
+  },
+  "sources": [
+    {
+      "id": "JURY", "title": "Jury Process & Evaluation Criteria", "url": "https://zh.ai-weeks.ch/jury-process-and-criteria", "date": "Live handbook read 2026-09-24", "type": "Official event guidance", "read": "full page",
+      "findings": ["Qualitative judging, no formal quantitative proof required, no published weights, jury discretion.", "Criteria: Technical Functionality & AI; User Experience; Agentic Depth; Originality & Fun Factor; Potential & Market Impact.", "Expert round September 25 14:00-16:00, submission 12:00, 1-minute pitch + 3-minute Q&A.", "Main round 18:00-18:45, final submission 17:30, 2-minute pitch + 1-minute Q&A."]
+    },
+    {
+      "id": "SUBMIT", "title": "Submit to expert jury", "url": "https://zh.ai-weeks.ch/submit-to-expert-jury", "date": "Live handbook read 2026-09-24", "type": "Official event guidance", "read": "full page",
+      "findings": ["Book only one slot in one of three rooms before Friday September 25 12:00.", "One-minute setup separately listed; one-minute pitch plus three-minute Q&A.", "No booking has been made during this research."]
+    },
+    {
+      "id": "CHALLENGE", "title": "Agent on a Leash", "url": "https://zh.ai-weeks.ch/challenges/agent-on-a-leash", "date": "Read 2026-09-24", "type": "Official challenge", "read": "full page and local challenge.md",
+      "findings": ["Independent customer-controlled wallet policy; approve/decline/step_up; explain uncertainty; maintain state; resist untrusted merchant text.", "No hard-coding to scenario IDs, request IDs, or replay positions.", "Useful ordinary purchases must not be unnecessarily blocked.", "Decouple UI and decision backend; demonstrate ordinary purchase, intervention, human control; remain predictable on optional-service failure."]
+    },
+    {
+      "id": "CONTRACT", "title": "Viseca technical details", "url": "https://github.com/Swiss-ai-Weeks/viseca-2026/blob/main/technical_details.md", "local": "viseca-2026/technical_details.md", "date": "Read 2026-09-24", "type": "Authoritative API contract", "read": "local source",
+      "findings": ["Default 8-second decision window starts at queueing; 120-second human window; retrieve actual settings via bootstrap.", "Count only accepted final approvals, simulated purchase times for spend windows, wall clock for response deadlines, live authorization IDs for idempotency.", "Guidance and open_questions absent from live events. Engine interprets arbitrary nonempty hard_rule.field names.", "PATCH retains existing rules and permits added constraints; existing runs preserve snapshot. Revocation effect on already queued/stepped-up purchases unspecified.", "Mandate rule values limited to numbers, strings and string lists. No boolean/object/list-of-numbers rule values. Delivery already in total."]
+    },
+    {
+      "id": "SAFR", "title": "Safeguards for Agentic Finance at Runtime", "url": "https://www.mas.gov.sg/-/media/mas-media-library/development/fintech/ai-safr/safr.pdf", "date": "Version 1.0, July 2026; launch July 3", "type": "Industry reference white paper, not regulatory guidance or performance benchmark", "read": "full extracted paper via Tavily; TinyFish and WebFetch PDF retrieval failed first",
+      "findings": ["Action checkpoint before execution: agent identity, controls repository, disposition engine, independent audit log.", "Controls include deterministic thresholds and semantic/probabilistic evidence checks.", "Four outcomes: deny, escalate, auto-execute, observe. Hackathon has only three; observe could be approve plus monitoring metadata if used.", "Envelope and trace can be jointly fabricated by a compromised agent; authenticate against origin instead of trusting self-consistent text.", "Each action re-evaluated; earlier approval does not confer permission on subsequent actions.", "Human review must account for volume, turnaround, reviewer authority. No unattended auto-approve on timeout.", "Paper provides proposed framework and case studies, not measured false-approval/latency comparison."],
+      "supporting_url": "https://www.mas.gov.sg/news/media-releases/2026/mas-partners-industry-to-develop-safeguards-for-ai-agents-in-finance"
+    },
+    {
+      "id": "IMF", "title": "How Agentic AI Will Reshape Payments", "url": "https://www.elibrary.imf.org/view/journals/068/2026/004/article-A001-en.xml", "date": "April 2026", "type": "Policy analysis", "read": "executive summary and selected authorization, risk and conclusion sections",
+      "findings": ["Three-layer analytical model: intent/orchestration, control/authorization, settlement.", "Probabilistic upstream inference can inform authorization while explicit controls remain enforceable.", "Authors expressly frame the paper as a conceptual lens, not definitive or prescriptive empirical findings."]
+    },
+    {
+      "id": "AP2", "title": "Agentic Payment Protocol v0.2", "url": "https://ap2-protocol.org/ap2/specification/", "date": "Version 0.2, current docs read 2026-09-24", "type": "Primary protocol specification", "read": "overview, autonomous flow, verification and constraint-extension sections",
+      "findings": ["Current v0.2 uses open/closed Checkout and Payment Mandates, unlike older Intent/Cart terminology.", "Autonomous flow binds authority to agent key and bounded expiry. Verifiers check checkout hash and evaluate every constraint.", "Checkout and payment evidence must refer to the same purchase.", "New constraint types need a schema and an evaluation algorithm.", "Agent-to-agent delegation is outside current specification scope. Specification provides no classifier accuracy result."]
+    },
+    {
+      "id": "VI", "title": "Verifiable Intent security model and constraint definitions", "url": "https://verifiableintent.dev/spec/security-model/", "supporting_url": "https://verifiableintent.dev/spec/constraints/", "date": "Draft v0.1; public launch March 5 2026; current docs read September 24", "type": "Primary draft protocol specification", "read": "trust boundaries, replay, stateful budget, known limitations, budget definition, validation algorithm, security considerations",
+      "findings": ["Signed delegation limits agent authority, binds purchase and payment, and enables dispute evidence.", "Budget/occurrence enforcement requires stateful tracking; signatures and nonce uniqueness cannot prevent new authorized-looking transactions exhausting a budget.", "Explicitly lacks credential-layer revocation in v0.1; shorter lifetimes and issuer controls are mitigations.", "Spec constraints reject unknown open-mandate constraints and recommend strict handling for security-critical deployments. Security-model paragraph describing permissive behavior is broader and should not override exact algorithm.", "Use as design guidance, do not claim prototype is AP2/VI compliant or network-integrated without implementing and testing conformance."]
+    },
+    {
+      "id": "VISA", "title": "Visa Intelligent Commerce", "url": "https://developer.visa.com/capabilities/visa-intelligent-commerce", "date": "Current documentation read 2026-09-24", "type": "Provider product documentation", "read": "full page",
+      "findings": ["Authenticated instruction, agent-specific payment credentials, network checks for intended merchant and correct amount.", "Page says product is in development/deployment and may not be available in all markets.", "Supports relevance of issuer-enforced bounds; does not establish hackathon API compatibility or deployment readiness."]
+    },
+    {
+      "id": "FIDO", "title": "FIDO Alliance to Develop Standards for Trusted AI Agent Interactions", "url": "https://fidoalliance.org/fido-alliance-to-develop-standards-for-trusted-ai-agent-interactions", "date": "April 28 2026", "type": "Standards-body announcement", "read": "full extracted page",
+      "findings": ["AP2 and Verifiable Intent contributions enter standards work; no universal production compatibility implied."]
+    },
+    {
+      "id": "PAYMENT-SOK", "title": "SoK: Blockchain Agent-to-Agent Payments", "url": "https://arxiv.org/abs/2604.03733", "date": "April 4 2026, v1", "type": "Preprint survey, blockchain-specific", "read": "abstract and all main text; reference list only partly read",
+      "findings": ["Separates discovery, authorization, execution and accounting; highlights repeated locally compliant actions and cumulative misalignment.", "No winning wallet classifier or transferable numerical performance result. Settlement-specific recommendations mostly outside Viseca scope."]
+    },
+    {
+      "id": "AGENTICPAY", "title": "AgenticPay: A Multi-Agent LLM Negotiation System for Buyer-Seller Transactions", "url": "https://arxiv.org/abs/2602.06008", "date": "February 5 2026, v1", "type": "Negotiation benchmark", "read": "abstract, scope and dates",
+      "findings": ["110+ natural-language negotiation tasks; evaluates bargaining/market interaction. Exclude as evidence of wallet-authorization quality."]
+    },
+    {
+      "id": "TOOLS", "title": "Tech Goodies", "url": "https://zh.ai-weeks.ch/tools", "date": "Live handbook read 2026-09-24", "type": "Official event resources", "read": "full page",
+      "findings": ["Tool/model agnostic. Free Swisscom-hosted Apertus 1.5 70B access, OpenAI credits and other services advertised.", "Availability is an implementation advantage, not evidence of task accuracy or latency. Credentials not accessed."]
+    }
+  ],
+  "corrections_to_prior_advice": [
+    "No supplied labels does not rule out a pretrained zero/few-shot classifier. Human-reviewed task labels are still needed for evaluation and calibration.",
+    "AUC 0.65 for one author baseline is not an upper bound or proof a model cannot help.",
+    "Fixed 0.85 confidence and 1.5-second timeout were unvalidated illustrative choices, not evidence-derived thresholds.",
+    "Narrow factual model calls can still cause false approvals if manipulated facts satisfy downstream checks. The numerical amount limit remaining intact is a narrower guarantee.",
+    "A new seller where prior-use permission is explicit is a possible known policy violation, not automatically mere uncertainty.",
+    "Two purchases six minutes apart are not proof of one split order. Confirm order-grouping semantics rather than inventing a new hard restriction.",
+    "Do not leave executable restrictions solely in guidance, which live events omit. Confirm and persist exact interpretations.",
+    "A one-time shopping intent may require fulfillment tracking. Apparent individually compliant alternatives are not necessarily all authorized after an earlier successful purchase."
+  ]
+}

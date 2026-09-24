@@ -1,0 +1,138 @@
+Corrected review: /Users/david/Projects/Bucheggang/research/2026-09-24/research-semantic-classification.txt (cutoff 2026-09-24)
+
+Checked in primary text: the TypeSafe Confidence, Jaggedness, API, Models and Choice pages (cached in /tmp/jevdocs); the eval subpages and launch post (refetched 2026-09-24); Octomind, FlowX, NJoy; the jabr, Kev and SemIf READMEs; GLiNER2 Tables 2 and 4; the SetFit abstract; arXiv 2609.23959v1 and 2609.24052v1 in full (/tmp/crash.html); arXiv 2609.25845v1 (abstract only); and the pack README (AUC 0.65 / AP 0.08 confirmed). No Jev calls were made.
+
+## 1. Corrections
+
+C1. Confidence. Withdraw the advice to recompute confidence as (K*p_max - 1)/(K - 1) and ignore the field.
+- The Confidence page says only that the demo "uses (3 x largest probability - 1) / 2 to approximate confidence for three options". It also says users are "never locked into our definition" and that a cookbook on alternatives is pending.
+- The approximation matches within rounding on the vendor's Choice examples (3, 4 and 5 options) and Octomind's 10 Choice rows.
+- Two outputs do not match. A 2-option Choice (pseudonymous Reddit) had p = 0.87 and confidence 0.82, where the approximation gives 0.74. An Octomind 3-level Score had p = 0.97 and confidence 0.93, where the approximation gives 0.955.
+- The general definition is undocumented, and so is whether Score uses the same one.
+
+Log both `confidence` and `probabilities`. Any other statistic (p_max, top-two margin, recalibrated probability) is the team's own and must be named and fitted on team labels. Drop "0.85 equals p_max 0.925 for 2 options". The 3-option mapping to 0.90 holds only if the approximation holds.
+
+C2. Decomposition. Section 1 says "the only relevant independent evidence" favours decomposition, but it cites [S5], which is the vendor's jaggedness page. No independent controlled comparison exists.
+- The workflow-vs-prompt result [S7] covers LLMs only.
+- Its reference answers came from Astra and Fable "answering every question in the harness". Workflow arms therefore share the reference's decomposition and prompt arms do not, so the comparison is partly circular.
+- "Every model is better in workflow form" holds only for the 4-workflow average. Two per-workflow results reverse: DS v4 flash on security incidents (37.9 workflow vs 44.6 prompt) and DS v4 pro on agent traces (71.6 vs 72.1).
+- Jev has no prompt row.
+
+Direct ternary and decomposition remain equal candidates.
+
+C3. H1 inconsistency. Rank 2 feeds Jev answers such as "item matches request" and "final sale" into code that can approve. H1 says models only move decisions toward caution. These are two different roles, and the claim that injected text "cannot cause an unsafe approval" fails for both of them.
+- Veto-only: the system never approves anything the rules alone would decline or step up. A mistaken or manipulated answer can still suppress a flag. The result is then the rules-only outcome, which may be the unsafe approve the model was meant to catch.
+- Resolver: a model "yes" turns a rule step_up into approve. Friction drops, and a wrong answer produces a false approval directly.
+
+Code-enforced invariants (amount caps, spend windows, blocked categories, rule declines) hold in both roles. Each semantic question needs a declared role, and both roles need scoring.
+
+C4. Rules and injection. The claim that rules are "immune to injected text" is false for any regex over `item_details`. A merchant can write "30-day returns" or "size 43", and the regex will extract it faithfully. Only rules on fields whose provenance lies outside merchant text are unaffected, and nobody has checked provenance field by field. A detector for instruction-like text will not catch plain false claims.
+
+C5. H3. Stepping up on disagreement protects only against independent errors. The direct and decomposed calls read the same untrusted text, and FlowX saw one error spread across a whole question map. If one injection moves both arms the same way, H3 does not trigger.
+
+C6. Attribution. The SemIf figures (1.023 s vs 5.332 s; 0.845 vs Jev 0.883) come from the SemIf README, not from arXiv 2609.23959. The Jev 0.883 is TypeSafe's own number on a 102-row subset that TypeSafe selected.
+
+C7. Omission. arXiv 2609.24052v1 is the largest independent Jev study with human labels that I found. It replaces jabr as the headline independent result (section 2).
+
+C8. Latency. The Geneva probe [S36] timed unauthenticated HTTP requests without inference, from a different network than the Zurich venue. It shows only that the host resolved to addresses geolocated to Oregon, which I did not re-verify. Remove "p50 0.3-0.8 s from Switzerland" as a finding. The 1.5 s timeout and the 2 s p99 bar are placeholders. Derive both from venue measurements and the 8 s window, which starts at queueing.
+
+C9. Weak sources. Remove two sources from the core tables:
+- S15: anonymous, code unreleased, and misquotes the vendor latency as 70-100 ms.
+- S16: pseudonymous, n unstated.
+
+NJoy [S14] stays as a tail-risk anecdote.
+
+C10. Statistics.
+- Non-overlapping Wilson intervals are not a paired test. Use McNemar or a paired bootstrap that resamples base attempts, since the roughly 300 perturbations derive from 45 attempts.
+- Zero failures in 300 gives a one-sided 95% bound of 0.99% only for independent, representative trials. These trials are neither.
+
+C11. Minor.
+- Octomind is an independent blog, not an integration partner.
+- I could not find the "711 cases" count in the eval page text.
+- "10-241 s per case" pairs Terra's 4-workflow average (10.1 s) with Sonnet's invoice workflow (241.3 s). Per-workflow LLM times span 3.4-474.4 s.
+
+## 2. Measured results
+
+These transfer as design constraints and risk signals:
+- Vendor jaggedness page (jev-1.13, reviewed 2026-09-17). Keep arithmetic, dates and counting in code. Adversarial state "can move the answer". A Noul and its negation summed to 1.19 on one ticket. Avoid "hiding several judgments inside one question". This is documentation and gives no rates.
+- Calibration has to be audited. arXiv 2609.24052v1 is independent and used 2,416 blinded human judgments on Texas crash narratives.
+  - Jev scored F1 0.908 [0.871, 0.936]. claude-fable-5-1 scored 0.967 (paired difference +0.059 [0.030, 0.098]). gpt-5.6-sol scored 0.885, and its paired interval with Jev includes zero.
+  - Jev over-stated prevalence (slope 1.63, ECE 0.0231). Out-of-fold Platt scaling cut pooled ECE to 0.0069.
+  - Jev outputs sit on a two-decimal grid.
+  - Order and wording effects were not tested. The paper is v1 and not peer-reviewed.
+- Injection. In Octomind's test, one planted "pre-approved" note in a tool-output field moved P(block) from 0.76 to 0.48 and confidence from 0.64 to 0.22. The verdict did not change. This is n = 1 and unreplicated. In JevLite (a different model), a held-out paraphrase flipped 5.2% of decisions, 28 of 30 of them toward the permissive label.
+- Option order. In archerhume's probes (independent, small n), reversing the options moved one probability from 0.84-0.89 to 0.93-0.96. In JevLite, swapping options flipped 2.6% of decisions [0.2, 5.8].
+- FlowX (adjacent vendor, 22 states, 106 judgments, one labeller). One breached rubric dimension pulled four other scores down. Across 210 repeated answers, Jev had 0 verdict flips and values drifted up to 0.12. One question was wrong 10 of 10 times.
+- Untuned readout. In the JevLite paper, zero-shot readout from Qwen3-4B scored AUROC 0.691 and ECE 0.170.
+
+These do not transfer as expected accuracy:
+- jabr v2 (independent, 866 LLM-generated cases, ambiguous cases removed): Jev 0.966 macro, Von 0.720, GLiNER2 0.684, Laya 0.583.
+- TypeSafe workflow evals (vendor, agreement with model-generated references): Jev 67.8% average, and 61.8% on invoices vs Sol 79.1%.
+- FlowX: Jev 76.5% vs GPT-5.6 Luna 84.7%. The whole gap came from rubric scoring (20/35 vs 28/35).
+- JevLite (arXiv 2609.23959v1, 21 Sep): Qwen3-4B with LoRA, 577 decisions over 41 synthetic scenarios. AUROC 0.974, ECE 0.052, 64.5 ms p50 on an RTX 3090. The recipe was picked after about ten recipes had been scored on the test set. A fine-tuned ModernBERT was not significantly worse.
+- Visual Jev (arXiv 2609.25845v1, 22 Sep, image tasks): the latest readout paper I found. A typed head had no consistent advantage over reading from the language-model head. Gains concentrated on the task families present in training.
+- GLiNER2 paper (vendor): zero-shot average 0.72 over 7 public datasets vs GPT-4o 0.84. CPU latency 130-163 ms at 5-20 labels.
+- Kev README (competitor): Jev 0.857 vs Kev-9B 0.822 on a development set the competitor chose.
+- SetFit (2022): comparable to PEFT and PET, an order of magnitude faster to train, and multilingual when the sentence-transformer body is swapped. It needs labelled examples.
+- Latency. None of these figures comes from the venue.
+  - Crash paper: median 0.20 s, p90 0.33 s, 0 failed calls over 195,857 narratives. I did not find the client location in the sections I read.
+  - FlowX: p50 0.77 s, p95 1.13 s, small n.
+  - Octomind: 386-834 ms, with the first call at 2 s.
+  - NJoy: p50 367 ms, p95 29.5 s, max 101 s over 100 gateway calls.
+- Cost and speed gaps are not accuracy results. The crash paper's "52x cheaper" figure prices list-price tiers, not the arms it benchmarked, and the authors say the two must not be read together.
+
+## 3. Strongest contrary evidence
+
+- A frontier LLM beat Jev by 0.059 F1 on human labels, and the other frontier LLM tied it. The two LLMs differed from each other by 0.082.
+- Jev's native probabilities were miscalibrated as delivered on that task, and fixing them needed labels.
+- In the competitor-run Kev README, Jev answered 9% of "unknowable" records at 0.9 confidence or higher.
+- FlowX measured Choice confidence at 1.00 on a clear case and 0.99 on an ambiguous one (two examples).
+- The JevLite authors recommend a fine-tuned encoder when the questions are fixed.
+
+## 4. Recommendation hypotheses
+
+- R1. Code enforces every computable rule. No model output overrides a rule decline or step_up.
+- R2. Declare each question as veto-only or resolver. Questions about `item_details` default to veto-only. They move to resolver only if a resolver arm shows fewer total errors and no added unsafe approvals on team labels.
+- R3. Eligible arms:
+  - Jev direct ternary, with the policy and precomputed facts in the state.
+  - Jev atomic questions.
+  - Local GLiNER2, Von or NLI.
+  - SetFit trained on team-written examples.
+
+  None needs task labels at inference. All need team labels to evaluate and set thresholds. The history `status` column is an issuer outcome and cannot serve as those labels.
+- R4. Threshold a named statistic per question from a risk-coverage curve, and try Platt scaling if there are enough labels. Jev's two-decimal output grid cannot resolve threshold steps under 0.01.
+- R5. Keep untrusted text out of any call whose answer alone can produce an approve. Direct ternary with `item_details` in the state breaks this rule and belongs in the adversarial test.
+- R6. On a timeout, 429 or 529, fall back to rules, and send text-dependent cases to step_up. Set retries explicitly.
+
+## 5. Unresolved gaps
+
+- No Jev result exists on payment-policy decisions or on German, French or Italian text. The vendor says non-English text is handled "not equally well".
+- No controlled comparison of direct vs decomposed questions exists for any readout model.
+- The only Jev injection evidence is one probe.
+- The confidence definition for general K and for 2 options is unpublished.
+- There is no latency measurement from the venue, and no API key was used.
+- The crash, JevLite and Visual Jev papers are v1 preprints, 2-3 days old.
+- Still unverified: the 711 cases, the LangChain PR, VentureBeat's waitlist and credit report, and Vercel's "18x".
+- The live judging scenarios are unknown.
+
+## Sources
+
+- TypeSafe Confidence, https://docs.typesafe.ai/confidence, fetched 2026-09-24 (vendor)
+- TypeSafe Jev 1.13 jaggedness, https://docs.typesafe.ai/model-jaggedness/jev-1.13, reviewed 2026-09-17 (vendor)
+- TypeSafe API, Choice and Models pages: https://docs.typesafe.ai/api, /primitives/choice, /models, fetched 2026-09-24 (vendor)
+- TypeSafe workflow evals, https://evals.typesafe.ai/ and /invoice_processing, fetched 2026-09-24 (vendor)
+- TypeSafe launch post, https://typesafe.ai/blog/introducing-system-one-models-and-jev, 2026-09-15 (vendor)
+- Rafe and Das, arXiv 2609.24052v1, 2026-09-21, https://arxiv.org/abs/2609.24052 (independent)
+- Ren et al., arXiv 2609.23959v1, 2026-09-21, https://arxiv.org/abs/2609.23959 (independent)
+- Yu and Yao, arXiv 2609.25845v1, 2026-09-22, https://arxiv.org/abs/2609.25845 (independent)
+- FlowX, 2026-09-20, https://www.flowx.ai/blog/jev-the-good-the-bad-and-the-ugly (adjacent vendor)
+- Octomind, 2026-09-18, https://octomind.run/blog/jev-system-one-model-ai-agents (independent)
+- NJoy, 2026-09-19, updated 2026-09-21, https://njoy.consulting/articles/jev-vs-llms-hotels-tourism (independent)
+- archerhume, 2026-09-17, https://archerhume.com/posts/jevs-architecture-unmasked (independent)
+- jabr, https://github.com/jabr/classifier-benchmark (independent)
+- Kev, https://github.com/jaredpalmer/kev (competitor)
+- SemIf, https://github.com/TheoLeeCJ/SemIf (independent self-report)
+- GLiNER2, arXiv 2507.18546 (vendor paper)
+- SetFit, arXiv 2209.11055v1, 2022-09-22
+- Pydantic AI TypeSafe docs, https://pydantic.dev/docs/ai/models/typesafe (integration partner)
+- r/hermesagent, 2026-09-20, https://www.reddit.com/r/hermesagent/comments/1wlfgg0/ (pseudonymous, used only for the confidence anomaly)

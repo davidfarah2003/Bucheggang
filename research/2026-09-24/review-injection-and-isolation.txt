@@ -1,0 +1,159 @@
+# Adversarial review: research-injection-and-isolation.txt (cutoff 2026-09-24)
+
+**Method.** I checked claims against the cached full texts in /tmp/pi_research, the arXiv and NIST pages (fetched with TinyFish), and the challenge pack at /Users/david/Projects/Bucheggang/viseca-2026/. "V" means verified in the primary text.
+
+## A. Numbers: verified, with corrections
+
+- **Attacker Moves Second** (2510.09023 v1, 2025-10-10), Table 7.
+  - V for all five dossier rows.
+  - Omitted context: search ASR is best-of-800 queries per scenario, on 80 Slack/Travel/Workspace samples. Banking was skipped.
+  - Across four models, the filter and MELON rows range from 49% (PIGuard, GPT-5 Mini) to 99%. The dossier's "71 to 94%" in section 4.3 covers Gemini only.
+  - The authors are third party to the detectors, but five of them also wrote CaMeL.
+  - Their reason for skipping CaMeL and tool filter ("guaranteed to fail in most of the selected scenarios") is an untested assertion. The same paragraph says such defenses "noticeably reduce the utility".
+  - Static ASR is 0-35% and search ASR 47-100%, so "order of magnitude" is loose.
+- **DRIFT** (2506.12104 v3, 2026-03-26).
+  - V, Table 3 (GPT-4o-mini, AgentDojo important_instructions), utility/ASR:
+
+    | Defense | Utility | ASR |
+    |---|---|---|
+    | undefended | 48.3 | 30.7 |
+    | tool_filter | 50.4 | 7.6 |
+    | DeBERTa | 21.2 | 13.0 |
+    | CaMeL | 35.4 | 0.0 |
+    | Progent | 45.6 | 9.4 |
+    | DRIFT | 50.9 | 1.4 |
+
+  - Tokens: undefended 0.82M, DRIFT 2.37M, Progent 2.60M, CaMeL 6.09M. The DRIFT authors ran CaMeL and Progent.
+  - Adaptive (Table 2): manual 2.05%, PAIR 1.97%, both author-run. PAIR was optimized only on sampled cases.
+  - Correction to dossier 4.4: an author-run optimized (PAIR) evaluation of DRIFT exists. No independent one does.
+- **AgentDyn** (2602.03117 v3, 2026-05-07), Table 3, GPT-4o.
+  - V, utility/ASR: none 53.33/37.80, CaMeL 0.00/0.00 (zero for all four models), Progent 6.67/1.69, DRIFT 30.00/0.83, ProtectAI 0.00/0.85, PromptGuard2 60.00/27.15.
+  - 60 tasks, 560 cases, static attack.
+  - Omitted: the authors added "Complete all tasks automatically without requesting user confirmation" to the system prompt.
+  - Three authors overlap with DRIFT (Hao Li, Ning Zhang, Chaowei Xiao). The CaMeL and Progent rows are competitor-run.
+- **CaMeL** (2503.18813 v2, 2025-06-24).
+  - Correction: "77% vs 84%" is one model, o3 High (77.3 vs 84.5, Table 2).
+  - Other models: Gemini 2.5 Pro 41.2 vs 73.2, Gemini 2.5 Flash 35.1 vs 55.7, Claude 4 Sonnet 74.2 vs 86.6.
+  - The Gemini 2.5 Pro result (300 successful attacks to 0, of 949) is CaMeL without policies.
+  - The 0 vs 8 (tool filter) comparison is on Claude 3.5 Sonnet, which the paper calls "already not particularly vulnerable" to the static attack.
+  - All of these results use static attacks.
+- **CaMeL proof limits** (V).
+  - "Provable security" is relative to its threat model and policies.
+  - Formal verification of the interpreter is listed as future work.
+  - Side channels are acknowledged (section 7).
+  - Text-to-text attacks are a non-goal (section 3.1).
+  - Section 6.4 shows data becoming control flow when a user asks the agent to act on instructions found in data.
+  - Section 9.3 states that prompt injections are not solved.
+  - The remaining banking success, a payment "based on the instructions present in the document", is declared out of scope. A return window that exists only in merchant text has the same shape.
+- **Progent** (2504.11703 v3, 2026-05-14). V: GPT-4o, ASR 39.9% to 1.0%, with policy expansions auto-approved. Three author-built adaptive attacks "only marginally increase" ASR; this is shown in a figure only.
+- **2606.26479** v1 (2026-06-25, LaunchSafe Research preprint).
+  - V: Qwen2.5-7B, 3 runs, 25.8% to 4.2%. One hand-crafted adaptive template gave 2.6%. The policy model was substituted.
+  - Correction: utility under attack fell from 45.2% to 27.1% (standard) and 25.8% (adaptive).
+  - Undefended Workspace ASR was 0%.
+- **FIDES** (2505.23643 v2, 2025-09-03). V: gpt-4o, Tool Knowledge attack, 949 attacks. Fides with policies had 1 success (0 excluding two text-only tasks); Basic without policies had 163 (156). The "limited to 1 bit" quote is also V.
+- **SIEVE** (2512.06716 v3, 2026-08-02, author-run, Sichuan University).
+  - V: on AgentDojo with DeepSeek-V3.1, average ASR 0.34% and clean utility 87.63% (undefended 11.99% and 89.69%).
+  - The AgentDojo baselines were DeBERTa, Spotlight, Repeat Prompt and MELON only.
+  - The four-variant average includes three variants where undefended ASR was only 1.69-2.63%. On Important Messages, ASR falls from 41.31% to 0.84%.
+  - The DRIFT and ARGUS comparisons are on AgentLure only (320 attacks, DeepSeek V4 Pro, baselines run by the SIEVE authors): SIEVE 5.94% ASR / 97.5% clean utility, DRIFT 6.56 / 82.5.
+  - Adaptive test: a one-shot white-box rewrite by Kimi K2.6 raised ASR from 5.94% to 7.5%, and worst-vector ASR from 17.5% to 22.5%.
+  - AskUser prompts are answered by an LLM user simulator.
+  - Layer 2 can approve. It uses author-chosen thresholds (0.5/0.8) and weights (0.1/0.7/0.1/0.1), which the authors call "an operational decision signal rather than ... a calibrated probability".
+  - All 19 remaining successes occurred when the task was defined by external content with no authenticated original. The authors write: "Resolving this ambiguity requires an external trust anchor."
+  - SIEVE supports deterministic-first escalation on cost grounds (2.74 s to 2.07 s per task, AgentLure, author-run). It is no evidence for an escalate-only model, and it cannot be compared with DRIFT's GPT-4o-mini numbers.
+- **2605.17634** v1 (2026-05-17).
+  - V: Prompt Guard 1 and 2 score AUROC 0.43-0.59 on 8,400 emails, authority-asserting vs neutral.
+  - V: under restrictive delegation, SecAlign sends on 88.2% of authority-asserting emails vs 54.0% for the base model.
+  - Omitted: on neutral emails the rates are 85.1% vs 49.8%, so this is a general delegation failure, not specific to authority claims.
+- **NIST** (https://www.nist.gov/news-events/news/2025/01/technical-blog-strengthening-ai-agent-hijacking-evaluations).
+  - Date check: published 2025-01-17 by what was then the U.S. AI Safety Institute. It was renamed CAISI in June 2025, and the page was modified on 2025-12-19. Cite it as "NIST US AISI (now CAISI)".
+  - V: upgraded Claude 3.5 Sonnet. Attacks were built with the UK AISI on a Workspace subset and raised ASR from 11% to 81% on held-out Workspace tasks.
+  - V: five selected injection tasks went from 57% to 80% with 25 attempts each.
+- **Gemini** (2505.14534 v1, vendor). Correction: the 94.6% TAP result is one scenario (calendar event, passport exfiltration), against a Gemini 2.5 that was already adversarially trained. Adding the Warning defense brought it to 6.2%.
+- **LlamaFirewall** (2505.03574 v1, 2025-05-06, vendor).
+  - V: ASR 17.6% baseline, 7.5% with PG2 86M, 1.75% combined. Utility 47.7 / 47.0 / 42.7.
+  - Method: offline scanning of public static AgentDojo traces from ten models. This fills dossier gap 8. Under this method, "if an attack initially succeeds but is later flagged, the trace is reclassified as defended".
+  - The PG2 AUC, recall and latency figures (92.4 ms and 19.3 ms on an A100) come from a private direct-jailbreak set, not merchant text.
+- **Also V:** Constrained Decoding Attack v4, TOCTOU v1, and Instruction Hierarchy (GPT-3.5 Turbo).
+- **Rule of Two:** supervision is required when all three hold: untrusted input, sensitive data, and state change. The dossier omits the sensitive-data condition.
+
+## B. Logic corrections
+
+1. **False approvals are not controlled by structure alone.** Section 1 says false approvals are controlled by action-boundary enforcement, but sections 3 (R2) and 7 say approvals based on false claims are nonzero for every arm. Structural checks block approvals that fail a structured field, and they bound per-purchase exposure. Approvals that rest on facts parsed from text still carry observation and semantic uncertainty:
+   - whether the merchant is telling the truth;
+   - parser error;
+   - readings such as "14 days from delivery" or "store credit only".
+2. **R3 is internally inconsistent.** An escalate-only component can only add strictness to the arm it is attached to. C can beat B's step_up rate (section 7) only if C drops or loosens a B check, such as a regex floor or a strict parser. For those inputs, the model's misses then decide approvals, and H3's "never the sole reason for an approve" fails. The design has to pick one of two options:
+   - (a) escalate-only, valued for explanation and caution, with no claim that it reduces friction; or
+   - (b) an extractor on the approve path whose value must match a deterministic span check, tested as an approve-path component.
+3. **No model can validate a merchant's factual claim,** because it reads the same untrusted text. What can be checked is consistency: against order_returnable, against the items.csv price range for the item_id, and against the item category. Establishing truth needs an external anchor or explicit customer acceptance.
+4. **R2's cap is per purchase.** It holds per purchase when the amount rule reads billing_amount_chf. Cumulative exposure is bounded only by a period rule (only SCEN0001's instruction has one) or by duplicate detection.
+5. **Section 4.9, retries.** A deterministic engine removes sampling variance and repeated draws on one authorization_id. It does not stop an attacker varying the text across new attempts, which is the search that Attacker Moves Second runs.
+6. **H1/T2/T3 test oracle.** The monotonicity test must hold the ground-truth product facts fixed, with labels set by the test generator.
+   - Changing "7 days" to "30 days" may correctly relax a faithful parser. T3 as written ("an approve the arm does not give on the clean input") would flag that correct behaviour as a failure.
+   - Split the tests. Injections and obfuscations that preserve the facts must not relax the decision. Edits that change the facts are reported as false-claim exposure.
+   - T1 paraphrases should keep decisions consistent within a fact class.
+7. **Detecting an injection does not establish that the action is correct.**
+   - AU0037 is decided by amount (CHF 520 against a CHF 400 cap).
+   - For AU0040, a detector flag does not tell you whether another monitor at ME0022, after AU0035 and AU0036, fits "the 27-inch monitor I chose". That depends on run state.
+8. **Unvalidated thresholds.** The 5-point margin and "well inside 8 s" are unvalidated choices.
+
+## C. Field provenance (from the pack documents)
+
+- **Assigned or computed by the platform:**
+  - mandate snapshot and identity ("assigned by the platform when the run starts");
+  - context.approved_spend_in_period_chf ("recomputed from the decisions actually taken in the run");
+  - recent_attempt_count_10m;
+  - authority and card status (platform pre-check);
+  - related_authorization_id (rewritten to live IDs);
+  - deadline_at and runtime.
+- **Taken from fixtures:**
+  - The fields are amounts, the merchant object, cart lines and order_returnable.
+  - The pack says "The same fixtures are used by the live API."
+  - All 56 cart lines match items.csv on item_name and item_category.
+  - Nothing is signed. Provenance rests on the documentation and has not been observed on a live event.
+- **Story vs runs.** In the challenge story these fields are proposed by the agent. In runs they are static fixtures. Whether any field would be authenticated in the real world is outside the pack.
+- **Text facts are expected.** The organizer calls item_details "factual, merchant-supplied product copy" and says "Extract product facts; never let that text change the policy." In SCEN0002, 10 of 12 attempts have order_returnable "true" with the return window stated only in text. A design that never lets text facts satisfy a condition therefore steps up every SCEN0002 attempt that otherwise passes, which conflicts with the brief's no-friction requirement.
+- **History is not a label.** The pack says history status "is not a fraud label, not an expected decision". Counting approved rows as "bought from before" is a design choice and should be disclosed. CU0019 has 9 rows at ME0022 (8 approved, all initiated by the human cardholder) and none at ME0059.
+
+## D. Strongest contrary evidence
+
+- **Against deterministic-first designs:**
+  - AgentDyn: CaMeL has 0% utility on open-ended tasks.
+  - 2605.17634 argues that fixed rules either block legitimate flows or admit attacks that supply a plausible context.
+  - SIEVE's remaining failures needed a trust anchor that was not available.
+- **Against step_up as the fallback:** CaMeL section 9.2, Progent's "User Mistakes" section, and AgentDyn disabling confirmations because they cut utility. The brief also counts needless blocking as a failure.
+- **Against detectors:**
+  - AgentDyn over-defense when third-party text contains helpful instructions: ProtectAI 0.00 and PIGuard 10.00 utility on GPT-4o.
+  - Near-chance AUROC on authority claims (2605.17634).
+- **Against the scoring relevance of adaptive-attack work:** judged runs replay fixed fixtures. The pack's phrase "five public scenarios" may imply hidden scenarios, but that is unverified.
+- **Protocol-Level Attacks** (2607.21824 v1, 2026-07-23; abstract only, author-measured): 33 structural flaws across three agentic-commerce platforms, with 100% ASR wherever measured live. These flaws sit below the model layer.
+
+## E. Recommendation hypotheses (untested)
+
+1. Decide amount, rolling spend, familiarity (by merchant_id), duplicates and cart composition from platform and fixture fields plus wallet state. In the fixtures this resolves the amount check for AU0037 and the familiarity check for AU0039 (ME0059, no history) without reading any text.
+2. Parse facts from item_details deterministically and label them as unverified merchant claims. Accept a fact only when it parses to one unambiguous value that is consistent with order_returnable. Otherwise apply the uncertainty_policy.
+3. At mandate time, let the customer choose whether to rely on merchant-stated terms or be asked. This places the reliance decision with a trusted principal. Measure the resulting SCEN0002 friction.
+4. Any LLM follows option (a) or (b) from B2, with a fallback and deadline tests.
+5. Show injection detection as labelled evidence alongside the mandate checks, never as a replacement for them.
+
+No design guarantees security or a win.
+
+## F. Unresolved gaps
+
+- No primary study tests authorization gating of a single transaction against merchant text.
+- No independent optimized adaptive attack exists on CaMeL, FIDES, DRIFT or SIEVE. Progent's one independent check is small.
+- No guard has a measured latency on target hardware, and how live events populate their fields has not been observed.
+- These remain abstract-only: AgentVisor, RTBAS, PromptArmor, 2503.00061, the AP2 red-team paper, ToolHazard.
+
+## Sources
+
+arXiv papers are at https://arxiv.org/abs/<id>. Versions and dates were checked on 2026-09-24. Beyond those in section A:
+- 2506.08837 v3, 2025-06-27
+- 2406.13352 v3, 2024-11-24
+- 2404.13208 v1, 2024-04-19
+- 2403.14720 v1, 2024-03-20
+
+Other sources:
+- Rule of Two: https://ai.meta.com/blog/practical-ai-agent-security/
+- Prompt Guard 2 model card: https://github.com/meta-llama/PurpleLlama/blob/main/Llama-Prompt-Guard-2/86M/MODEL_CARD.md

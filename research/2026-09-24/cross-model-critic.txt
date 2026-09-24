@@ -1,0 +1,68 @@
+## Research conclusion, September 24
+
+The best build to test before Friday noon is a customer-confirmed policy with a small, stateful decision engine and an evidence view. Keep three purchase-classification candidates alive until they are scored on the same cases: rules with explicit handling of unknown facts, Jev’s direct `approve`/`decline`/`step_up` judgment, and rules with narrow semantic fact extraction. A model can help decide whether an item matches the customer’s request or whether merchant text states a return term. The amount calculation, spend window, duplicate state, mandate status and final action still need explicit enforcement. There is no measured winner on this challenge yet. [2][3][5][6]
+
+The jury’s first submission deadline is **Friday, September 25 at 12:00**. Expert pitches run 14:00-16:00, with one minute to pitch and three minutes for questions. A team must book one slot before noon. Judging is qualitative, with no published weights. The stated criteria are technical functionality and AI, user experience, agentic depth, originality and fun, and potential and market impact. [1]
+
+That makes a working ordinary purchase, a useful intervention, and a real customer-control path the immediate priorities. The challenge asks for all three. A visible explanation of the clause, the fact used, its source and any uncertainty gives the jury something concrete to question during the short pitch. An elaborate agent framework has no demonstrated advantage here if it delays the worker, the customer flow or the live demo. [1][2]
+
+## What the research supports
+
+AutoCedar’s author-run study reports 221/221 CedarBench policies satisfying *reviewed formal targets*. On a fixed 100-case ablation, its full verifier-feedback stack passed 100 cases, against 85 for schema-only generation and 94 for a basic verifier loop. The paper says an approved target can omit or misstate the original intent. Its policy-generation times average 8.93 or 24.59 seconds by model, before considering this challenge’s runtime path. Borrow the useful idea now: show each proposed permission and an example boundary decision to the customer before confirmation. Building Cedar synthesis and verification by noon has no established payoff for this task. [4]
+
+Jev’s own jaggedness documentation recommends keeping arithmetic, counting and date comparisons in code. It warns that adversarial state can move an answer and that separate questions need not obey logical identities. An independent, recent study with 2,416 blinded judgments on crash narratives measured Jev F1 at 0.908. One frontier model scored 0.967; another scored 0.885 and was statistically indistinguishable from Jev on that comparison. Jev’s pooled calibration error fell from 0.0231 to 0.0069 after out-of-fold recalibration on human labels. These results establish that Jev is worth testing. Crash coding accuracy and latency do not estimate wallet-policy performance, multilingual performance or latency at the venue. TypeSafe says confidence thresholds depend on the use case; its general confidence computation is not documented sufficiently to treat a chosen value as a validated approval threshold. Log the returned probabilities and confidence separately. [5][6][7]
+
+The injection literature gives a narrower engineering lesson than “add a detector.” SIEVE’s author-run agent benchmarks report strong attack and clean-utility results, yet its remaining 19 successful attacks involved external task content with no authenticated original; the authors say resolving that ambiguity requires an external trust anchor. Merchant prose can also contain a perfectly ordinary false claim, such as a return period. A parser and a model can extract the claim; neither establishes its truth. Mark any approval that relies on merchant-stated terms as such. Let the customer decide during mandate confirmation whether those claims are sufficient or require a question. [8]
+
+The additional history is useful for earlier approved spend, familiarity and behavioral context. Its `status` is a synthetic issuer outcome, not a fraud label or an expected wallet decision. The pack’s reported AUC of 0.65 and AP of 0.08 outside hard-rule cases predicts that outcome. It sets neither a ceiling for a wallet classifier nor a safety threshold. Broad tabular benchmarks favor conventional tuned methods more often on grouped, temporal and large datasets, but their rankings still do not settle this task. Training a new foundation, graph or sequence model before noon is hard to justify without target labels and a clear improvement over the small engine. [9]
+
+## The decision boundary to implement and test
+
+A confirmed mandate must preserve the customer’s chosen restrictions and treatment of uncertainty. For each request, enforce computable amount and period limits, platform status, cart composition and run state from their declared sources. Count accepted final approvals for spend limits. Deduplicate a redelivered live authorization ID, and examine distinct IDs for repeat orders. A model answer cannot override a violated amount cap or an explicit rule decline. These are testable authorization invariants. The API gives eight seconds **from queueing**, including delivery, and a default 120-second human-answer window; actual settings come from bootstrap. Measure each submission against its own `deadline_at`. [3]
+
+Semantic facts have a different status. An item match, a “chosen” monitor, a return period stated only in `item_details`, and whether a retailer fits the customer’s description can be misread or falsely asserted. Write down each fact’s source and the role of its semantic question:
+
+- A **veto-only** answer can block or ask on top of a rules decision. It cannot reduce that baseline’s customer friction.
+- A **resolver** answer can turn a rules-level unknown into an approval. It may reduce friction and adds a false-approval path that needs direct testing.
+
+Jev direct ternary is a valid third arm. Put the policy and precomputed facts in its input, then apply the same non-overridable invariants to its proposed action. Compare it fairly with atomic questions. No controlled evidence reviewed here shows that decomposition beats direct ternary decisions on this wallet task. A prompt-injection test must include cases where both approaches are persuaded by the same merchant text.
+
+Pure rules also remain a credible candidate. They can approve cases whose relevant facts and interpretations are established. Rules over a regex-extracted merchant claim still inherit that claim’s uncertainty. Conversely, routing every text-dependent case to the customer could make ordinary purchases needlessly difficult. In the supplied second scenario, many returnable orders state the window only in merchant text. [2][3]
+
+## Smallest decision-making experiment
+
+Freeze clause interpretations first: what “used regularly” means, boundary equality, what counts as an ordinary item, when a one-time intent is fulfilled, and how the customer wants merchant-stated terms treated. Two people then independently annotate the 45 supplied attempts with clause outcomes, sources, acceptable actions and a preferred action. The pack supplies no expected-action labels. Resolve disagreements without reading candidate outputs.
+
+Run rules-only, Jev direct ternary and rules plus atomic extraction on those same attempts. Add a small set of paired variants with known relationships: an amount over cap, an unchanged-facts injection, a paraphrase of the same facts, repeated delivery of one ID, and a distinct near-duplicate. Keep fact-changing merchant edits in a separate false-claim test. If Jev is unavailable, compare a deterministic parser with one available local extractor on the same labels; a local model is an alternative to investigate, not an automatic winner.
+
+Report counts before a single score: approvals adjudicators disallowed; non-approvals on approve-only cases; other action mismatches; interventions that name the clause and fact; and deadline misses. Inspect every decision on which arms disagree. Report results by original attempt because rewrites of 45 attempts are correlated. Use paired comparisons only if there are enough disagreements to make them informative. Do not turn zero failures on curated variants into a population guarantee. A conformal or selective-risk claim would need suitable labelled calibration cases and assumptions about the target distribution; a shift to hidden judging cases can defeat those assumptions. [3][11]
+
+Run the chosen engine without its optional model and record every changed decision and the added friction. A blanket claim that model failure can only make outcomes stricter needs qualification when the customer selected `uncertainty_policy = approve`. Test the live worker, all five scenarios, human resolution and revocation once access is available. The effect of revocation on already queued or stepped-up requests remains unspecified in the contract, so the UI should display only a cancellation the platform confirms. [3]
+
+A promising product angle is a short permission review followed by a purchase receipt that separates platform facts, merchant claims and customer decisions. Current payment-mandate work supports bounded authority and per-purchase constraint checks, but this prototype should not claim protocol conformance or payment-network integration. [12] The evidence gives no basis for a win guarantee.
+
+## Claims rejected or narrowed
+
+- “Jev is the best classifier” and “a frontier model is the best classifier”: neither has been measured against adjudicated decisions for this wallet.
+- “Atomic questions beat direct ternary”: the reviewed comparisons do not isolate that choice.
+- “Models should only escalate”: resolver models can reduce needless questions, with an approval risk that must be counted. “Models must resolve unknowns” is equally unsupported.
+- “Rules are injection-proof”: text-parsing rules can accept manipulated or false merchant claims.
+- “A confidence threshold or conformal bound guarantees safe approvals”: no target-specific calibration supports that claim, and marginal coverage does not directly bound error *among approvals*.
+- “AutoCedar’s 221/221 proves wallet correctness”: it measures satisfaction of reviewed formal targets on the authors’ cases.
+
+## Primary sources
+
+[1] [Official jury process and criteria](https://zh.ai-weeks.ch/jury-process-and-criteria) and [expert-slot instructions](https://zh.ai-weeks.ch/submit-to-expert-jury).  
+[2] [Agent on a Leash challenge](https://zh.ai-weeks.ch/challenges/agent-on-a-leash).  
+[3] [Viseca technical details](https://github.com/Swiss-ai-Weeks/viseca-2026/blob/main/technical_details.md).  
+[4] [AutoCedar, arXiv:2607.03656v1](https://arxiv.org/html/2607.03656v1).  
+[5] [TypeSafe Jev 1.13 jaggedness](https://docs.typesafe.ai/model-jaggedness/jev-1.13).  
+[6] [Independent crash-narrative study, arXiv:2609.24052v1](https://arxiv.org/html/2609.24052v1).  
+[7] [TypeSafe confidence documentation](https://docs.typesafe.ai/confidence).  
+[8] [SIEVE, arXiv:2512.06716v3](https://arxiv.org/html/2512.06716v3).  
+[9] [BeyondArena, arXiv:2606.30410v1](https://arxiv.org/html/2606.30410v1).  
+[10] [CaMeL, arXiv:2503.18813](https://arxiv.org/abs/2503.18813).  
+[11] [Conformal risk control, arXiv:2208.02814](https://arxiv.org/abs/2208.02814).  
+[12] [Agentic Payment Protocol v0.2](https://ap2-protocol.org/ap2/specification/).
+
+Verification scope: I read the fetched jury and Jev jaggedness pages and the TypeSafe confidence page in full. I checked the cited experiment and limitations sections of AutoCedar and the cited sections of the longer crash, SIEVE and BeyondArena papers. I did not read every paragraph of those longer fetched papers or the full AP2 specification in this pass. The four independent evidence reviews and the local challenge materials supplied the remaining checks. No candidate was trained or called on the wallet attempts, and no live scenario was run.

@@ -1,0 +1,42 @@
+{
+  "cutoff": "2026-09-24",
+  "source": {
+    "id": "AUTOCEDAR",
+    "title": "AutoCedar: An Agentic Framework for Verifier-Guided Access Control Policy Synthesis",
+    "date": "2026-07-04, v1",
+    "url": "https://arxiv.org/abs/2607.03656",
+    "full_text": "https://arxiv.org/html/2607.03656v1",
+    "code": "https://github.com/neselab/cedar-synthesis-engine",
+    "evidence_grade": "Author-run preprint benchmark and small human artifact study; not independent replication",
+    "read_scope": "Abstract, introduction, methodology, experimental setup, results, and threats to validity",
+    "method": "Turn requirements into reviewable schema/behavior atoms, obtain human intent review, freeze a checkable target, generate Cedar policies, use verifier feedback to repair until they satisfy that target. Wrong or missing approved intent remains outside the guarantee.",
+    "results": [
+      "Author reports convergence on 221/221 CedarBench scenarios for GPT-5.5 low and Haiku 4.5.",
+      "Per-scenario averages in Table II: GPT-5.5 low 1.67 iterations, 24.59 seconds, 9084 tokens, estimated $0.0405; Haiku 4.5 2.51 iterations, 8.93 seconds, 12397 tokens, estimated $0.0185. Author distinguishes model cost from local solver and human review costs.",
+      "Fixed 100-case ablation, GPT-5.5 low: schema-only 85/100; schema plus atoms one-shot 84/100; native verifier loop 94/100; full signal stack 100/100. Reviewed schema is supplied to every condition, so this is not a raw end-to-end comparison.",
+      "Formal property pass in 221-case comparison: AutoCedar 221/221, GPT-5.5 176/221, Haiku4.5 3/221. These are against approved formal targets, not transaction classification accuracy.",
+      "External corpora: three scenarios, semantic request tests 76/76, 68/68, 38/38. Small author-constructed evaluation.",
+      "Human artifact study: 14 participants, 98 probe responses, AutoCedar selected in 82/98 (83.7%). This does not evaluate a deployed live customer-review workflow."
+    ],
+    "limitations": [
+      "Formal verification certifies the approved formal target, not natural-language intent itself or trustworthy merchant facts.",
+      "CedarBench targets and external-corpus targets were built for this evaluation, not independently audited production policies.",
+      "Not evaluated on the Viseca data. No basis for claiming 100% wallet correctness.",
+      "Reported generation times are unsuitable as a repeated 8-second authorization operation; policy authoring can occur before the runtime request.",
+      "Adopting the reviewed-target/test-counterexample idea does not require deploying a new Cedar/SMT stack during a one-day hackathon."
+    ],
+    "hackathon_hypothesis": "A policy-drafting UI that exposes and confirms ambiguous interpretations, preserves source-to-rule traceability, and runs boundary examples before activation may improve customer control and reproducibility. Compare against direct model-generated rules; no guaranteed UX gain from this paper alone."
+  },
+  "related_work": {
+    "title": "Formal Policy Enforcement for Real-World Agentic Systems",
+    "url": "https://arxiv.org/abs/2602.16708",
+    "date": "v1 February 18 2026; v3 May 8 2026",
+    "read_scope": "Abstract and revision history only, do not cite quantitative results",
+    "method": "FORGE uses Datalog over observable predicates plus an assume/guarantee environment contract and a reference monitor. Enforcement correctness is conditional on that observation contract."
+  },
+  "additional_local_arithmetic": {
+    "always_approve_history_baseline": "17696/19037 = 92.9558% accuracy for predicting the additional pack's historical agent outcomes while recovering none of 1341 declines. This is not mandate-classification performance.",
+    "zero_failure_bound": "For independent representative Bernoulli trials with zero failures, one-sided exact 95% upper error bound is 1 - 0.05^(1/n): 45 => 6.4404%; 299 trials required for below1%. The curated/correlated 45 fixtures do not meet that sampling assumption."
+  },
+  "research_service_limitation": "Tavily search reached its configured plan usage limit (HTTP432) during the research. Further parent discovery used TinyFish. Tavily extraction was usable for the MAS PDF before that cap. This does not create a need to buy credits for the report."
+}

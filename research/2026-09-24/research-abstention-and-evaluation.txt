@@ -1,0 +1,235 @@
+I read the challenge files, profiled the history data and read about 45 primary sources through Tavily and TinyFish. I took the coordinator's note on board: the event rubric is qualitative with no weights, and I did not recompute the zero-failure binomial bound.
+
+# Dossier: approve / decline / step_up with no ternary labels (selective prediction, deferral, calibration, human escalation)
+
+## 0. Access limits
+- Tavily hit its quota partway through (HTTP 432). All later searches and fetches went through TinyFish.
+- The Bondi et al. AAAI 2022 PDF returned HTTP 503, so I read only its abstract.
+- I did not fetch Chow 1970. The Bayesian three-way rule is taken from Yao 2010, which I read in full text.
+- Unless stated otherwise, each number below comes from the source's own text, and the paper's own comparison is the only valid one. No two sources share a benchmark with this task. Comparable metrics have to come from the bake-off in section 7.
+
+## 1. What the local data supports (my own computation)
+Files: /Users/david/Projects/Bucheggang/viseca-2026/additional-data-history/authorization_history.csv (144,674 rows, 500 customers) and /Users/david/Projects/Bucheggang/viseca-2026/data/authorization_history.csv (4,701 rows).
+
+- **Deterministic declines.** In the 500-customer history (140,096 purchases, 5.82% declined), the only near-deterministic outcomes are hard issuer conditions:
+  - blocked or expired card: 265 of 265 declined;
+  - amount above the per-transaction limit: 181 of 182 declined.
+- **Heterogeneity.** The purchase decline rate varies by customer (median 3.9%, 95th percentile 18.6%, max 44.4%) and by month (4.05% in 2026-01 to 8.41% in 2026-04). Agent purchases are declined at 7.04%, human purchases at 5.63%.
+- **Learnability.** The organizer README reports a customer-held-out logistic regression at AUC 0.81 / AP 0.56 overall, and AUC 0.65 / AP 0.08 where no hard rule fires. This is an organizer self-report and I did not reproduce it.
+- **Consequence.** Historical `status` measures issuer behaviour. The customer's wallet policy is a different target. No historical row is labelled against a wallet policy, so a classifier trained on `status` learns issuer limits and latent decline causes. Those are neither the approve/decline boundary of a customer mandate nor the step_up boundary.
+- **Scenario customers.** CU0001, CU0006, CU0012 and CU0019 have 238, 219, 265 and 214 base-history rows. That is enough for familiarity features (known merchant, known device, typical amount). It is too little to train or calibrate anything per customer.
+
+## 2. Ranked candidate methods for producing the ternary decision
+
+| Rank | Method | Label requirement | Form of guarantee | Fit here | Main counterevidence |
+|---|---|---|---|---|---|
+| 1 | Policy compiled to per-clause verdicts {pass, fail, unknown}, then a cost-matrix three-way rule (Yao 2010, Chow-style) | None for hard clauses; costs elicited from the customer policy | Exact for deterministic clauses given correct facts; no statistical claim | High | Correctness rests on fact extraction and state tracking, which a thresholding theory does not check. A wrong cost matrix gives wrong thresholds. |
+| 2 | Rank 1 plus learned signals (novelty or anomaly score, item-attribute extractor), each gated by a risk-controlling threshold (CRC, LTT, SGR) that can only escalate | A hand-labelled calibration set per signal (a few hundred) | Marginal, in expectation (CRC) or with probability 1-δ (LTT, SGR), under exchangeability | Medium | Needs labels you do not have. The guarantee is marginal, weakens under shift, and adaptive attackers break the exchangeability assumption. |
+| 3 | Online controller for the step_up rate (ACI, Conformal Decision Theory) | Feedback on outcomes | Long-run average risk bound for any sequence, given an "eventually safe" assumption | Low for 11-event runs; useful as a production story | The bound is time-averaged with an O(1/t) slack, so it is meaningless for short runs. |
+| 4 | Conformal prediction set over a binary "policy-compliant" label, mapped as {compliant} to approve, {violating} to decline, {both} to step_up | Binary labels on a calibration set | Marginal coverage 1-α | Medium, for fuzzy clauses only (for example "ordinary grocery item") | Marginal coverage only. Exact conditional coverage is impossible distribution-free. Sets under-cover when labels are ambiguous. |
+| 5 | Learning to defer (L2D), with the customer as the expert | Expert decisions on training data | Consistency of the surrogate loss | Very low: there are no customer decisions | The linear case is NP-hard, and methods need expert predictions per instance. |
+| 6 | Direct 3-class classifier on historical status | Only weak binary labels exist | None | Negative control | Status is an issuer outcome, with AUC 0.65 outside hard rules. |
+| 7 | LLM verbalized confidence as the step_up trigger | None | None | Low as a trigger; fine as an explanation | Verbalized confidence is overconfident. |
+
+### Evidence behind each row
+- **Yao 2010** ("Three-way decisions with probabilistic rough sets", Information Sciences 180(3):341-353; independent academic). Given a 3x2 loss matrix, it derives accept, abstain and reject thresholds:
+  - α = (λPN-λBN)/((λPN-λBN)+(λBP-λPP))
+  - β = (λBN-λNN)/((λBN-λNN)+(λNP-λBP))
+  - Only loss differences matter.
+  - For this task, "ask me when uncertain" fixes a low cost for abstaining relative to a wrong approval. The decline region needs posterior confidence that a clause is violated. Evidence against pure rank 1: none found. Its limitation is that it presumes a calibrated Pr(violation), which you rarely have for fuzzy clauses. That gap is where rank 2 or rank 4 comes in.
+- **Conformal Risk Control** (Angelopoulos et al., arXiv 2208.02814 v4, 2025-06-13; theory, independent academic).
+  - Theorem 1: E[L_{n+1}(λ̂)] ≤ α for monotone losses bounded by B.
+  - Theorem 2: E ≥ α - 2B/(n+1) for i.i.d. data.
+  - Proposition 3: under arbitrary shift, the upper bound grows to α + B·ΣTV(Z_i, Z_{n+1}).
+  - The procedure runs as a lookup threshold, so its runtime cost is negligible. No source measured latency.
+- **Learn then Test** (arXiv 2110.01052 v5, 2022-09-29) recasts risk control as multiple testing, which gives high-probability guarantees for non-monotone risks.
+- **Selection with guaranteed risk** (Geifman and El-Yaniv, arXiv 1705.08500 v2, 2017-06-01) reports a guaranteed 2% top-5 ImageNet error with probability 99.9% at almost 60% coverage. This is the same model compared with itself across coverage levels, on ImageNet.
+- **Newest in this line:**
+  - Selective Conformal Risk Control (arXiv 2512.12844 v2, 2026-04-27). SCRC-T is exact but transductive; SCRC-I gives a PAC guarantee via DKW. The authors report "nearly identical" results on two datasets.
+  - Joint finite-sample certificate (arXiv 2606.08517 v1, 2026-06-07; single version, not peer reviewed). Reports +22 percentage points of certified acceptance over Hoeffding-CRC on ImageNet and COCO. The authors state the gain is "regime-scoped" and absent on ADE20K.
+  - Neither changes the practical constraint: calibration labels drawn from the deployment distribution are required.
+- **Online calibration:**
+  - Adaptive conformal inference (arXiv 2106.00170 v3, 2021-10-28) gives long-run coverage for any data process.
+  - Conformal Decision Theory (arXiv 2310.05921 v3, 2024-05-02), Theorem 1: empirical risk ≤ ε + (λ1-λsafe)/η + K, all divided by t, for any realization. This assumes eventual safety.
+  - With t=11 the slack term dominates. Use it only to describe how a production system would keep the escalation rate on budget.
+- **L2D:**
+  - Mozannar and Sontag (ICML 2020, arXiv 2006.01862) give a consistent surrogate.
+  - Verma and Nalisnick (ICML 2022, arXiv 2202.03673) show that surrogate is not calibrated for expert correctness and propose a one-vs-all fix.
+  - Mozannar et al. (AISTATS 2023, arXiv 2301.06197) prove that finding a low-error linear classifier and rejector is NP-hard even in the realizable case.
+  - DeCCaF (arXiv 2403.06906 v3; Feedzai authors, so vendor-affiliated) reports an average 8.4% cost reduction with 9 synthetic fraud analysts.
+  - FiFAR (arXiv 2312.13218; Scientific Data 2025; Feedzai) has 50 synthetic analysts over 30K instances.
+  - The training-free conformal deferral method (arXiv 2509.12573 v3, 2026-03-28) reports up to 91.3% fewer labels per expert on CIFAR10-H and HAM10000.
+  - All of these assume recorded expert decisions, which this dataset lacks.
+- **LLM confidence:** Xiong et al. (ICLR 2024, arXiv 2306.13063) find verbalized LLM confidence overconfident. The white-box versus black-box gap for failure prediction was AUROC 0.605 versus 0.522 in their example.
+- **Selective-evaluation analogue:** Trust or Escalate (arXiv 2407.18370 v1, 2024-07-25; affiliation not verified) guarantees over 80% human agreement at almost 80% coverage on a Chatbot Arena subset, with probability 1-δ, assuming i.i.d. calibration. Under a model-disjoint shift, their appendix reports the guarantee held in "more than 90%" of 1,000 splits. That is below the nominal level.
+
+## 3. Conformal sets mapped to abstention versus direct three-class output
+- **Direct 3-class output** needs ternary labels. None exist, and "step_up" is not a property of the world. It is the region where either the facts are unknown or the posterior sits between Yao's β and α. Training a 3-class model would mean inventing that boundary in the labels and then learning it back.
+- **Conformal sets over a binary compliance label** produce abstention with a stated marginal miscoverage α. Limits:
+  - Barber et al. (arXiv 1903.04684 v2) show exact distribution-free conditional coverage is impossible.
+  - Gibbs, Cherian and Candès (arXiv 2305.12616 v4) recover exact coverage only over finite-dimensional shift classes, such as pre-specified groups.
+  - Stutz et al. (arXiv 2307.09302 v2, 2023-10-24; industry lab authors): with ambiguous expert labels, CP calibrated on majority-vote labels for 72% coverage fell short by about 10% on average in skin-condition classification.
+- **Human-side evidence for sets:** Cresswell et al. (ICML 2024, arXiv 2401.13744 v3; industry lab authors; 600 Prolific participants, N=50 per arm) found conformal sets beat equal-coverage top-3 sets on human accuracy.
+
+  | Task | p | Cohen's d |
+  |---|---|---|
+  | ObjectNet | 0.01 | 0.5 |
+  | GoEmotions | 0.02 | 0.4 |
+  | Few-NERD | 8e-4 | 0.7 |
+
+  Limits: image and text labelling by crowdworkers, one session each, no money at stake.
+- **Mapping to this task (hypothesis):** use sets only for the fuzzy clauses ("ordinary grocery item", "specialist sports retailer", "looks like someone else is driving"). Keep numeric and state clauses deterministic.
+
+## 4. Labels, calibration data, ambiguity and splits
+- **Unit of labelling.** Label clause verdicts, not decisions: (attempt, clause) in {satisfied, violated, cannot tell from facts}. The ternary decision is then a deterministic function of the clause verdicts and the customer's uncertainty_policy. This keeps each label checkable and makes disagreement visible.
+- **Ambiguity.** Keep multiple annotations per item. Plank (EMNLP 2022, arXiv 2211.02570) argues that label variation is signal rather than noise. Stutz 2023 shows the coverage cost of collapsing to majority vote. Annotators should be blind to system output, report Cohen's kappa, and treat items where they split as "step_up acceptable".
+- **Label noise:**
+  - Einbinder et al. (JMLR v25, 2024, arXiv 2209.14295 v3) show CP and risk control stay conservative under dispersive noise, but adversarial noise needs an explicit correction.
+  - Bashari et al. (ICML 2025, arXiv 2502.04807 v2) prove that calibrating on a reference set contaminated with outliers gives conservative type-I control under non-adversarial contamination, at the cost of power.
+  - This matters because "approved" history rows used as the reference for normal behaviour include unlabelled anomaly bursts, per the README.
+- **Calibration data you can build:**
+  - (a) Ordinary-purchase reference drawn from the 500-customer pack. Split by customer, since these customers are disjoint from the 20 scenario customers, and hold out the last months as a time split.
+  - (b) A metamorphic set generated from the 45 fixtures: perturb amounts across thresholds, include or exclude delivery, re-deliver the same live ID, near-duplicate orders with different IDs, null or "unknown" terms, and injection text variants.
+  - (c) Clause labels on (b) from two teammates.
+  - The fixtures are curated and correlated, so none of this makes them i.i.d. As the parent already noted, they support per-invariant pass/fail evidence and no rate inference.
+- **Calibration method.** Kumar et al. (NeurIPS 2019, arXiv 1909.10155 v2) found Platt and temperature scaling less calibrated than reported. Their scaling-binning calibrator reached 35% lower calibration error than histogram binning on CIFAR-10 and ImageNet. Gupta et al. (arXiv 2006.10564 v4) prove distribution-free calibration requires binned scores. Implication: if a probability is shown to the customer, use binned scores with a confidence interval per bin.
+- **Selective classification and groups.** Jones et al. (ICLR 2021, arXiv 2010.14134) show abstention can widen accuracy gaps between groups, and increasing abstention can lower accuracy for some groups. Report step_up and decline rates per customer archetype.
+- **Estimating friction with few labels.** Prediction-powered inference (arXiv 2301.09633 v4) gives valid confidence intervals from a small human-labelled set combined with model labels on a large set.
+
+## 5. Shift, attacks, and claims that cannot be guaranteed
+- **Calibration under shift:**
+  - Ovadia et al. (NeurIPS 2019, arXiv 1906.02530 v2) found post-hoc calibration degrades under dataset shift.
+  - Kamath, Jia and Liang (ACL 2020): a calibrator trained with known out-of-domain data answered 56.1% of questions at 80% accuracy, versus 48.2% for MaxProb. This is on a QA mixture of SQuAD plus out-of-domain data, compared with the same model's max-probability score. The best possible was 74.92%.
+- **Tabular shift:**
+  - Liu et al. (arXiv 2307.05284 v6, 2026-06-03; forthcoming in Management Science) find Y|X shift the most common across 172 natural shift pairs in 8 tabular datasets, with distributionally robust methods no better than plain training.
+  - TableShift (NeurIPS 2023, arXiv 2312.07577) links the size of the shift gap to label shift.
+  - Here, a new wallet policy changes the definition of Y itself, which is the strongest form of Y|X shift.
+- **Adaptive attackers:**
+  - "The Attacker Moves Second" (arXiv 2510.09023 v1, 2025-10-10; industry-lab authors evaluating other groups' defenses) bypassed 12 recent jailbreak and prompt-injection defenses, with attack success above 90% for most. Most had reported near-zero attack success originally.
+  - Adversarially robust CP (OpenReview 9L1BsI4wP1H) covers only norm-bounded perturbations. Merchant text is unbounded.
+  - CaMeL (arXiv 2503.18813 v2, 2025-06-24; Google authors reporting on their own system) solved 77% of AgentDojo tasks with provable security, versus 84% undefended. The proof covers control flow and data flow, not model correctness.
+  - Consequence: no conformal or selective guarantee survives an adaptive attacker who controls merchant text. The honest claim is structural. Merchant text is parsed into typed facts, and those facts can only move a decision toward step_up or decline. The claim holds only if the monotonicity is enforced in code and tested.
+- **Winning is not guaranteed.** The rubric is qualitative, with no weights, a one-minute pitch and three minutes of Q&A, per the parent. Scenarios in the judging round may differ from the public ones. No statistical procedure can guarantee a jury outcome.
+
+## 6. Human escalation: fatigue, trust and interface
+None of these studies measured approval of payments by customers. Treat their direction as a hypothesis and their size as untransferable.
+- **Field telemetry on warnings.** Akhawe and Felt (USENIX Security 2013; one author was at Google, so partly vendor telemetry; about 25M warning impressions) measured clickthrough:
+
+  | Warning | Firefox | Chrome |
+  |---|---|---|
+  | Malware | 7.2% | 23.2% |
+  | Phishing | 9.1% | 18.0% |
+  | SSL | 33.0% (beta channel) | 70.2% |
+
+  More common warning types had higher clickthrough.
+- **Alert volume.** Ancker et al. (BMC Med Inform Decis Mak 17:36, 2017; independent academic; 112 clinicians, 1,266,325 reminders) found reminder acceptance fell 30% for each additional reminder per encounter, and 10% for each 5-percentage-point rise in the share of repeated reminders. Newly deployed reminders showed no decline in acceptance over time.
+- **Explanations:**
+  - Bansal et al. (CHI 2021, arXiv 2006.14779 v3; about 100 participants per condition) found explanations raised acceptance of AI recommendations regardless of correctness.
+  - Buçinca et al. (CSCW 2021, arXiv 2102.09692; N=199) found cognitive forcing reduced overreliance compared with simple explanations. It got the worst subjective ratings and did not significantly improve team performance.
+  - Vasconcelos et al. (CSCW 2023, arXiv 2212.06823; 5 studies, N=731) found explanations reduce overreliance only when they lower the cost of checking the AI.
+- **Deferral messaging.** Bondi et al. (AAAI 2022; abstract only): telling the human that the system deferred, without revealing the AI's prediction, significantly improved human accuracy.
+- **Folklore to avoid.** The widely repeated claim that "users approve 93% of agent permission prompts" has no traceable primary source, per a 2026 post at buildmvpfast.com. Do not cite it.
+
+## 7. Architecture implications (hypotheses) and a falsifiable bake-off
+
+### Hypotheses
+- **H1.** decision = f(clause verdicts, uncertainty_policy):
+  - any confirmed hard-clause fail gives decline;
+  - otherwise, any unknown required fact or escalating signal gives step_up (or decline if uncertainty_policy is decline);
+  - otherwise approve.
+  - Learned components are monotone: they can only move a decision toward step_up or decline. With models switched off, every model-dependent clause becomes unknown, which keeps behaviour predictable.
+- **H2.** A step_up budget and de-duplication of near-identical orders reduce repeated prompts. This follows Ancker's repeat effect.
+- **H3.** The step_up card shows the specific clause and the uncertain fact, and leads with the question rather than an AI "approve" recommendation (Bondi, Bansal).
+- **H4.** Spend state counts only final approvals, keyed by live authorization_id, using simulated purchase time.
+
+### Arms
+| Arm | Description |
+|---|---|
+| A | Rules plus unknown-to-step_up |
+| B | A plus a familiarity/novelty score with a CRC-calibrated escalation threshold (reference set: held-out customers from the 500-customer pack) |
+| C | A plus small-LLM typed extraction for item facts, with a schema, a timeout and monotone use |
+| D | End-to-end LLM judge (baseline to beat) |
+| E | Classifier on historical status (negative control) |
+
+### Test sets
+- (i) The 45 fixtures with blind two-person clause labels.
+- (ii) Metamorphic suite of at least 300 variants.
+- (iii) At least 300 ordinary purchases from held-out customers, replayed under synthetic policies built from each customer's own profile.
+- (iv) Static injection set plus an adaptive red-team session by a teammate with code access.
+
+### Acceptance gates
+- **G1.** 0 approvals of labelled hard violations across (i) and (ii). Report the count. The fixtures support no rate claim, per the parent's note.
+- **G2.** 0 double-counted spends and 0 approvals that exceed the budget under re-delivery, retry and near-duplicate tests.
+- **G3.** 0 policy or decision changes caused by merchant text in the static set. Report adaptive attempts and successes as found; claim no guarantee.
+- **G4.** On (iii), the friction rate (step_up plus decline on ordinary purchases) is below a target the team fixes before testing, reported with an exact binomial interval (or a PPI interval if labels come from a model).
+- **G5.** End-to-end p95 latency measured from queue time under concurrent load stays within 8 s, with model timeout and fallback. The model-off run must be identical to, or strictly more conservative than, the model-on run.
+- **G6.** Keep arm B or C only if it improves on A on paired items under an exact McNemar test.
+
+### McNemar threshold (my computation, paired discordant pairs)
+| Discordant pairs | Wins needed in B's favour for p<0.05 |
+|---|---|
+| 10 | 9 |
+| 20 | 15 |
+| 30 | 21 |
+| 40 | 27 |
+
+If B or C raises the G1 or G3 counts, drop it. Card et al. (EMNLP 2020, arXiv 2010.06595) document how common underpowered comparisons are, for example about 75% power to detect 1 BLEU with 2,000 test sentences.
+
+### What would falsify H1
+Arm D or C beats A on G4 without failing G1 through G3. That would mean a learned judge carries information that the clause rules miss.
+
+## 8. Open gaps
+- No customer approve/decline decisions exist, so it is unknown whether a step_up here resolves as an approval or a rejection. L2D and expert-accuracy modelling are therefore untestable.
+- How revocation affects queued or pending requests is unspecified by the platform. The 120 s timeout outcome is also unspecified; treat it as unknown.
+- There is no calibration data for customer text policies other than the 5 public ones.
+- Latency of sampling-based LLM confidence scores (self-consistency, conformal abstention) is unmeasured in every source I read. Each sample is an extra model call, so measure it before use.
+- Not read in full: the Bondi 2022 PDF (HTTP 503) and Chow 1970 (not fetched). Everything above uses only primary-source text I fetched. Search snippets were used only to locate sources.
+
+## Sources (fetched; publication date or arXiv version; designation)
+- Yao, "Three-way decisions with probabilistic rough sets", Information Sciences 2010: https://www2.cs.uregina.ca/~yyao/PAPERS/is_three_way_probabilistic_model.pdf (academic)
+- Angelopoulos et al., "Conformal Risk Control", v4 2025-06-13: https://arxiv.org/abs/2208.02814 (academic)
+- Angelopoulos et al., "Learn then Test", v5 2022-09-29: https://arxiv.org/abs/2110.01052
+- Geifman and El-Yaniv, "Selective Classification for Deep Neural Networks", v2 2017-06-01: https://arxiv.org/abs/1705.08500
+- Xu, Guo and Wei, "Selective Conformal Risk Control", v2 2026-04-27: https://arxiv.org/abs/2512.12844
+- "A Joint Finite-Sample Certificate for Adaptive Selective Conformal Risk Control", v1 2026-06-07 (not peer reviewed): https://arxiv.org/abs/2606.08517
+- Traub et al., "Overcoming Common Flaws in the Evaluation of Selective Classification Systems", NeurIPS 2024, v2 2024-10-19 (the proposed AUGRC metric changed method rankings on 5 of 6 datasets): https://arxiv.org/abs/2407.01032
+- Gibbs and Candès, "Adaptive Conformal Inference Under Distribution Shift", v3 2021-10-28: https://arxiv.org/abs/2106.00170
+- Lekeufack et al., "Conformal Decision Theory", v3 2024-05-02: https://arxiv.org/abs/2310.05921
+- Tibshirani et al., "Conformal Prediction Under Covariate Shift", v3 2020: https://arxiv.org/abs/1904.06019
+- Barber et al., "Conformal prediction beyond exchangeability", v5 2023: https://arxiv.org/abs/2202.13415
+- Barber et al., "The limits of distribution-free conditional predictive inference", v2 2020: https://arxiv.org/abs/1903.04684
+- Gibbs, Cherian and Candès, "Conformal Prediction With Conditional Guarantees", v4 2024-09-16: https://arxiv.org/abs/2305.12616
+- Stutz et al., "Conformal prediction under ambiguous ground truth", v2 2023-10-24: https://arxiv.org/abs/2307.09302 (industry lab)
+- Einbinder et al., "Label Noise Robustness of Conformal Prediction", v3 2024-11-26: https://arxiv.org/abs/2209.14295
+- Bashari et al., "Robust Conformal Outlier Detection under Contaminated Reference Data", v2 2025-06-15: https://arxiv.org/abs/2502.04807
+- Cresswell et al., "Conformal Prediction Sets Improve Human Decision Making", ICML 2024, v3: https://arxiv.org/abs/2401.13744 (industry lab)
+- Mozannar and Sontag, "Consistent Estimators for Learning to Defer to an Expert", ICML 2020: https://arxiv.org/abs/2006.01862
+- Verma and Nalisnick, "Calibrated Learning to Defer with One-vs-All Classifiers", ICML 2022: https://arxiv.org/abs/2202.03673
+- Mozannar et al., "Who Should Predict? Exact Algorithms For Learning to Defer to Humans", AISTATS 2023: https://arxiv.org/abs/2301.06197
+- Madras et al., "Predict Responsibly", NeurIPS 2018: https://arxiv.org/abs/1711.06664
+- Hemmer et al., "Learning to Defer with Limited Expert Predictions", AAAI 2023: https://arxiv.org/abs/2304.07306
+- Alves et al., "Cost-Sensitive Learning to Defer to Multiple Experts with Workload Constraints" (DeCCaF), v3 2024: https://arxiv.org/abs/2403.06906 (Feedzai)
+- Alves et al., "FiFAR: A Fraud Detection Dataset for Learning to Defer", 2023: https://arxiv.org/abs/2312.13218 (Feedzai)
+- Bary et al., "No Need for Learning to Defer? A Training Free Deferral Framework to Multiple Experts through Conformal Prediction", v3 2026-03-28: https://arxiv.org/abs/2509.12573
+- Jung et al., "Trust or Escalate: LLM Judges with Provable Guarantees for Human Agreement", v1 2024-07-25: https://arxiv.org/abs/2407.18370
+- Ren et al., "Robots That Ask For Help" (KnowNo), CoRL 2023: https://arxiv.org/abs/2307.01928
+- Xiong et al., "Can LLMs Express Their Uncertainty?", ICLR 2024: https://arxiv.org/abs/2306.13063
+- Kamath, Jia and Liang, "Selective Question Answering under Domain Shift", ACL 2020: https://aclanthology.org/2020.acl-main.503.pdf
+- Ovadia et al., "Can You Trust Your Model's Uncertainty?", NeurIPS 2019: https://arxiv.org/abs/1906.02530
+- Kumar et al., "Verified Uncertainty Calibration", NeurIPS 2019: https://arxiv.org/abs/1909.10155
+- Gupta et al., "Distribution-free binary classification", v4 2022: https://arxiv.org/abs/2006.10564
+- Jones et al., "Selective Classification Can Magnify Disparities Across Groups", ICLR 2021: https://arxiv.org/abs/2010.14134
+- Liu et al., "Rethinking Distribution Shifts", v6 2026-06-03: https://arxiv.org/abs/2307.05284
+- Gardner et al., "Benchmarking Distribution Shift in Tabular Data with TableShift", NeurIPS 2023: https://arxiv.org/abs/2312.07577
+- Nasr et al., "The Attacker Moves Second", v1 2025-10-10: https://arxiv.org/abs/2510.09023
+- Debenedetti et al., "Defeating Prompt Injections by Design" (CaMeL), v2 2025-06-24: https://arxiv.org/abs/2503.18813 (Google, self-report)
+- Akhawe and Felt, "Alice in Warningland", USENIX Security 2013: https://devd.me/papers/alice-in-warningland.pdf (partly vendor telemetry)
+- Ancker et al., "Effects of workload, work complexity, and repeated alerts on alert fatigue in a clinical decision support system", BMC Med Inform Decis Mak 2017: https://www.ebi.ac.uk/europepmc/webservices/rest/PMC5387195/fullTextXML
+- Bansal et al., "Does the Whole Exceed its Parts?", CHI 2021: https://arxiv.org/abs/2006.14779
+- Buçinca et al., "To Trust or to Think", CSCW 2021: https://arxiv.org/abs/2102.09692
+- Vasconcelos et al., "Explanations Can Reduce Overreliance on AI Systems During Decision-Making", CSCW 2023: https://arxiv.org/abs/2212.06823
+- Bondi et al., "Role of Human-AI Interaction in Selective Prediction", AAAI 2022 (abstract only): https://ojs.aaai.org/index.php/AAAI/article/view/20465
+- Plank, "The 'Problem' of Human Label Variation", EMNLP 2022: https://arxiv.org/abs/2211.02570
+- Angelopoulos et al., "Prediction-Powered Inference", v4 2023: https://arxiv.org/abs/2301.09633
+- Card et al., "With Little Power Comes Great Responsibility", EMNLP 2020: https://arxiv.org/abs/2010.06595
+- Hendrickx et al., "Machine Learning with a Reject Option: A survey", v3 2024: https://arxiv.org/abs/2107.11277

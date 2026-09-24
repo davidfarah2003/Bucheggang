@@ -1,0 +1,152 @@
+# Adversarial review of research-abstention-and-evaluation.txt (cutoff 2026-09-24)
+
+## Scope of checks
+- **Local numbers.** I recomputed section 1 from `/Users/david/Projects/Bucheggang/viseca-2026/additional-data-history/authorization_history.csv` and `/Users/david/Projects/Bucheggang/viseca-2026/data/authorization_history.csv`, and every figure reproduces:
+  - 140,096 purchases, 5.82% declined;
+  - blocked or expired card 265/265 declined; over the per-transaction limit 181/182;
+  - customer decline rate median 3.9%, p95 18.6%, max 44.4%; months range 4.05% to 8.41%;
+  - agent 7.04% vs human 5.63%;
+  - base-history rows 238/219/265/214.
+  - New: an international-disabled card at a non-CH merchant was declined in 2,880 of 2,974 cases.
+  - All of these are issuer outcomes in synthetic data. The agent/human gap is unadjusted, so it says nothing about cause.
+- **Full text read:** CRC v4, SCRC v2, Trust or Escalate v1, Cresswell et al. (PDF), Ancker 2017, Yao 2010.
+- **Abstract only:** 2606.08517, SCOPE, CSA, READY, PASC, Stutz, Traub, Geifman, Bondi.
+- **Not re-verified** (treat as dossier-reported): Akhawe/Felt, Bansal, Buçinca, Vasconcelos, Kamath, Kumar, Card, Liu, Nasr, CaMeL.
+
+## Corrections
+
+**C1. Direct three-class output.** Training a supervised three-class model needs ternary labels, and none exist. A pretrained model (arm D, an LLM judge) can emit approve/decline/step_up at inference without task labels. Neither can be evaluated or calibrated without adjudicated labels for the target, and history supplies none.
+
+**C2. Conformal-set mapping (rank 4).**
+- Marginal coverage P(Y ∈ C(X)) ≥ 1-α bounds the joint event P(approve and violating) ≤ α, because that event is a miscoverage.
+- Given approval, it only yields P(violating | approve) ≤ α / P(approve). With α = 0.05 and a 25% approval share, that bound is 0.20.
+- Empty sets must map to step_up.
+- Conditional risk needs a selective method (SGR, LTT, SCRC-T, Trust or Escalate). Each of these needs labelled calibration data exchangeable with the target.
+
+**C3. CRC** (arXiv 2208.02814 v4, 2025-06-13).
+- The numbering is Theorem 2.1, Theorem 2.2 and Proposition 4.2.
+- Theorem 2.1 requires exchangeability, non-increasing right-continuous losses bounded by B, and L_i(λmax) ≤ α.
+- For a false-approval loss, all-step_up satisfies the risk constraint with loss 0. The guarantee is therefore always attainable by asking about everything, and it says nothing about friction.
+- Theorem 2.2's lower bound needs i.i.d. data and no jumps.
+- Proposition 4.2 sums TV(Z_i, Z_{n+1}) over all n calibration points. Under a fixed shift it grows with n, so it is vacuous here.
+
+**C4. Yao 2010.** The threshold formulas (eq. 8) are correctly quoted. They require:
+- the loss ordering (c0): λPP ≤ λBP < λNP and λNN ≤ λBN < λPN;
+- condition (c1) for α > β;
+- a calibrated Pr(compliant) on the target.
+
+"Ask me when uncertain" gives only an ordering of costs, with no magnitudes. The thresholds are a design choice and must be disclosed as one.
+
+**C5. Trust or Escalate** (arXiv 2407.18370 v1, 2024-07-25; University of Washington and AI2, now verified).
+- The guarantee is P(agree | judge evaluates) ≥ 1-α with probability ≥ 1-δ. Experiments use δ = 0.1 and |Dcal| = 500.
+- Under model-disjoint shift on ChatArena, over 1,000 splits, the guarantee success rate was 90.7-92.5% (100% at the 70% target). Coverage fell to 31.8% at the 90% target.
+- That meets the nominal 90%. The dossier's "below the nominal level" is wrong.
+- This is one shift type on one dataset.
+
+**C6. Cresswell et al.** (ICML 2024; Layer 6 AI and TD Securities, industry).
+- N = 50 per arm: 450 participants in the main study plus 150 in ablations, recruited on Prolific.
+- Pre-registered, but the analysis moved from ANOVA to Welch t-tests.
+- Participants were paid a bonus per correct answer. The dossier's "no money at stake" should read "no own money at risk".
+- The accuracy p and d values for conformal vs top-k are verified. Most response-time comparisons were non-significant.
+
+**C7. Arm B (novelty score).**
+- A novelty threshold calibrated on held-out customers controls only the step_up rate on reference purchases that are assumed normal. It gives no bound on false approvals and no detection rate, because nothing in history labels "should have escalated".
+- Historical approvals are issuer outcomes and the anomaly bursts are unlabelled. Neither is a fraud label or a wallet-policy label.
+- Exchangeability between the 500 held-out customers and the scenario sessions is not established.
+- Calibrating any score, extractor confidence included, estimates correctness only for the adjudicated target it was checked against. A score calibrated on `status` estimates issuer approval, not policy compliance.
+
+**C8. H1 vs arm C (monotonicity).** An extractor that turns `item_details` into size or return-window facts can move a clause from unknown to satisfied, which enables approval. The claim that learned components only move decisions toward step_up or decline is therefore false for arm C.
+- The defensible claim is narrower: merchant text supplies typed facts and never changes the policy, the thresholds or the decision function.
+- Merchant-asserted facts can be false. No parser, regex or model detects a false claim that reads normally.
+- Every approval that depended on a merchant-text fact should be flagged in the evidence.
+
+**C9. G3 blocks legitimate cases.** A size of 42 in `item_details` should change the decision. Replace G3 with a paired test: inserting or removing instruction-like text while holding the typed facts fixed must leave the decision unchanged.
+
+**C10. G5 (model-off and latency).**
+- "Model-off identical or more conservative" is only a consistency check. All-step_up passes it, so it says nothing about correctness.
+- It also breaks under `uncertainty_policy = approve`, because model-dependent unknowns would then be approved.
+- The deadline is per request (`data.deadline_at`, counted from queueing). Report deadline misses with a target of zero, not p95. Measure the margin in the live run; public endpoint probes don't show venue latency.
+
+**C11. H2 (step_up budget).** A budget must never turn an escalation into an approval. Deduplicate prompts for near-identical pending requests instead.
+
+**C12. Statistics.**
+- The 45 curated fixtures, and 300 or more rewrites of them, are correlated. They support per-invariant pass/fail counts only. The 299-trial zero-failure bound, 1-0.05^(1/n), does not apply.
+- G4's binomial interval ignores clustering within customers. Use customer-level resampling or per-customer reporting.
+- Compare arms on paired items. Overlapping marginal intervals do not show that there is no paired difference.
+- The dossier's McNemar thresholds are correct two-sided exact values: 10:9, 20:15, 30:21, 40:27. With five or fewer discordant pairs, no two-sided p < 0.05 is possible.
+- If a classifier scores better, that shows the rules miss information. It does not refute a rule invariant.
+
+**C13. Test set (iii) is circular** if "ordinary" means historically approved, or if the same code writes the synthetic policy and its labels. Define "ordinary" as compliant with the synthetic policy, labelled by a second person or an independent script.
+
+## Newest selective conformal work
+All results below are author-reported and none is independently replicated.
+
+| Paper | Version and date | Result and scope | Needs |
+|---|---|---|---|
+| SCRC, arXiv 2512.12844 (NJIT) | v2, 2026-04-27 | SCRC-T gives exact E[loss \| selected] ≤ α under exchangeability; SCRC-I gives a PAC guarantee via DKW. Tested on CIFAR-10 and diabetic retinopathy. The grid-search refinement is "not covered by Theorem 2". | At least ceil(1/α)-1 selected calibration points |
+| Joint certificate, arXiv 2606.08517 | v1, 2026-06-07 | +22 pp certified acceptance over Hoeffding-CRC on ImageNet and COCO; the gain is absent on ADE20K | Labelled calibration data |
+| SCOPE, arXiv 2602.13110 (ICML 2026 per the arXiv comment) | v4, 2026-08-18 | Error rate among non-abstained LLM pairwise judgments ≤ α; empirical FDR 0.097-0.099 at α = 0.10; accepts up to 2.4x more than baselines. The closest analogue to an abstaining LLM judge. | Human-labelled calibration pairs |
+| CSA, arXiv 2605.20270 | v1, 2026-05-18 | Anytime selective risk ≤ α + O(N_T^-1/2) | Streamed outcome feedback |
+| READY, arXiv 2609.02095 | v1, 2026-09-02 | Clinical audit, 16 systems, 750 cases. Systems at 72.8% vs 72.5% autonomous accuracy needed 39.2% vs 29.6% human review to reach a 76% reliability target. Supports reporting escalation burden next to safety. | Held-out labelled cases |
+| PASC, arXiv 2605.18812 (single author) | v1, 2026-05-12 | Joint coverage across pipeline stages via the maximum nonconformity score | Labelled calibration data |
+
+None of these supplies target-distribution labels, and all of them need them.
+
+## Human factors (verified primary sources)
+- **Ancker et al.** 2017, BMC Med Inform Decis Mak 17:36 (independent academic). Retrospective cohort: 112 clinicians, 1,266,325 reminders, 326,203 drug alerts.
+  - Reminder acceptance IRR was 0.70 per extra reminder per encounter, and 0.90 per 5-point rise in the share of repeated reminders.
+  - When a repeated reminder was overridden the first time, 87.9% of later instances were also overridden.
+  - The design is observational at clinician level. The desensitization analysis rests on only 6 alerts and 46 clinicians.
+- **Bondi et al.**, AAAI 36(5), 2022 (Harvard, DeepMind, Google Brain; abstract only). On conservation data, telling the human the system had deferred, without showing the AI's prediction, significantly improved human accuracy.
+
+## What transfers
+- **Transfers:** theorem conditions and failure modes (C2, C3, C5); local history figures for this synthetic pack; the direction of the Ancker and Bondi effects.
+- **Does not transfer:** every benchmark magnitude above (ImageNet, CIFAR, ChatArena, clinical alerts, crowdworker labelling), and the organizer's AUC 0.81 / 0.65, which is a self-report on `status`.
+
+## Practical protocol
+This is about 8 person-hours, can run in parallel across 2-3 people, and fits before the Sep 25 12:00 submission. The live steps need the event-day API key.
+
+1. **Freeze interpretations (30 min).** For each clause, write the operational test, the fact source (platform field, history, run state or merchant text), how boundaries are handled, and the rule for unknowns.
+2. **Blind adjudication (about 1.5 h each, two people).** For each of the 45 attempts:
+   - clause verdicts {satisfied, violated, unknown}, each with its source;
+   - an acceptable-action set A ⊆ {approve, step_up, decline} and a preferred action;
+   - approve belongs to A only if both labellers include it.
+   - Report raw agreement as well as kappa, because kappa is unstable on 45 items.
+3. **Metamorphic relations (2 h).** Labels come from how each variant is constructed:
+   - amount pushed over a cap: not approve;
+   - an in-cap change to a compliant seed: decision unchanged;
+   - an injection span added with facts unchanged: decision unchanged;
+   - the same live ID delivered again: same result, spend counted once;
+   - a near-duplicate order with a new ID: not approve;
+   - null or unknown terms under `ask`: not approve;
+   - boundary equality: as frozen in step 1.
+   - Report violations per relation and the number of distinct seeds.
+4. **Metrics.** Run the candidate in one harness alongside the all-approve, all-step_up, all-decline and rules-only baselines.
+   - **U:** approvals where approve ∉ A. This is the primary metric; target zero and report the count.
+   - **F:** non-approve decisions on items where A = {approve}. All-step_up scores F equal to the number of such items, so it cannot win once F is reported. If there are fewer than about 10 approve-only items, add compliant metamorphic variants and say so.
+   - **Also report:** other mismatches, the preferred-action match rate, deadline misses, and the share of step_up cards that name both the clause and the fact.
+5. **Model-off run.** Report every decision that changes and the rise in F. U must not rise.
+6. **Live run.** All five scenarios, with each submission time compared against `deadline_at`, plus the re-delivery, resolve and revoke paths.
+7. **Red team.** 45 minutes, timeboxed, by a teammate with code access. Report attempts and successes.
+8. **Keep a model component** only if U and the metamorphic safety violations do not increase and F falls. Inspect every discordant item and report the exact McNemar test descriptively.
+
+## Unresolved meanings and gaps
+- What "used regularly" or "bought from before" means: how many purchases, over what window, and whether it is keyed on merchant_id or would also match lookalike sellers.
+- What counts as an "ordinary grocery" item.
+- How to recognise a "specialist sports retailer": category, MCC or text.
+- Inclusive boundaries: exactly at the CHF cap, "14 days or more", and the edges of the seven-day window in simulated time.
+- Whether a clear violation under "ask me when uncertain" should be declined or stepped up.
+- Whether terms asserted by the merchant are enough to approve.
+- Whether pending step_ups should reserve budget.
+- Which signals mean "someone else is driving", and at what thresholds.
+- Which monitor was "chosen": that fact is not in the event.
+- How to tell a legitimate re-quote from a duplicate.
+- What revocation does to queued requests, and what the 120 s timeout resolves to. The platform leaves both unspecified.
+- How `uncertainty_policy = approve` should behave during a model outage.
+- What the judging-round scenarios contain.
+
+## Recommendation hypotheses (untested)
+- **R1.** A clause engine over typed facts, with an explicit unknown state mapped through `uncertainty_policy`. Models act only as fact extractors that can abstain.
+- **R2.** An evidence panel that shows each fact's source and flags merchant-asserted facts that enabled an approval.
+- **R3.** The step_up card leads with the specific clause and the question, and deduplicates near-identical prompts.
+- **R4.** In the pitch, claim counted invariant results and friction against the all-step_up baseline. Make no statistical, security or win guarantee. Conformal selective control is a production path once labelled target-distribution data exists.
