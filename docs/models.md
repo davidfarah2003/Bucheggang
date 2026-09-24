@@ -22,7 +22,7 @@ The full list is in `~/.jcode/config.toml` (`grep '^id = '`).
 
 | Persona | Default | Why | Swap to |
 | --- | --- | --- | --- |
-| `builder` | `claude-opus-5-5` high | strongest on multi-file Python with tests | `gpt-6-sol` for a second builder in the same lane, so the two seats do not share blind spots |
+| `<lane>_builder` | `claude-opus-5-5` high | strongest on multi-file Python with tests | `gpt-6-sol` for a second builder in the same lane, so the two seats do not share blind spots |
 | `reviewer` | `gemini-3.8-flash` high | a different family from the builder; fast enough for one PR per spawn | `grok-4.7` for the security-shaped PRs (engine combine step, runner deadline guard) |
 | `librarian` | `gemini-3.8-flash` medium | long context, cheap, stays up all event | `glm-5.3` if Gemini quota runs out |
 | `labeler` | `grok-4.7` high | independent from the builder family | the second labeler is `gpt-5.6-sol`; the two files are reconciled by a human |
@@ -44,8 +44,11 @@ That is 17. The rest is headroom for a second reviewer on a contested PR or a re
 
 ## Spawning on David's manager for someone else's lane
 
+From David's main session:
+
 ```
-scripts/spawn.sh builder policy "Do task 2 of docs/plans/01-policy-confirmation.md ..." --model gpt-6-sol --variant high
+cotal_spawn(name: "policy_builder", cwd: ".worktrees/policy", model: "gpt-6-sol", variant: "high",
+            prompt: "Do task 2 of docs/plans/01-policy-confirmation.md ...")
 ```
 
-The seat is named `policy_builder`, joins `team.zurichbuchegg.policy`, and reports there. The lane owner (Oskar) reads that channel from their own main session and re-briefs by posting on it with an `@policy_builder` mention. Only the spawner's manager can stop it (`cotal stop --name policy_builder` on David's machine), so the owner asks on the spine when they want it down.
+The seat joins `team.zurichbuchegg.policy` and reports there. The lane owner (Oskar) reads that channel from their own main session and re-briefs by posting on it with an `@policy_builder` mention. `cotal_despawn(name: ...)` only reaches your own seats, so the owner asks on the spine when they want a seat David spawned stopped.

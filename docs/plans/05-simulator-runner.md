@@ -49,7 +49,7 @@ Out:
 
 ## Open questions
 
-- Revocation while a purchase is queued or in step-up: the spec says the platform's behaviour is unspecified. Proposed: after DELETE, the worker declines anything still queued for that mandate with `mandate_revoked`, and resolves pending step-ups with `decline`. Check against the live API on Thursday morning and record here.
+- Revocation while a purchase is queued or in step-up: the spec says the platform's behaviour is unspecified. Proposed: after DELETE, the worker declines anything still queued for that mandate with `mandate_revoked`, and resolves pending step-ups with `decline`. Check against the live API on Friday morning and record here.
 - `POST /v1/team/reset` before each demo run? Proposed: yes, then create a fresh mandate; old IDs are never reused.
 
 ## Log

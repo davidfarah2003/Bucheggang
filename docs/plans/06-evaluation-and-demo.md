@@ -41,9 +41,9 @@ Assets: `docs/screens/` screenshots, the agent-side terminal transcript from pla
 ## Steps
 
 1. Tonight: labels by two people, reconciled.
-2. Thursday 09:00: `scripts/report.py` and the first report from the offline replay.
-3. Thursday 10:30: full live dry run, recorded (`asciinema` or screen recording) as the fallback if the API is slow during the slot.
-4. Thursday 11:00: deck; book the expert-round slot before 12:00.
+2. Friday 09:00: `scripts/report.py` and the first report from the offline replay.
+3. Friday 10:30: full live dry run, recorded (`asciinema` or screen recording) as the fallback if the API is slow during the slot.
+4. Friday 11:00: deck; book the expert-round slot before 12:00.
 5. After the expert round: fold Q&A findings; final submission 17:30.
 
 ## How we check it works
