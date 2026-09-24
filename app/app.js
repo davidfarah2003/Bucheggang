@@ -158,6 +158,7 @@ async function initialize() {
   try {
     const response = await fetch("/session", { credentials: "same-origin" });
     if (response.status === 401) {
+      window.sessionStorage.removeItem(MANDATE_SESSION_KEY);
       renderLogin();
       return;
     }
