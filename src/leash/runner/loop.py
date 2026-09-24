@@ -30,12 +30,16 @@ from leash.contracts import Approval, Decision, Event, MandateState, PolicyDraft
 from leash.extract import extract_event
 
 from . import api
+from .stepups import StepUpBook
 
 POLL_WAIT_S = 25
 GUARD_MARGIN_S = 1.0
 EXTRACT_CAP_S = 1.5
 EXTRACT_RESERVE_S = 2.0
 RUNNER_VERSION = "runner-0.1"
+# The platform redelivers a pending step-up on every poll and holds the next
+# request back until it resolves. The loop waits this long before polling again.
+PENDING_STEP_UP_PAUSE_S = 1.0
 
 Evaluate = Callable[[Event, PolicyDraft, MandateState, list[PurchaseFacts] | None], Decision]
 
@@ -180,8 +184,7 @@ def submit(decision: Decision) -> Any:
     return api.call("POST", f"/v1/authorizations/{decision.authorization_id}/decision", json=body)
 
 
-def record(state: MandateState, event: Event, decision: Decision) -> None:
-    """Record an accepted decision once. Only a final approve counts as spend."""
+def _record_final(state: MandateState, event: Event, decision: Decision) -> None:
     auth = event.authorization
     state.handled[auth.authorization_id] = decision
     if decision.decision == "approve":
@@ -194,10 +197,33 @@ def record(state: MandateState, event: Event, decision: Decision) -> None:
         state.declined.append(auth.authorization_id)
 
 
+def record(state: MandateState, event: Event, decision: Decision) -> None:
+    """Interim in-memory record of an accepted submit. Only a final approve counts as spend.
+
+    Replaced by leash.engine.state.record once contracts #21 merges.
+    """
+    if event.authorization.authorization_id in state.handled:
+        raise RunLoopError(f"{event.authorization.authorization_id} is already recorded")
+    _record_final(state, event, decision)
+
+
+def record_resolution(state: MandateState, event: Event, final: Decision) -> None:
+    """Move a pending step_up once, to the approve or decline /resolve accepted."""
+    auth_id = event.authorization.authorization_id
+    previous = state.handled.get(auth_id)
+    if previous is None or previous.decision != "step_up" or auth_id not in state.pending_step_ups:
+        raise RunLoopError(f"{auth_id} is not a pending step_up in state")
+    if final.decision not in ("approve", "decline"):
+        raise RunLoopError(f"a step_up resolves to approve or decline, got {final.decision}")
+    state.pending_step_ups.remove(auth_id)
+    _record_final(state, event, final)
+
+
 def handle(
-    envelope: Envelope, evaluate: Evaluate, policy: PolicyDraft, state: MandateState, pool: ThreadPoolExecutor
+    envelope: Envelope, evaluate: Evaluate, policy: PolicyDraft, book: StepUpBook, pool: ThreadPoolExecutor
 ) -> Decision | None:
     """Handle one delivered request. Returns the submitted decision, or None for a redelivery."""
+    state = book.state
     received = _now()
     event = Event.model_validate(envelope.data)
     auth_id = event.authorization.authorization_id
@@ -207,9 +233,13 @@ def handle(
         raise RunLoopError(f"event for mandate {event.mandate.mandate_id}, loop holds {state.mandate_id}")
     if event.mandate.instruction != policy.instruction:
         raise RunLoopError(f"event mandate instruction differs from the confirmed draft {policy.draft_id}")
-    if auth_id in state.handled:
-        _log({"authorization_id": auth_id, "run_id": envelope.run_id, "redelivery": True,
-              "handled_as": state.handled[auth_id].decision})
+    with book.lock:
+        seen = state.handled.get(auth_id)
+    if seen is not None:
+        if seen.decision == "step_up":
+            time.sleep(PENDING_STEP_UP_PAUSE_S)
+            return None
+        _log({"authorization_id": auth_id, "run_id": envelope.run_id, "redelivery": True, "handled_as": seen.decision})
         return None
     t0 = time.monotonic()
     facts = extract_with_budget(event, policy, pool)
@@ -220,11 +250,16 @@ def handle(
         decision, guard_fired = _extract_timeout_decision(event, policy, t0), False
         log.error("extract missed its budget for %s: declined engine_timeout", auth_id)
     else:
-        decision, guard_fired = decide_with_guard(evaluate, event, policy, state, facts, pool)
+        with book.lock:
+            snapshot = state.model_copy(deep=True)
+        decision, guard_fired = decide_with_guard(evaluate, event, policy, snapshot, facts, pool)
     evaluate_ms = int((time.monotonic() - t1) * 1000)
     submitted_at = _now()
     accepted = submit(decision)
-    record(state, event, decision)
+    accepted_at = _now()
+    with book.lock:
+        record(state, event, decision)
+        step_up = book.add(event, decision, accepted_at) if decision.decision == "step_up" else None
     if guard_fired:
         log.error("deadline guard fired for %s: submitted step_up engine_timeout", auth_id)
     _log({
@@ -241,6 +276,7 @@ def handle(
         "extract_timed_out": extract_timed_out,
         "guard_fired": guard_fired,
         "accepted": accepted,
+        "step_up_expires_at": step_up.expires_at.isoformat() if step_up else None,
     })
     return decision
 
@@ -257,21 +293,26 @@ def _run_finished(progress: dict) -> bool:
     return status != "running"
 
 
-def run_loop(run_id: str, evaluate: Evaluate, policy: PolicyDraft, state: MandateState) -> MandateState:
-    """Poll and decide until the run reports no remaining work."""
+def run_loop(run_id: str, evaluate: Evaluate, policy: PolicyDraft, book: StepUpBook) -> MandateState:
+    """Poll and decide until the run is finished and no step-up is pending.
+
+    The book's sweeper must be running; a sweeper failure stops the loop with that error.
+    """
     with ThreadPoolExecutor(max_workers=1) as pool:
         while True:
+            book.raise_failure()
             envelope = poll()
             if envelope is None:
                 progress = run_progress(run_id)
                 _log({"run_id": run_id, "poll": 204, "status": progress["status"],
+                      "pending_step_ups": [s.authorization_id for s in book.pending()],
                       **{key: progress.get(key) for key in RUN_COUNTERS}})
-                if _run_finished(progress):
-                    return state
+                if _run_finished(progress) and not book.has_pending():
+                    return book.state
                 continue
             if envelope.run_id != run_id:
                 raise RunLoopError(f"received a request for run {envelope.run_id}, loop drives {run_id}")
-            handle(envelope, evaluate, policy, state, pool)
+            handle(envelope, evaluate, policy, book, pool)
 
 
 def configure_logging() -> None:
