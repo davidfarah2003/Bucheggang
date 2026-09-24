@@ -301,17 +301,19 @@ class DraftStore:
         *,
         version: int,
         hash_value: str,
+        simulator_draft_id: str,
         mandate_id: str,
         confirmed_by: str,
     ) -> dict[str, Any]:
         draft = self.assert_current(draft_id, version, hash_value)
-        if not mandate_id or not confirmed_by:
-            raise InvalidDraft("mandate_id and confirmer are required")
+        if not simulator_draft_id or not mandate_id or not confirmed_by:
+            raise InvalidDraft("simulator draft ID, mandate ID and confirmer are required")
         folder = self._folder(draft_id)
         record = {
             "draft_id": draft_id,
             "version": version,
             "hash": hash_value,
+            "simulator_draft_id": simulator_draft_id,
             "mandate_id": mandate_id,
             "confirmed_by": confirmed_by,
             "confirmed_at": _now(),
@@ -322,6 +324,12 @@ class DraftStore:
             raise DraftConflict("draft was already confirmed") from exc
         self._audit(folder, "draft_confirmed", **record)
         return {"draft": draft, "confirmation": record}
+
+    def get_confirmation(self, draft_id: str) -> dict[str, Any]:
+        path = self._folder(draft_id) / "confirmation.json"
+        if not path.exists():
+            raise KeyError(draft_id)
+        return json.loads(path.read_text())
 
     def reject(self, draft_id: str, *, version: int, hash_value: str, rejected_by: str, reason: str) -> None:
         self.assert_current(draft_id, version, hash_value)
