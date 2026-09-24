@@ -21,7 +21,7 @@ Running example, from `SCEN0002`:
 
 In:
 
-- `propose_task_policy`: instruction in, canonical `PolicyDraft` out (rules with the source phrase for each, example purchases, open questions).
+- `propose_task_policy`: instruction and an explicit compiler mode in, canonical `PolicyDraft` out (rules with the source phrase for each, example purchases, open questions). A failed model mode raises; it never switches to deterministic mode.
 - Draft store with version and hash. The app reads a draft from the backend by `draft_id`; it never gets one from the agent.
 - The confirm route: hash and version check, answers to open questions folded into rules or `uncertainty_policy`, then the runner's mandate create and confirm calls, then `Mandate` stored and returned.
 - The MCP tools the shopping agent sees: `propose_task_policy`, `get_policy_status`, `request_policy_confirmation` (creates the pending item the app shows), `buy` (delegates to the runner), `get_purchase_status`. No confirm, resolve, tighten or revoke tool.

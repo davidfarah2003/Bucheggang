@@ -1,7 +1,7 @@
 """Compile a trusted cardholder instruction into a reviewable draft proposal.
 
-The optional model returns data into this module. It cannot confirm a policy.
-The deterministic pass is deliberately narrow and surfaces gaps as questions.
+The caller chooses a deterministic or model-supplied proposal before execution.
+The model returns data into this module. It cannot confirm a policy.
 """
 
 from __future__ import annotations
@@ -228,12 +228,17 @@ def propose_task_policy(
     instruction: str,
     store: DraftStore,
     *,
+    mode: str,
     model_json: str | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Validate a model's proposal, or use the deterministic fallback."""
-    if model_json is None:
+    """Use the selected method; missing or invalid model output raises."""
+    if mode == "deterministic":
+        if model_json is not None:
+            raise InvalidDraft("model output is not accepted in deterministic mode")
         proposal = compile_instruction(instruction)
-    else:
+    elif mode == "model":
+        if model_json is None:
+            raise InvalidDraft("model output is required in model mode")
         try:
             proposal = json.loads(model_json) if isinstance(model_json, str) else model_json
         except json.JSONDecodeError as exc:
@@ -242,4 +247,6 @@ def propose_task_policy(
             "rules", "examples", "open_questions", "uncertainty_policy"
         }:
             raise InvalidDraft("model output must contain exactly the four agreed fields")
+    else:
+        raise InvalidDraft("mode must be deterministic or model")
     return store.create(instruction, **proposal)
