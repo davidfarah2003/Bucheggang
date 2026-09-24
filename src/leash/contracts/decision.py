@@ -71,6 +71,7 @@ class Decision(Contract):
 
 class Approval(Contract):
     authorization_id: NonEmpty
+    merchant_id: NonEmpty
     amount_chf: float
     timestamp: Timestamp  # simulated time of the purchase
 

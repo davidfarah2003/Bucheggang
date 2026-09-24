@@ -112,13 +112,13 @@ sources                { field_name: structured | merchant_text | model }
 
 ```
 mandate_id            str
-approvals[]           { authorization_id, amount_chf, timestamp (simulated) }
+approvals[]           { authorization_id, merchant_id, amount_chf, timestamp (simulated) }
 handled               { authorization_id: accepted Decision }
 pending_step_ups      [authorization_id]
 declined              [authorization_id]
 ```
 
-`record(mandate_id, authorization_id, accepted)` is idempotent. Only a Decision the API accepted with `approve` moves `approvals`. A `step_up` stays pending until `/resolve` is accepted.
+`record(mandate_id, event, accepted)` is idempotent: the same authorization with the same accepted decision changes nothing. Only a Decision the API accepted with `approve` moves `approvals`, taking `billing_amount_chf`, `merchant_id` and the simulated `timestamp` from the event. A `step_up` stays pending until `/resolve` is accepted; the runner then records the final `approve` or `decline` with the same `authorization_id`, which is the one change allowed after a first record. Any other change to a recorded authorization raises. The runner calls `record` only after the API accepted the submit or `/resolve`. `record` does no simulator I/O; it writes `data/state/<mandate_id>.json`, and the engine is its only writer.
 
 ## Check and Decision
 
@@ -171,7 +171,7 @@ StepUpAnswer
 leash.engine.evaluate(event: Event, policy: PolicyDraft, state: MandateState,
                       facts: list[PurchaseFacts] | None) -> Decision      # pure, no I/O
 leash.engine.state.load(mandate_id) -> MandateState
-leash.engine.state.record(mandate_id, authorization_id, accepted: Decision) -> None   # idempotent
+leash.engine.state.record(mandate_id: str, event: Event, accepted: Decision) -> MandateState   # idempotent, returns the saved state
 ```
 
 `facts=None` means the extract lane did not answer in time; every `facts.*` field is then unknown.
