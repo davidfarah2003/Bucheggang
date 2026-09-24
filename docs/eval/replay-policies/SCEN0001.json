@@ -1,0 +1,47 @@
+{
+  "draft_id": "cc3e1733-0566-43c7-b8c4-6f2898f5f54f",
+  "version": 1,
+  "hash": "e60c894832c7ad0027a6372cdb74bf25553521fcd790b1dcd94fdcede1178164",
+  "instruction": "Order our household groceries for delivery. Keep each order at or below CHF 120 including delivery, and keep the total across any seven days at or below CHF 300. Ask me when uncertain.",
+  "rules": [
+    {
+      "currency": "CHF",
+      "field": "authorization.billing_amount_chf",
+      "operator": "<=",
+      "plain_english": "Each purchase including delivery must cost CHF 120 or less.",
+      "scope": "purchase",
+      "source_text": "at or below CHF 120 including delivery",
+      "value": 120
+    },
+    {
+      "currency": "CHF",
+      "field": "authorization.billing_amount_chf",
+      "operator": "<=",
+      "period_days": 7,
+      "plain_english": "Approved purchases plus this purchase must total CHF 300 or less in the rolling seven-day window.",
+      "scope": "period",
+      "source_text": "the total across any seven days at or below CHF 300",
+      "value": 300
+    },
+    {
+      "field": "authorization.fulfillment_method",
+      "operator": "=",
+      "plain_english": "Use delivery.",
+      "scope": "purchase",
+      "source_text": "groceries for delivery",
+      "value": "delivery"
+    },
+    {
+      "field": "items.category",
+      "operator": "=",
+      "plain_english": "Every cart line must be groceries.",
+      "scope": "purchase",
+      "source_text": "household groceries",
+      "value": "groceries"
+    }
+  ],
+  "examples": [],
+  "open_questions": [],
+  "uncertainty_policy": "ask",
+  "created_at": "2026-09-24T20:00:04.637971Z"
+}
