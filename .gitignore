@@ -221,6 +221,7 @@ __marimo__/
 .worktrees/
 .cotal/*
 !.cotal/agents/
+data/policy/
 data/state/
 data/decisions/
 data/stepups/
