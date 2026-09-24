@@ -53,3 +53,4 @@ Out:
 (one line per finished task: date time, who, what, how it was tried, sha)
 
 2026-09-24 17:35 oskar1: deterministic extraction and 76-line sample corpus, including disguised "Included care" copy; ran `extract_item` over `docs/samples/extract-corpus.jsonl`, 145/145 selected field checks matched, @b24139d.
+2026-09-24 17:39 oskar1: one-call Haiku adapter with JSON schema and deadline budget; ran it with a fake response and observed risk flag true, unknown return term unchanged by default; broken model raised `RuntimeError`, expired deadline raised `TimeoutError`, missing key raised `ValueError`, @b9cbee4. No live model call was possible without a key.
