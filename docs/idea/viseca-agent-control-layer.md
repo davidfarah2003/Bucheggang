@@ -141,7 +141,7 @@ For each proposed purchase, the backend should:
 9. Return `approve`, `decline`, or `step_up` with evidence and a plain-language explanation.
 10. Continue to payment only after a final approval.
 
-No language model runs at purchase time. The shopping agent's model fills the form before it calls `buy`; the backend checks the form, and everything else, with deterministic rules.
+No language model reads merchant text or fills the form on the backend's behalf. The shopping agent's model fills the form before it calls `buy`; the backend checks the form, and every explicit requirement, with deterministic rules. A bounded classifier over the customer's own purchase history (the Jev decision classifier, `docs/plans/07-classifier.md`) may add a risk signal in step 8; it never overrides a deterministic check and never reads merchant text.
 
 Deterministic checks must remain the final authority for explicit requirements such as price limits, permitted categories, rolling budgets, mandate expiry, and maximum purchase count.
 
@@ -156,7 +156,7 @@ Deterministic checks must remain the final authority for explicit requirements s
 - Make purchase handling idempotent using authorization IDs.
 - Return only minimal history summaries to agents, not raw customer histories.
 - Use stable merchant identifiers rather than merchant names alone.
-- No model call in the decision path. Any external call that fails raises and is logged; there are no fallback paths.
+- No model call over untrusted content in the decision path. A model that fails or times out raises and is logged; there are no fallback paths.
 - Never allow an LLM or shopping agent to directly authorize or execute payment.
 
 Prompt-injection detection is an additional signal, not the primary boundary. The main protection is structural: untrusted content can supply facts, but it cannot alter policy, confirm authority, or execute payment.

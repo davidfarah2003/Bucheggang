@@ -91,7 +91,7 @@ Mirror of `viseca-2026/data/schemas/authorization_event.schema.json`, validated 
 
 ## PurchaseFacts
 
-One per cart line. This is the form the shopping agent fills when it calls `buy`; the backend checks it deterministically. In demo mode the simulator does not send the form, so `leash.extract.extract_event` fills it from the event's structured item fields and a deterministic parse of `item_details`. No model runs at purchase time. Every field may be `unknown`.
+One per cart line. This is the form the shopping agent fills when it calls `buy`; the backend checks it deterministically. In demo mode the simulator does not send the form, so `leash.extract.extract_event` fills it from the event's structured item fields and a deterministic parse of `item_details`. No model reads merchant text or fills the form on the backend's behalf. Every field may be `unknown`.
 
 ```
 item_id                str
