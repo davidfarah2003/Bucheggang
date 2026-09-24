@@ -91,7 +91,7 @@ Mirror of `viseca-2026/data/schemas/authorization_event.schema.json`, validated 
 
 ## PurchaseFacts
 
-One per cart line. Every field may be `unknown`.
+One per cart line. This is the form the shopping agent fills when it calls `buy`; the backend checks it deterministically. In demo mode the simulator does not send the form, so `leash.extract.extract_event` fills it from the event's structured item fields and a deterministic parse of `item_details`. No model reads merchant text or fills the form on the backend's behalf. Every field may be `unknown`.
 
 ```
 item_id                str
@@ -105,7 +105,7 @@ is_protection_plan     bool | unknown
 matches_request        bool | unknown
 contains_instructions  bool
 excerpt                str | null          (the injected text, if any)
-sources                { field_name: structured | merchant_text | model }
+sources                { field_name: agent_form | structured | merchant_text }
 ```
 
 ## MandateState
@@ -127,7 +127,7 @@ Check
   name     str, from the check list in plan 02
   result   pass | fail | uncertain
   value    str | number | null
-  source   event | history | merchant_text | model | state
+  source   event | history | agent_form | merchant_text | state
   note     str
 
 Decision

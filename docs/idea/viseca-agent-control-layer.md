@@ -119,7 +119,7 @@ The secure confirmation flow is:
 
 Any material policy change creates a new version and requires confirmation again.
 
-When requesting a purchase, the agent sends the `mandate_id` and purchase facts. It does not resend the policy. The backend retrieves the confirmed policy internally, preventing the agent from silently changing the confirmed rules.
+When requesting a purchase, the agent sends the `mandate_id` and the purchase facts form (`PurchaseFacts` in `docs/contracts.md`). It does not resend the policy. The backend retrieves the confirmed policy internally, preventing the agent from silently changing the confirmed rules.
 
 Policy confirmation and transaction confirmation are different actions:
 
@@ -136,11 +136,12 @@ For each proposed purchase, the backend should:
 4. Apply task-specific deterministic rules.
 5. Check rolling spend, retries, duplicates, and previous decisions.
 6. Treat merchant pages, product descriptions, and agent-generated content as untrusted data.
-7. Extract relevant product facts without allowing that content to modify the policy.
+7. Read the purchase facts form the shopping agent filled (product type, size, return terms, gift card, subscription, protection plan, add-on) and the structured merchant fields, and parse untrusted item text deterministically for the same facts and for embedded instructions. Untrusted content can supply facts; it cannot modify the policy.
 8. Evaluate merchant, device, session, and behavioural risk.
-9. Use a model only for bounded extraction or ambiguous classification.
-10. Return `approve`, `decline`, or `step_up` with evidence and a plain-language explanation.
-11. Continue to payment only after a final approval.
+9. Return `approve`, `decline`, or `step_up` with evidence and a plain-language explanation.
+10. Continue to payment only after a final approval.
+
+No language model reads merchant text or fills the form on the backend's behalf. The shopping agent's model fills the form before it calls `buy`; the backend checks the form, and every explicit requirement, with deterministic rules. A bounded classifier over the customer's own purchase history (the Jev decision classifier, `docs/plans/02-classifier-design.md` on `lane/classifier`, [pinned](https://github.com/davidfarah2003/Bucheggang/blob/d9bd26dc62784fad954c921e6fa5a58e19c69080/docs/plans/02-classifier-design.md) until it merges) may add a risk signal in step 8; it never overrides a deterministic check and never reads merchant text.
 
 Deterministic checks must remain the final authority for explicit requirements such as price limits, permitted categories, rolling budgets, mandate expiry, and maximum purchase count.
 
@@ -155,7 +156,7 @@ Deterministic checks must remain the final authority for explicit requirements s
 - Make purchase handling idempotent using authorization IDs.
 - Return only minimal history summaries to agents, not raw customer histories.
 - Use stable merchant identifiers rather than merchant names alone.
-- Apply hard model timeouts. A timeout or error raises and is logged; there are no fallback paths.
+- No model call over untrusted content in the decision path. A model that fails or times out raises and is logged; there are no fallback paths.
 - Never allow an LLM or shopping agent to directly authorize or execute payment.
 
 Prompt-injection detection is an additional signal, not the primary boundary. The main protection is structural: untrusted content can supply facts, but it cannot alter policy, confirm authority, or execute payment.
@@ -274,7 +275,6 @@ sequenceDiagram
 - Use simulated timestamps for spending windows and real time for response deadlines.
 - Count only final approvals toward rolling spend.
 - Do not count repeated delivery of the same authorization twice.
-- Continue predictably if an optional model is unavailable.
 - Ensure the API-generated purchases pass through the real decision engine used by the product design.
 
 ## Demo presentation
