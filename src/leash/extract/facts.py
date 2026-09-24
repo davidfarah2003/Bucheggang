@@ -121,9 +121,8 @@ def extract_item(
     if requested and product_type is not None:
         target = _product_type(str(requested.get("product_type", "")))
         if target:
-            # Equal names affirm the match. A different name does not prove a
-            # different product, so it stays unknown for the engine to handle.
-            matches_request = True if product_type == target else None
+            # Exact compare of normalized names. Unknown only when a side is missing.
+            matches_request = product_type == target
             requested_size = requested.get("size")
             if matches_request and requested_size is not None:
                 matches_request = None if size is None else size == str(requested_size).upper()
