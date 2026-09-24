@@ -56,3 +56,4 @@ Out:
 ## Log
 
 (one line per finished task: date time, who, what, how it was tried, sha)
+2026-09-24 19:47 engine_builder: task 1 contracts package src/leash/contracts/ (Event strict mirror of the organizer schema, PolicyDraft, Rule, Mandate, PurchaseFacts, MandateState, Check, Decision, StepUp, StepUpAnswer); `uv run python -c "Event.model_validate(json.load(open('viseca-2026/data/scenario_fixtures/example_authorization_request.json')))"` printed `AU_EXAMPLE_0001 20.0 1`; docs/samples/scen0002_draft.json parses as PolicyDraft; an extra key plus a string amount raise 2 validation errors. Unknown facts are `None` in PurchaseFacts. @a6ec5bf
