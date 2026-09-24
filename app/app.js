@@ -19,6 +19,8 @@ let pendingIds = new Set();
 let submittingStepUps = new Set();
 let approvalTimer = null;
 let currentPolicy = null;
+let screenSerial = 0;
+let drawerSerial = 0;
 
 function esc(value) {
   if (value === null || value === undefined) throw new Error("A required display value is missing.");
@@ -127,6 +129,8 @@ function setActiveRoute(route) {
     return;
   }
   currentRoute = route;
+  screenSerial += 1;
+  drawerSerial += 1;
   if (window.location.hash !== `#${route}`) window.history.replaceState(null, "", `#${route}`);
   document.querySelectorAll("[data-route]").forEach((button) => {
     const active = button.dataset.route === route;
@@ -220,9 +224,11 @@ async function loadDraft() {
 }
 
 async function renderReview() {
+  const serial = ++screenSerial;
   try {
     const selectedAnswers = { ...answers };
     const draft = validateDraft(await loadDraft());
+    if (serial !== screenSerial || currentRoute !== "review") return;
     activeDraft = draft;
     answers = {};
     draft.open_questions.forEach((question) => {
@@ -256,7 +262,8 @@ async function renderReview() {
         <aside class="side-column">${summaryCard(draft.rules.length, unanswered)}</aside>
       </div>`);
   } catch (error) {
-    setScreen(`${heading("POLICY REQUEST", "Make sure it feels right.", "Review the policy saved by your shopping agent.")}${dataError("The policy draft could not be loaded.", error)}`);
+    if (serial === screenSerial && currentRoute === "review") setScreen(`${heading("POLICY REQUEST", "Make sure it feels right.", "Review the policy saved by your shopping agent.")}${dataError("The policy draft could not be loaded.", error)}`);
+    else showToast(`A previous policy load failed: ${error.message}`, "error");
   }
 }
 
@@ -314,7 +321,10 @@ async function loadApprovals() {
     container.innerHTML = requests.length ? `<div class="list-stack">${requests.map(stepUpCard).join("")}</div>` : `<section class="card empty-state"><div><div class="empty-mark" aria-hidden="true">✓</div><h3>You’re all caught up</h3><p>When a purchase needs your decision, it will appear here with the reason and its deadline.</p></div></section>`;
     if (errorContainer) errorContainer.innerHTML = removed.length ? expiredNote(removed.length) : "";
   } catch (error) {
-    if (!container.isConnected) return;
+    if (!container.isConnected) {
+      showToast(`A previous approval refresh failed: ${error.message}`, "error");
+      return;
+    }
     document.querySelector("#approval-count").textContent = "—";
     container.replaceChildren();
     if (errorContainer) errorContainer.innerHTML = dataError("Pending approvals could not be refreshed.", error);
@@ -325,8 +335,9 @@ async function loadApprovals() {
 async function renderApprovals() {
   setScreen(`${heading("PURCHASE CHECKS", "A pause is a chance to choose.", "Review a specific purchase and the reason it needs your attention.")}
     <div class="main-column"><div id="approvals-error"></div><div id="approvals-list"><div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Checking for pending approvals…</span></div></div></div>`);
+  const container = document.querySelector("#approvals-list");
   await loadApprovals();
-  if (currentRoute === "approvals") approvalTimer = window.setInterval(() => loadApprovals(), 2000);
+  if (container.isConnected && currentRoute === "approvals") approvalTimer = window.setInterval(() => loadApprovals(), 2000);
 }
 
 function noMandate() {
@@ -384,6 +395,7 @@ function spendMetrics(approvals, rules) {
 }
 
 async function renderPolicy() {
+  const serial = ++screenSerial;
   const id = mandateId();
   if (!id) {
     setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.")}${noMandate()}`);
@@ -392,6 +404,7 @@ async function renderPolicy() {
   setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.")}<div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Loading your mandate…</span></div>`);
   try {
     const { mandate, draft, state } = getPayloadParts(await api(`/mandates/${encodeURIComponent(id)}`));
+    if (serial !== screenSerial || currentRoute !== "policy") return;
     currentPolicy = { mandate, draft, state };
     const approvals = state.approvals;
     const isActive = mandate.status === "active";
@@ -401,7 +414,8 @@ async function renderPolicy() {
         <section class="card card-pad"><div class="section-head"><div><h2 class="section-title">Your rules</h2><div class="section-subtitle">The agent follows every one of these limits while the mandate is active.</div></div></div><div class="rule-view">${ruleViews(draft.rules)}</div><div class="policy-actions"><button class="button button-secondary button-small" type="button" data-action="open-tighten" ${isActive ? "" : "disabled"}>Tighten a rule</button><button class="button button-danger button-small" type="button" data-action="revoke-mandate" ${isActive ? "" : "disabled"}>Revoke mandate</button></div></section>
       </div><aside class="side-column"><section class="card side-summary"><div class="summary-top"><span class="eyebrow"><i class="eyebrow-mark"></i>MANDATE</span><h3>${esc(mandate.status === "active" ? "Active and protected" : pretty(mandate.status))}</h3><p>Confirmed ${esc(new Date(mandate.confirmed_at).toLocaleDateString())} · version ${esc(mandate.version)}</p></div><div class="summary-body"><div class="summary-row"><span>Mandate ID</span><strong>${esc(mandate.mandate_id)}</strong></div><div class="summary-row"><span>Policy version</span><strong>${esc(mandate.version)}</strong></div><div class="summary-row"><span>Uncertainty</span><strong>${esc(pretty(draft.uncertainty_policy))}</strong></div></div></section><section class="learn-card"><span class="learn-icon" aria-hidden="true">↗</span><strong>Keep your policy current</strong><p>You can always add a stricter limit or stop the mandate. The shopping agent cannot loosen these rules.</p></section></aside></div>`);
   } catch (error) {
-    setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.")}${dataError("Your mandate could not be loaded.", error)}`);
+    if (serial === screenSerial && currentRoute === "policy") setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.")}${dataError("Your mandate could not be loaded.", error)}`);
+    else showToast(`A previous mandate load failed: ${error.message}`, "error");
   }
 }
 
@@ -418,6 +432,7 @@ function timeLabel(value) {
 }
 
 async function renderActivity() {
+  const serial = ++screenSerial;
   const id = mandateId();
   if (!id) {
     setScreen(`${heading("YOUR ACTIVITY", "Every decision, clearly explained.", "See what happened and open the evidence behind any decision.")}${noMandate()}`);
@@ -426,6 +441,7 @@ async function renderActivity() {
   setScreen(`${heading("YOUR ACTIVITY", "Every decision, clearly explained.", "See what happened and open the evidence behind any decision.")}<div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Loading recent decisions…</span></div>`);
   try {
     const decisions = await api(`/mandates/${encodeURIComponent(id)}/decisions`);
+    if (serial !== screenSerial || currentRoute !== "activity") return;
     if (!Array.isArray(decisions)) throw new Error("GET /mandates/{mandate_id}/decisions must return a list.");
     if (!decisions.length) {
       setScreen(`${heading("YOUR ACTIVITY", "Every decision, clearly explained.", "See what happened and open the evidence behind any decision.")}<section class="card empty-state"><div><div class="empty-mark" aria-hidden="true">◷</div><h3>No purchases yet</h3><p>When the agent submits a purchase, its decision and evidence will appear here.</p></div></section>`);
@@ -448,14 +464,17 @@ async function renderActivity() {
       return `<button class="list-row" type="button" data-action="open-decision" data-id="${esc(decision.authorization_id)}"><span class="list-row-main"><span class="list-row-title">${esc(decision.authorization_id)} ${outcomePill(decision.decision)}</span><span class="list-row-sub">${esc(decision.customer_message)}</span></span><span class="list-row-end">${esc(timeLabel(decision.decided_at))}<br /><span aria-hidden="true">↗</span></span></button>`;
       }).join("")}</div></section>`);
   } catch (error) {
-    setScreen(`${heading("YOUR ACTIVITY", "Every decision, clearly explained.", "See what happened and open the evidence behind any decision.")}${dataError("Purchase history could not be loaded.", error)}`);
+    if (serial === screenSerial && currentRoute === "activity") setScreen(`${heading("YOUR ACTIVITY", "Every decision, clearly explained.", "See what happened and open the evidence behind any decision.")}${dataError("Purchase history could not be loaded.", error)}`);
+    else showToast(`A previous history load failed: ${error.message}`, "error");
   }
 }
 
 async function openDecision(id) {
+  const serial = ++drawerSerial;
   drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Decision evidence"><div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Loading decision evidence…</span></div></aside></div>`;
   try {
     const payload = await api(`/decisions/${encodeURIComponent(id)}`);
+    if (serial !== drawerSerial) return;
     if (!payload || !payload.decision || !payload.event || !("state_before" in payload) || !("state_after" in payload)) throw new Error("GET /decisions/{authorization_id} must return decision, event, state_before and state_after.");
     const decision = payload.decision;
     const event = payload.event;
@@ -491,7 +510,8 @@ async function openDecision(id) {
     </aside></div>`;
     drawerRoot.querySelector(".drawer").focus();
   } catch (error) {
-    drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Decision evidence"><div class="drawer-header"><div><span class="eyebrow"><i class="eyebrow-mark"></i>DECISION RECORD</span><h2>Evidence unavailable</h2></div><button class="close-button" type="button" aria-label="Close evidence" data-action="close-drawer">×</button></div>${dataError("The decision record could not be loaded.", error)}</aside></div>`;
+    if (serial === drawerSerial) drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Decision evidence"><div class="drawer-header"><div><span class="eyebrow"><i class="eyebrow-mark"></i>DECISION RECORD</span><h2>Evidence unavailable</h2></div><button class="close-button" type="button" aria-label="Close evidence" data-action="close-drawer">×</button></div>${dataError("The decision record could not be loaded.", error)}</aside></div>`;
+    else showToast(`A previous decision load failed: ${error.message}`, "error");
   }
 }
 
@@ -504,6 +524,7 @@ async function renderRoute(route) {
 }
 
 function modal(title, body, primaryLabel, action, danger = false) {
+  drawerSerial += 1;
   drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><section class="drawer" role="dialog" aria-modal="true" aria-label="${esc(title)}" style="height:auto;max-height:min(90vh,700px);align-self:center;margin:auto 18px;overflow:auto;border-radius:17px"><div class="drawer-header"><div><span class="eyebrow"><i class="eyebrow-mark"></i>YOUR WALLET</span><h2>${esc(title)}</h2></div><button class="close-button" type="button" aria-label="Close" data-action="close-drawer">×</button></div><div>${body}</div><div class="button-row" style="justify-content:flex-end;margin-top:18px"><button class="button button-secondary" type="button" data-action="close-drawer">Cancel</button><button class="button ${danger ? "button-danger" : "button-primary"}" type="button" data-action="${esc(action)}">${esc(primaryLabel)}</button></div></section></div>`;
   drawerRoot.querySelector("[role=dialog]").focus();
 }
@@ -644,7 +665,10 @@ document.addEventListener("click", async (event) => {
     } else if (action === "open-decision") {
       await openDecision(button.dataset.id);
     } else if (action === "close-drawer") {
-      if (event.target === button || button === event.target.closest(".close-button") || event.target.classList.contains("drawer-backdrop")) drawerRoot.replaceChildren();
+      if (event.target === button || button === event.target.closest(".close-button") || event.target.classList.contains("drawer-backdrop")) {
+        drawerSerial += 1;
+        drawerRoot.replaceChildren();
+      }
     } else if (action === "open-tighten") {
       openTighten();
     } else if (action === "revoke-mandate") {
@@ -668,7 +692,10 @@ document.addEventListener("click", async (event) => {
 
 window.addEventListener("hashchange", () => setActiveRoute(window.location.hash.slice(1)));
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && drawerRoot.childElementCount) drawerRoot.replaceChildren();
+  if (event.key === "Escape" && drawerRoot.childElementCount) {
+    drawerSerial += 1;
+    drawerRoot.replaceChildren();
+  }
 });
 
 const initialRoute = window.location.hash.slice(1) || "review";
