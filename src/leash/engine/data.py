@@ -35,18 +35,24 @@ class History:
     def __init__(self, path: Path):
         merchants: dict[tuple[str, str], list[datetime]] = {}
         devices: dict[tuple[str, str], list[datetime]] = {}
+        countries: dict[tuple[str, str], list[datetime]] = {}
+        names: dict[str, dict[str, str]] = {}
         with open(path, newline="") as handle:
             for row in csv.DictReader(handle):
                 if row["status"] != "approved" or row["transaction_type"] != "purchase":
                     continue
                 when = _ts(row["timestamp"])
                 merchants.setdefault((row["card_id"], row["merchant_id"]), []).append(when)
+                countries.setdefault((row["card_id"], row["merchant_country"]), []).append(when)
+                names.setdefault(row["card_id"], {})[row["merchant_id"]] = row["merchant_name"]
                 if row["customer_device_id"]:
                     devices.setdefault((row["card_id"], row["customer_device_id"]), []).append(when)
-        for series in (*merchants.values(), *devices.values()):
+        for series in (*merchants.values(), *devices.values(), *countries.values()):
             series.sort()
         self._merchants = merchants
         self._devices = devices
+        self._countries = countries
+        self._names = names
 
     @staticmethod
     def _count_before(series: list[datetime] | None, before: datetime) -> int:
@@ -57,6 +63,16 @@ class History:
 
     def device_count(self, card_id: str, device_id: str, before: datetime) -> int:
         return self._count_before(self._devices.get((card_id, device_id)), before)
+
+    def country_count(self, card_id: str, country: str, before: datetime) -> int:
+        return self._count_before(self._countries.get((card_id, country)), before)
+
+    def known_merchants(self, card_id: str, before: datetime) -> dict[str, str]:
+        """merchant_id -> merchant_name for merchants with an approved purchase before `before`."""
+        return {
+            mid: name for mid, name in self._names.get(card_id, {}).items()
+            if self.merchant_count(card_id, mid, before) > 0
+        }
 
 
 HISTORY = History(PACK / "authorization_history.csv")
