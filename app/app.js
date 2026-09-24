@@ -1,4 +1,3 @@
-const SAMPLE_DRAFT_URL = "../docs/samples/scen0002_draft.json";
 const API_BASE = "";
 const MANDATE_SESSION_KEY = "viseca.demo.mandateId";
 const screen = document.querySelector("#screen");
@@ -19,6 +18,7 @@ let pendingIds = new Set();
 let submittingStepUps = new Set();
 let approvalTimer = null;
 let currentPolicy = null;
+let currentUsername = null;
 let screenSerial = 0;
 let drawerSerial = 0;
 
@@ -79,7 +79,7 @@ function validateRules(rules, field) {
 }
 
 function validateDraft(draft) {
-  if (!draft || typeof draft !== "object") throw new Error("SCEN0002 draft must be a JSON object.");
+  if (!draft || typeof draft !== "object") throw new Error("The policy draft must be a JSON object.");
   requireString(draft.draft_id, "draft_id");
   requireString(draft.hash, "hash");
   requireString(draft.instruction, "instruction");
@@ -115,6 +115,7 @@ async function readJson(response, label) {
 async function api(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
   });
   if (response.status === 409) {
@@ -130,7 +131,65 @@ function mandateId() {
   return window.sessionStorage.getItem(MANDATE_SESSION_KEY);
 }
 
+function showSession(username) {
+  currentUsername = requireString(username, "Session.username");
+  document.querySelector("#profile-name").textContent = currentUsername;
+  const initials = currentUsername.slice(0, 2).toUpperCase();
+  document.querySelector("#profile-avatar").textContent = initials;
+  const topAvatar = document.querySelector("#top-avatar");
+  topAvatar.textContent = initials;
+  topAvatar.setAttribute("aria-label", currentUsername);
+  document.querySelectorAll('[data-action="logout"]').forEach((button) => { button.hidden = false; });
+}
+
+function renderLogin() {
+  currentUsername = null;
+  if (approvalTimer) window.clearInterval(approvalTimer);
+  approvalTimer = null;
+  pageContext.textContent = "Demo sign in";
+  document.querySelectorAll('[data-action="logout"]').forEach((button) => { button.hidden = true; });
+  setScreen(`${heading("LOCAL DEMO ACCOUNT", "Sign in to your wallet.", "Enter a local username to review the policy your shopping agent proposed.")}
+    <section class="card card-pad login-card"><label class="field-label" for="demo-username">Username<input id="demo-username" autocomplete="username" maxlength="80" required placeholder="Your name" /></label>
+    <p class="helper-text">This demo uses a local username. It does not connect to your Viseca login.</p>
+    <button class="button button-primary" type="button" data-action="login">Continue</button></section>`);
+}
+
+async function initialize() {
+  try {
+    const response = await fetch("/session", { credentials: "same-origin" });
+    if (response.status === 401) {
+      renderLogin();
+      return;
+    }
+    const session = await readJson(response, "GET /session");
+    showSession(session.username);
+    setActiveRoute(window.location.hash.slice(1) || "review");
+  } catch (error) {
+    setScreen(dataError("Your session could not be checked.", error));
+  }
+}
+
+async function login() {
+  const username = requireString(document.querySelector("#demo-username").value, "Username");
+  const session = await api("/session", { method: "POST", body: JSON.stringify({ username }) });
+  showSession(session.username);
+  setActiveRoute(window.location.hash.slice(1) || "review");
+}
+
+async function logout() {
+  await api("/session", { method: "DELETE" });
+  window.sessionStorage.removeItem(MANDATE_SESSION_KEY);
+  activeDraft = null;
+  currentPolicy = null;
+  answers = {};
+  renderLogin();
+}
+
 function setActiveRoute(route) {
+  if (!currentUsername) {
+    renderLogin();
+    return;
+  }
   if (!pageTitles[route]) {
     screen.innerHTML = dataError("Page could not be opened.", new Error(`Unknown app route: ${route}`));
     screen.setAttribute("aria-busy", "false");
@@ -229,8 +288,9 @@ function summaryCard(ruleCount, questionCount) {
 }
 
 async function loadDraft() {
-  const response = await fetch(SAMPLE_DRAFT_URL, { cache: "no-store" });
-  return readJson(response, "SCEN0002 draft sample");
+  const draftId = new URLSearchParams(window.location.search).get("draft_id");
+  requireString(draftId, "URL query parameter draft_id");
+  return api(`/drafts/${encodeURIComponent(draftId)}`);
 }
 
 async function renderReview() {
@@ -344,11 +404,9 @@ async function loadApprovals() {
 }
 
 async function renderApprovals() {
-  setScreen(`${heading("PURCHASE CHECKS", "A pause is a chance to choose.", "Review a specific purchase and the reason it needs your attention.")}
-    <div class="main-column"><div id="approvals-error"></div><div id="approvals-list"><div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Checking for pending approvals…</span></div></div></div>`);
-  const container = document.querySelector("#approvals-list");
-  await loadApprovals();
-  if (container.isConnected && currentRoute === "approvals") approvalTimer = window.setInterval(() => loadApprovals(), 2000);
+  document.querySelector("#approval-count").textContent = "—";
+  setScreen(`${heading("PURCHASE CHECKS", "Purchase approvals are unavailable.", "The runner's pending-purchase routes are still being built.")}
+    <section class="card card-pad"><div class="untrusted-banner" role="status"><strong>No action needed here yet.</strong><span>Approve and Reject will be available when live step-up requests can reach this app. Requests without an answer time out to decline.</span></div></section>`);
 }
 
 function noMandate() {
@@ -656,7 +714,13 @@ document.addEventListener("click", async (event) => {
   if (!button) return;
   const action = button.dataset.action;
   try {
-    if (action === "answer") {
+    if (action === "login") {
+      button.disabled = true;
+      await login();
+    } else if (action === "logout") {
+      button.disabled = true;
+      await logout();
+    } else if (action === "answer") {
       answers[button.dataset.question] = button.dataset.value;
       await renderReview();
     } else if (action === "confirm-draft") {
@@ -717,11 +781,14 @@ document.addEventListener("click", async (event) => {
 
 window.addEventListener("hashchange", () => setActiveRoute(window.location.hash.slice(1)));
 window.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && event.target.id === "demo-username") {
+    event.preventDefault();
+    document.querySelector('[data-action="login"]').click();
+  }
   if (event.key === "Escape" && drawerRoot.childElementCount) {
     drawerSerial += 1;
     drawerRoot.replaceChildren();
   }
 });
 
-const initialRoute = window.location.hash.slice(1) || "review";
-setActiveRoute(initialRoute);
+initialize();
