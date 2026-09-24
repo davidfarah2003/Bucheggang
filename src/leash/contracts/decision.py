@@ -15,7 +15,7 @@ REASON_CODES = frozenset(
         "unfamiliar_merchant", "lookalike_merchant", "gift_card", "subscription",
         "protection_plan", "duplicate_order", "requote_after_decline", "velocity", "new_device",
         "country_blocked", "country_unfamiliar", "no_card_history", "injected_instructions", "customer_confirmation", "customer_declined",
-        "step_up_timeout", "engine_timeout",
+        "step_up_timeout", "engine_timeout", "model_history_uncertain",
     }
 )
 ReasonCode = Literal[
@@ -25,7 +25,7 @@ ReasonCode = Literal[
     "unfamiliar_merchant", "lookalike_merchant", "gift_card", "subscription",
     "protection_plan", "duplicate_order", "requote_after_decline", "velocity", "new_device",
     "country_blocked", "country_unfamiliar", "no_card_history", "injected_instructions", "customer_confirmation", "customer_declined",
-    "step_up_timeout", "engine_timeout",
+    "step_up_timeout", "engine_timeout", "model_history_uncertain",
 ]
 Outcome = Literal["approve", "decline", "step_up"]
 FactSource = Literal["agent_form", "structured", "merchant_text"]
@@ -52,7 +52,7 @@ class Check(Contract):
     name: NonEmpty
     result: Literal["pass", "fail", "uncertain"]
     value: str | int | float | None
-    source: Literal["event", "history", "agent_form", "merchant_text", "state"]
+    source: Literal["event", "history", "agent_form", "merchant_text", "state", "model"]
     note: str
 
 

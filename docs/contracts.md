@@ -6,10 +6,11 @@ The executable versions are the pydantic models in `src/leash/contracts/`, owned
 
 | Object | Produced by | Consumed by |
 | --- | --- | --- |
-| `PolicyDraft` | policy | app (display), engine (example purchases), runner (mandate creation) |
+| `PolicyDraft` | policy | app (display), engine (rules), runner (mandate creation) |
 | `Mandate` | runner, after the app confirms | policy, engine, app |
 | `Event` | runner (from the API, or from `scripts/replay.py`) | engine, extract, app |
 | `PurchaseFacts` | extract | engine |
+| `AssessmentBundle` | classifier, before evaluation | engine (pure composition); model-enabled release held |
 | `Decision` | engine | runner (submit), app (display) |
 | `StepUp`, `StepUpAnswer` | runner and app | each other |
 
@@ -130,7 +131,7 @@ Check
   name     str, from the check list in plan 02
   result   pass | fail | uncertain
   value    str | number | null
-  source   event | history | agent_form | merchant_text | state
+  source   event | history | agent_form | merchant_text | state | model
   note     str
 
 Decision
@@ -148,7 +149,7 @@ Decision
 
 ## Reason codes
 
-`within_policy`, `amount_over_limit`, `period_limit_exceeded`, `purchase_count_exceeded`, `mandate_expired`, `mandate_revoked`, `item_mismatch`, `unrequested_item`, `return_terms_missing`, `return_terms_short`, `merchant_type_mismatch`, `unfamiliar_merchant`, `lookalike_merchant`, `gift_card`, `subscription`, `protection_plan`, `duplicate_order`, `requote_after_decline`, `velocity`, `new_device`, `country_blocked`, `country_unfamiliar`, `no_card_history`, `injected_instructions`, `customer_confirmation`, `customer_declined`, `step_up_timeout`, `engine_timeout`.
+`within_policy`, `amount_over_limit`, `period_limit_exceeded`, `purchase_count_exceeded`, `mandate_expired`, `mandate_revoked`, `item_mismatch`, `unrequested_item`, `return_terms_missing`, `return_terms_short`, `merchant_type_mismatch`, `unfamiliar_merchant`, `lookalike_merchant`, `gift_card`, `subscription`, `protection_plan`, `duplicate_order`, `requote_after_decline`, `velocity`, `new_device`, `country_blocked`, `country_unfamiliar`, `no_card_history`, `injected_instructions`, `customer_confirmation`, `customer_declined`, `step_up_timeout`, `engine_timeout`, `model_history_uncertain`.
 
 `country_blocked` comes only from a failed customer rule on `authorization.merchant.merchant_country`. `country_unfamiliar` is the uncertain result of the built-in country check, for a card with history but none in that country. `no_card_history` is one uncertain result for a card with no row in `authorization_history.csv` before the purchase and no approval recorded on the mandate: device, merchant and country familiarity are unknown, and `new_device`, `unfamiliar_merchant` and `country_unfamiliar` are not reported for it.
 
@@ -170,16 +171,69 @@ StepUpAnswer
   answered_at        datetime
 ```
 
+## Classifier assessments
+
+P1/P2 adds these shared types in `leash.contracts.classifier`. They describe successful history processing and model calls. The pure evaluator never calls a model or reads a data file.
+
+```
+HistoryFeatures
+  schema_version       hist-1
+  customer_id, card_id  str, lookup identity only
+  as_of                timezone-aware simulated purchase time
+  values               { feature name: finite number | null }
+  missing              { undefined feature name: nonempty reason }
+  support              { feature name: nonnegative integer }
+
+BehaviorAssessment
+  score                finite historical-decline probability in [0, 1]
+  model_id             nonempty configured model name
+  artifact_version     lowercase SHA-256 of the scored artifact
+  feature_schema_version  same version as HistoryFeatures
+  support              { name: nonnegative integer }
+  escalation_fired     bool, set only by a separately approved operating rule
+
+JevAnswer
+  question_id          spend_pattern | activity_pattern
+  options              { ordinary: probability, unusual: probability, unclear: probability }
+  selected             ordinary | unusual | unclear | null on an exact top tie
+
+SemanticAssessment
+  requested_model, served_model  equal nonempty identifiers
+  prompt_version       nonempty version
+  answers              exactly one JevAnswer for each history question
+  latency_ms           nonnegative integer
+
+AssessmentBundle
+  authorization_id     str
+  purchase_digest      lowercase SHA-256
+  policy_hash          lowercase SHA-256 of the effective policy
+  as_of                same time as HistoryFeatures and the authorization
+  features             HistoryFeatures
+  behaviour            BehaviorAssessment | null
+  semantic             SemanticAssessment | null
+```
+
+Support keys cover every feature. Missing reasons cover exactly the null-valued features. Probability values are finite, within [0, 1], and sum to one within 1e-6. A unique maximum must equal `selected`; a tie requires null. Malformed distributions, duplicate questions, schema mismatches and stale bindings raise. The Jev adapter separately rejects duplicate raw JSON keys and a provider choice that disagrees with its probability argmax.
+
+`assessment_purchase_digest(event)` hashes canonical sorted JSON containing the complete authorization plus the mandate ID, customer ID and card ID. Producers must use this helper or the same canonical payload. The evaluator revalidates mutable assessment objects and compares the authorization, digest, policy hash, event time, mandate identity and feature identity before composing a decision. A supplied bundle must use the shared type, rather than a lookalike private model. It contains no mandate-state-derived model features; deterministic checks still receive the current `MandateState`. Atomic state/policy rechecks and mutation intents remain separate runner release gates.
+
+Each model check has `source=model` and only `pass` or `uncertain`. Its `value` is deterministic JSON preserving the score or distribution and model/artifact/prompt versions; `note` is readable text. `model_history_uncertain` identifies an uncertain model check. A model pass cannot satisfy or remove an unknown required fact, clear an injection flag or overturn a deterministic failure. Uncertainty follows the existing effective policy, including its approve/ask/decline choices.
+
+These history-only questions do not permit catalogue fields, merchant text or agent justifications. `line_no` and evidence-satisfaction changes remain deferred. No model-enabled caller, trained artifact or operational threshold is enabled by this contract change. The model-enabled merge/release hold remains in force.
+
 ## Engine entry points
 
 ```
 leash.engine.evaluate(event: Event, policy: PolicyDraft, state: MandateState,
-                      facts: list[PurchaseFacts] | None) -> Decision      # pure, no I/O
+                      facts: list[PurchaseFacts] | None,
+                      assessments: AssessmentBundle | None = None) -> Decision  # pure, no I/O
 leash.engine.state.load(mandate_id, customer_mandates=()) -> MandateState   # customer_approvals filled from the named mandates
 leash.engine.state.record(mandate_id: str, event: Event, accepted: Decision) -> MandateState   # idempotent, returns the saved state
 ```
 
-`facts=None` means the extract lane did not answer in time; every `facts.*` field is then unknown.
+`assessments=None` is the model-off startup configuration. A history-only bundle with both model outputs null adds no model checks. Neither form may substitute for a failed required assessment: a failure raises before evaluation. The startup caller must enforce which successful outputs its configuration requires.
+
+`facts=None` leaves every `facts.*` field unknown for legacy callers. An extraction execution failure must raise. The current runner's timeout substitute decisions remain separate P4 work and are a blocker for the model-enabled path; this interface change does not claim to have removed them.
 
 ## Runner mandate client
 

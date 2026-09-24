@@ -24,10 +24,20 @@ from .event import (
     Runtime,
 )
 from .policy import RULE_FIELDS, Example, Mandate, OpenQuestion, PolicyDraft, Rule
+from .classifier import (
+    FEATURE_SCHEMA_VERSION,
+    AssessmentBundle,
+    BehaviorAssessment,
+    HistoryFeatures,
+    JevAnswer,
+    SemanticAssessment,
+    assessment_purchase_digest,
+)
 
 __all__ = [
     "REASON_CODES", "RULE_FIELDS", "Approval", "Authorization", "Check", "CustomerApproval", "Decision", "Event",
     "EventContext", "EventMandate", "Example", "Item", "Mandate", "MandateRule", "MandateState",
     "Merchant", "OpenQuestion", "PolicyDraft", "PurchaseFacts", "ReasonCode", "RecentAuthorization",
-    "Rule", "Runtime", "StepUp", "StepUpAnswer",
+    "Rule", "Runtime", "StepUp", "StepUpAnswer", "FEATURE_SCHEMA_VERSION", "AssessmentBundle",
+    "BehaviorAssessment", "HistoryFeatures", "JevAnswer", "SemanticAssessment", "assessment_purchase_digest",
 ]

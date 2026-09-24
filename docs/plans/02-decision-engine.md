@@ -1,6 +1,6 @@
 # 02 Decision engine
 
-- Status: draft
+- Status: deterministic foundation merged. P1/P2 assessment contracts and pure composition are implemented on an isolated branch for review; model-enabled release remains held.
 - Owner: David (proposed)
 - Lane: engine. Channel `team.zurichbuchegg.engine`, branch `lane/engine`, worktree `.worktrees/engine`
 - User flow step: one proposed purchase in, `approve` / `decline` / `step_up` out, with evidence
@@ -11,7 +11,7 @@
 
 ## Goal
 
-A pure function, `evaluate(event, policy, state, facts) -> Decision`. No network, no model, under 50 ms. Every explicit requirement (amount, period budget, purchase count, expiry, allowed categories) is decided here and nowhere else. The runner calls it for live purchases, the policy lane calls it for the example purchases on the confirmation screen, and `scripts/replay.py` calls it for the 45 offline attempts.
+A pure function, `evaluate(event, policy, state, facts, assessments=None) -> Decision`. No network or model calls, with a target under 50 ms. Every explicit requirement (amount, period budget, purchase count, expiry, allowed categories) is decided here. Completed model assessments may add pass or uncertain checks; they never satisfy a missing required fact or overturn a deterministic failure. The runner calls the function for live purchases and `scripts/replay.py` calls it for the 45 offline attempts. The confirmation screen's prose examples remain illustrative.
 
 ## Scope
 
@@ -42,7 +42,7 @@ Out:
 
 ## How we check it works
 
-- `scripts/replay.py --scenario SCEN0001 SCEN0002 SCEN0003 SCEN0004` (plan 05) runs every attempt with the policies from plan 06; decisions match `docs/eval/labels.csv`. Mismatches are listed in the Log with a reason, never hidden.
+- `scripts/replay.py --all` with the five explicit policies in [run-replay.md](../run-replay.md) runs every public attempt. Compare with `docs/eval/labels.csv` after human reconciliation; label agreement is unavailable before then. The report lists every action disagreement.
 - Feeding the same live ID twice changes nothing the second time (try it once by hand).
 - Rolling spend: two approvals then a third over a 7-day limit is declined; a declined purchase in between does not count (try it once in the replay).
 - `grep -rn "SCEN00\|AU00\|replay_order" src/leash/engine/` prints nothing.

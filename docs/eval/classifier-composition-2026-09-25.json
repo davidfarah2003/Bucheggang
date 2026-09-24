@@ -1,0 +1,226 @@
+{
+  "measurement_base": "9bb1ebc",
+  "adapter_revision": "2b2f83f",
+  "requested_provider": {
+    "only": [
+      "typesafe"
+    ],
+    "allow_fallbacks": false
+  },
+  "served_provider_validated_by_adapter": "TypeSafe",
+  "code_sha256": {
+    "src/leash/contracts/classifier.py": "9bbec2a698d3103638a79d6684d416ebf1ae1a6f0c91c2f57e10855468c369db",
+    "src/leash/engine/model_checks.py": "a7216ce4de07ee31c9ee21809edf2031d990a315187dfd618e848fc69aafda88",
+    "src/leash/engine/evaluate.py": "f8d073ee357e684ff843d9a171584ab9670e44dfda3195571e402ba2bc37c76c",
+    "src/leash/contracts/decision.py": "d1df06a78f6b3b42a0f7bd36be3a4df32cf74954b08b6af6b63a04ca653a4ac1"
+  },
+  "calls": [
+    {
+      "authorization_id": "AU0001",
+      "semantic": {
+        "requested_model": "typesafe/jev-1.13-20260917",
+        "served_model": "typesafe/jev-1.13-20260917",
+        "prompt_version": "history-risk-1",
+        "answers": [
+          {
+            "question_id": "spend_pattern",
+            "options": {
+              "ordinary": 0.75,
+              "unclear": 0.16,
+              "unusual": 0.09
+            },
+            "selected": "ordinary"
+          },
+          {
+            "question_id": "activity_pattern",
+            "options": {
+              "ordinary": 0.74,
+              "unclear": 0.02,
+              "unusual": 0.24
+            },
+            "selected": "ordinary"
+          }
+        ],
+        "latency_ms": 539
+      },
+      "baseline": "approve",
+      "with_assessments": "approve",
+      "reason_codes": [
+        "within_policy"
+      ],
+      "model_checks": [
+        {
+          "name": "model.jev.activity_pattern",
+          "result": "pass",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.74,\"unclear\":0.02,\"unusual\":0.24},\"question_id\":\"activity_pattern\",\"selected\":\"ordinary\"},\"latency_ms\":539,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment found no additional concern about the purchasing activity."
+        },
+        {
+          "name": "model.jev.spend_pattern",
+          "result": "pass",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.75,\"unclear\":0.16,\"unusual\":0.09},\"question_id\":\"spend_pattern\",\"selected\":\"ordinary\"},\"latency_ms\":539,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment found no additional concern about the purchase amount."
+        }
+      ]
+    },
+    {
+      "authorization_id": "AU0037",
+      "semantic": {
+        "requested_model": "typesafe/jev-1.13-20260917",
+        "served_model": "typesafe/jev-1.13-20260917",
+        "prompt_version": "history-risk-1",
+        "answers": [
+          {
+            "question_id": "spend_pattern",
+            "options": {
+              "ordinary": 0.75,
+              "unclear": 0.07,
+              "unusual": 0.18
+            },
+            "selected": "ordinary"
+          },
+          {
+            "question_id": "activity_pattern",
+            "options": {
+              "ordinary": 0.8,
+              "unclear": 0.02,
+              "unusual": 0.18
+            },
+            "selected": "ordinary"
+          }
+        ],
+        "latency_ms": 295
+      },
+      "baseline": "decline",
+      "with_assessments": "decline",
+      "reason_codes": [
+        "amount_over_limit"
+      ],
+      "model_checks": [
+        {
+          "name": "model.jev.activity_pattern",
+          "result": "pass",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.8,\"unclear\":0.02,\"unusual\":0.18},\"question_id\":\"activity_pattern\",\"selected\":\"ordinary\"},\"latency_ms\":295,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment found no additional concern about the purchasing activity."
+        },
+        {
+          "name": "model.jev.spend_pattern",
+          "result": "pass",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.75,\"unclear\":0.07,\"unusual\":0.18},\"question_id\":\"spend_pattern\",\"selected\":\"ordinary\"},\"latency_ms\":295,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment found no additional concern about the purchase amount."
+        }
+      ]
+    },
+    {
+      "authorization_id": "AU10319-414975d9",
+      "semantic": {
+        "requested_model": "typesafe/jev-1.13-20260917",
+        "served_model": "typesafe/jev-1.13-20260917",
+        "prompt_version": "history-risk-1",
+        "answers": [
+          {
+            "question_id": "spend_pattern",
+            "options": {
+              "unusual": 0.03,
+              "ordinary": 0.1,
+              "unclear": 0.87
+            },
+            "selected": "unclear"
+          },
+          {
+            "question_id": "activity_pattern",
+            "options": {
+              "unusual": 0.56,
+              "ordinary": 0.38,
+              "unclear": 0.06
+            },
+            "selected": "unusual"
+          }
+        ],
+        "latency_ms": 453
+      },
+      "baseline": "decline",
+      "with_assessments": "decline",
+      "reason_codes": [
+        "merchant_type_mismatch"
+      ],
+      "model_checks": [
+        {
+          "name": "model.jev.activity_pattern",
+          "result": "uncertain",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.38,\"unclear\":0.06,\"unusual\":0.56},\"question_id\":\"activity_pattern\",\"selected\":\"unusual\"},\"latency_ms\":453,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment flagged unusual purchasing activity."
+        },
+        {
+          "name": "model.jev.spend_pattern",
+          "result": "uncertain",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.1,\"unclear\":0.87,\"unusual\":0.03},\"question_id\":\"spend_pattern\",\"selected\":\"unclear\"},\"latency_ms\":453,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment could not establish whether the purchase amount is ordinary."
+        }
+      ]
+    },
+    {
+      "authorization_id": "AU10234-fb2858da",
+      "semantic": {
+        "requested_model": "typesafe/jev-1.13-20260917",
+        "served_model": "typesafe/jev-1.13-20260917",
+        "prompt_version": "history-risk-1",
+        "answers": [
+          {
+            "question_id": "spend_pattern",
+            "options": {
+              "unusual": 0.27,
+              "ordinary": 0.66,
+              "unclear": 0.07
+            },
+            "selected": "ordinary"
+          },
+          {
+            "question_id": "activity_pattern",
+            "options": {
+              "unusual": 0.3,
+              "ordinary": 0.67,
+              "unclear": 0.03
+            },
+            "selected": "ordinary"
+          }
+        ],
+        "latency_ms": 481
+      },
+      "baseline": "step_up",
+      "with_assessments": "step_up",
+      "reason_codes": [
+        "no_card_history",
+        "unrequested_item"
+      ],
+      "model_checks": [
+        {
+          "name": "model.jev.activity_pattern",
+          "result": "pass",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.67,\"unclear\":0.03,\"unusual\":0.3},\"question_id\":\"activity_pattern\",\"selected\":\"ordinary\"},\"latency_ms\":481,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment found no additional concern about the purchasing activity."
+        },
+        {
+          "name": "model.jev.spend_pattern",
+          "result": "pass",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.66,\"unclear\":0.07,\"unusual\":0.27},\"question_id\":\"spend_pattern\",\"selected\":\"ordinary\"},\"latency_ms\":481,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment found no additional concern about the purchase amount."
+        }
+      ]
+    }
+  ],
+  "scope": "Real provider requests with offline evaluator composition. No simulator submission or customer answer.",
+  "recomposition": {
+    "all_four_match": true,
+    "provider_requests_repeated": false,
+    "code_hashes_describe_recomposition": true
+  }
+}
