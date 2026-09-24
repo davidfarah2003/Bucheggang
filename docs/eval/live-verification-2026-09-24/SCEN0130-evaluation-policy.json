@@ -1,0 +1,77 @@
+{
+  "draft_id": "0c225ebb-8e1f-4f7e-822b-035cf354d7f9",
+  "version": 1,
+  "hash": "f542f0dd3bd61de07b78f01e0d0437c6164e15c1fdc53125439d62f09312acf7",
+  "instruction": "I need new hiking boots, size 42, from a proper sports shop. Maximum CHF 180, and I must be able to return them within at least 14 days. Nothing else in the basket. If anything is unclear, ask me.",
+  "rules": [
+    {
+      "currency": "CHF",
+      "field": "authorization.billing_amount_chf",
+      "operator": "<=",
+      "plain_english": "The total must be CHF 180 or less.",
+      "scope": "purchase",
+      "source_text": "Maximum CHF 180",
+      "value": 180
+    },
+    {
+      "field": "authorization.merchant.merchant_category",
+      "operator": "=",
+      "plain_english": "Use a sporting goods retailer.",
+      "scope": "purchase",
+      "source_text": "proper sports shop",
+      "value": "sporting_goods"
+    },
+    {
+      "field": "facts.product_type",
+      "operator": "=",
+      "plain_english": "The extracted product type must equal hiking boots.",
+      "scope": "purchase",
+      "source_text": "hiking boots",
+      "value": "hiking boots"
+    },
+    {
+      "field": "facts.size",
+      "operator": "=",
+      "plain_english": "The size must be 42.",
+      "scope": "purchase",
+      "source_text": "size 42",
+      "value": "42"
+    },
+    {
+      "field": "facts.return_days",
+      "operator": ">=",
+      "plain_english": "The return window must be at least 14 days.",
+      "scope": "purchase",
+      "source_text": "at least 14 days",
+      "value": 14
+    },
+    {
+      "field": "items.count",
+      "operator": "=",
+      "plain_english": "Only one pair may be purchased.",
+      "scope": "purchase",
+      "source_text": "Nothing else in the basket",
+      "value": 1
+    },
+    {
+      "field": "facts.is_addon",
+      "operator": "=",
+      "plain_english": "No add-on is allowed.",
+      "scope": "purchase",
+      "source_text": "Nothing else in the basket",
+      "value": "false"
+    },
+    {
+      "field": "state.approvals_count",
+      "operator": "<",
+      "plain_english": "Allow one successful purchase for this request.",
+      "scope": "purchase",
+      "source_text": "I need new hiking boots",
+      "value": 1
+    }
+  ],
+  "examples": [],
+  "open_questions": [],
+  "uncertainty_policy": "ask",
+  "created_at": "2026-09-24T20:45:10.662902Z"
+}
