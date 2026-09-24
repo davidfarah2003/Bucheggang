@@ -242,6 +242,65 @@ p { margin: 0; line-height: 1.48; }
 .shop-plan p { margin-top: 8px; color: var(--muted); }
 .shop-plan .text-button { margin-top: 17px; }
 .external-agent { margin-top: 30px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.filter-trigger {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 7px 12px;
+  border: 1px solid #e7e0d8;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+}
+.filter-trigger:hover { border-color: var(--accent); color: var(--accent); }
+.filter-trigger span { margin-left: auto; color: var(--accent); font-size: 17px; line-height: 1; }
+.filter-trigger svg { width: 16px; height: 16px; }
+.filter-sheet { display: grid; gap: 21px; padding-bottom: 4px; }
+.filter-sheet > h2 { margin-top: 0; }
+.filter-sheet > p { color: var(--muted); font-size: 14px; line-height: 1.5; }
+.filter-category { display: flex; flex-wrap: wrap; gap: 8px; }
+.filter-category button {
+  min-height: 37px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.filter-category button.selected, .filter-category button[aria-pressed="true"], .filter-category button[aria-selected="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-dark); }
+.filter-field { display: grid; gap: 9px; min-width: 0; }
+.filter-field label, .filter-field > strong, .filter-field > span:first-child { color: var(--ink); font-size: 14px; font-weight: 650; }
+.filter-field:has(+ .budget-slider) { grid-template-columns: 1fr auto; align-items: center; }
+.filter-field:has(+ .budget-slider) strong { color: var(--accent); text-align: right; }
+.filter-field:has(input[type="checkbox"]) { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+.filter-field input[type="checkbox"] { width: 19px; height: 19px; flex: 0 0 19px; margin: 0; accent-color: var(--accent); }
+.filter-field input:not([type="range"]), .filter-field select, .filter-field textarea {
+  width: 100%;
+  min-height: 47px;
+  padding: 11px 13px;
+  border: 1px solid #dfd9d2;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 14px;
+}
+.filter-field textarea { min-height: 84px; }
+.filter-field small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.budget-slider { display: block; width: 100%; height: 24px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.budget-ends { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
+.filter-preview { display: grid; gap: 8px; padding: 17px; border: 1px solid #e9e2da; border-radius: 16px; background: var(--canvas); }
+.filter-preview strong, .filter-preview .section-kicker { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+.filter-preview p { color: var(--ink); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.filter-apply { width: 100%; min-height: 48px; margin-top: 2px; border: 0; border-radius: 15px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 690; }
+.filter-apply:hover:not(:disabled) { background: var(--accent-dark); }
 
 .page-title { margin-bottom: 22px; }
 .page-title h1 { font-size: 36px; }
