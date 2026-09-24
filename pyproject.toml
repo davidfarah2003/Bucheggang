@@ -14,5 +14,12 @@ dependencies = [
     "uvicorn>=0.35",
 ]
 
+[dependency-groups]
+classifier = [
+    "numpy>=2.2",
+    "scikit-learn>=1.6",
+    "catboost>=1.2.8",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
