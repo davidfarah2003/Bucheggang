@@ -13,6 +13,7 @@ handling and the demo never uses them.
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
@@ -20,11 +21,12 @@ from leash.contracts import Decision, Event, MandateState, PolicyDraft, Purchase
 
 from leash.engine import state as state_store
 from leash.engine.evaluate import evaluate as engine_evaluate
+from leash.policy.store import DraftStore
 
 from . import loop, records, routes, stepups
 
 
-def serve(book: stepups.StepUpBook, port: int) -> None:
+def serve(book: stepups.StepUpBook, port: int, store: DraftStore) -> None:
     """Serve the step-up router alone for a local try. The demo mounts it in leash.api."""
     import threading
 
@@ -35,8 +37,8 @@ def serve(book: stepups.StepUpBook, port: int) -> None:
         return x_local_customer
 
     app = FastAPI()
-    app.include_router(routes.step_up_router(book, local_customer))
-    app.include_router(routes.history_router(local_customer))
+    app.include_router(routes.step_up_router(book, local_customer, store))
+    app.include_router(routes.history_router(local_customer, store))
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     threading.Thread(target=server.run, name="step-up-routes", daemon=True).start()
 
@@ -96,6 +98,11 @@ def main() -> None:
     parser.add_argument("--run-id", help="attach to a run that is already started instead of starting one")
     args = parser.parse_args()
 
+    if args.serve_port is not None:
+        store_root = os.environ.get("LEASH_POLICY_STORE")
+        if not store_root:
+            raise RuntimeError("--serve-port requires LEASH_POLICY_STORE with the customer confirmations")
+        store = DraftStore(Path(store_root))
     policy = PolicyDraft.model_validate(json.loads(args.draft.read_text()))
     loop.configure_logging()
     run = loop.run_progress(args.run_id) if args.run_id else loop.start_run(args.scenario, args.mandate_id)
@@ -110,8 +117,8 @@ def main() -> None:
     window_s = stepups.human_window_s()
     book = stepups.StepUpBook()
     book.start(args.mandate_id, run["run_id"])
-    if args.serve_port:
-        serve(book, args.serve_port)
+    if args.serve_port is not None:
+        serve(book, args.serve_port, store)
     state = loop.run_loop(run["run_id"], EVALUATORS[args.evaluate], policy, args.mandate_id, book, window_s)
     book.stop()
     print("final run:", json.dumps(loop.run_progress(run["run_id"]), default=str))

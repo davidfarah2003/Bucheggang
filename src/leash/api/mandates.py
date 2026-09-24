@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from leash.contracts import Mandate, MandateState, PolicyDraft, Rule
+from leash.policy.ownership import owned_confirmations
 from leash.policy.store import DraftStore
 from leash.runner import mandates
 from leash.runner.api import ApiError
@@ -45,17 +46,10 @@ def _mandate_id(value: str) -> str:
 def _confirmation(store: DraftStore, mandate_id: str, customer: str) -> tuple[dict, dict]:
     if not customer:
         raise HTTPException(status_code=401, detail="customer login is required")
-    matches = []
-    for folder in store.root.iterdir():
-        if folder.is_dir() and (folder / "confirmation.json").is_file():
-            record = store.get_confirmation(folder.name)
-            if record["mandate_id"] == mandate_id:
-                matches.append(record)
-    if len(matches) > 1:
-        raise RuntimeError(f"multiple confirmations refer to mandate {mandate_id}")
-    if not matches or matches[0]["confirmed_by"] != customer:
+    confirmations = owned_confirmations(store, customer)
+    if mandate_id not in confirmations:
         raise HTTPException(status_code=404, detail="mandate was not found for this customer")
-    record = matches[0]
+    record = confirmations[mandate_id]
     draft = store.get(record["draft_id"])
     if draft["version"] != record["version"] or draft["hash"] != record["hash"]:
         raise RuntimeError(f"confirmed draft for mandate {mandate_id} has changed")
