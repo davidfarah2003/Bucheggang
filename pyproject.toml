@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "leash"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.116",
+    "httpx>=0.28",
+    "mcp>=2.2,<3",
+    "pydantic>=2.11",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
