@@ -5,7 +5,7 @@
 - Lane: policy. Channel `team.zurichbuchegg.policy`, branch `lane/policy`, worktree `.worktrees/policy`
 - User flow step: customer request, then draft policy, then confirmation in the Viseca app, then `mandate_id`
 - Design: [Secure policy confirmation](../idea/viseca-agent-control-layer.md#secure-policy-confirmation), [Policy model](../idea/viseca-agent-control-layer.md#policy-model)
-- Papers: [AutoCedar](../papers/2607.03656v1.pdf) (reviewed intent atoms, floors and ceilings, gaps surfaced before the policy is final), [SAFR](../papers/SAFR.pdf) (audit record of the confirmation)
+- Papers: [AutoCedar](../papers/2607.03656v1.pdf) (reviewed intent atoms, floors and ceilings, gaps surfaced before the policy is final), [SAFR](../papers/SAFR.pdf) (audit record of the confirmation), [Progent](https://arxiv.org/abs/2504.11703) (symbolic permission rules and monotonic confinement)
 - Challenge API: [technical_details.md, step 5 and Rule format](../../viseca-2026/technical_details.md)
 - Contracts: `PolicyDraft`, `Rule`, the field vocabulary, `POST /drafts/{id}/confirm` in [contracts.md](../contracts.md)
 
@@ -21,7 +21,9 @@ Running example, from `SCEN0002`:
 
 In:
 
-- `propose_task_policy`: instruction and an explicit compiler mode in, canonical `PolicyDraft` out (rules with the source phrase for each, example purchases, open questions). A failed model mode raises; it never switches to deterministic mode.
+- User-side policy recommendation: the customer's agent gets the field vocabulary, rule format, examples, and known gaps from the MCP tool, then proposes rules from the cardholder instruction. The MCP backend validates and stores that proposal; it makes no LLM call.
+- `propose_task_policy`: instruction and an explicit compiler mode in, canonical `PolicyDraft` out (rules with the source phrase for each, example purchases, open questions). A failed model-supplied proposal raises; it never switches to deterministic mode.
+- Progent's monotonic confinement rule applies to later policy edits: an expanded set of allowed purchases requires a fresh customer confirmation. Automatic tightening may only remove purchases from that set, and still needs an auditable version and hash.
 - Draft store with version and hash. The app reads a draft from the backend by `draft_id`; it never gets one from the agent.
 - The confirm route: hash and version check, answers to open questions folded into rules or `uncertainty_policy`, then the runner's mandate create and confirm calls, then `Mandate` stored and returned.
 - The MCP tools the shopping agent sees: `propose_task_policy`, `get_policy_status`, `request_policy_confirmation` (creates the pending item the app shows), `buy` (delegates to the runner), `get_purchase_status`. No confirm, resolve, tighten or revoke tool.
@@ -35,7 +37,7 @@ Out:
 ## Steps
 
 1. Draft schema in `src/leash/contracts/` with the engine lane (already sketched in `contracts.md`). A sample draft for `SCEN0002` in `docs/samples/` so the app lane can build against it today.
-2. Extractor prompt with a fixed JSON output. Validate against the schema, reject unknown fields and fields outside the vocabulary. Rule values stay numbers, strings or lists of strings.
+2. Provide the user-side agent a fixed instruction bundle with the field vocabulary, JSON shape, examples, and ambiguity prompts. Validate its proposed JSON on the backend; reject unknown fields and fields outside the vocabulary. Rule values stay numbers, strings or lists of strings. The backend makes no model call.
 3. Example purchases, following AutoCedar's floors and ceilings:
    - must approve: size 43 road shoes, CHF 150, sports retailer, 30-day returns;
    - must decline: CHF 230; or size 42; or a second pair after one succeeded;
@@ -68,3 +70,4 @@ Out:
 2026-09-24 18:40 oskar1: serialized draft revision, confirmation and rejection with a per-draft file lock and checked rule value types; ran one temporary-store smoke flow, observed numeric string rejected, version 2, and one terminal race winner with one conflict, @6c90c83.
 2026-09-24 17:45 oskar1: fixed-output prompt, strict model proposal validation and deterministic instruction compiler; ran five supplied instructions and observed 4, 3, 6, 3, 5 rules, while invalid model output raised `InvalidDraft`, @6837a79.
 2026-09-24 17:52 oskar1: made compiler mode explicit under AGENTS.md no-fallback rule; reran five instructions with deterministic mode and got 4, 3, 6, 3, 5 rules; missing or invalid model mode output raised `InvalidDraft`, @09ae26f.
+2026-09-24 18:00 oskar1: incorporated Progent's rule that policy expansion needs explicit approval and clarified that the customer-side agent drafts proposals while the MCP backend only provides instructions and validates/stores them; paper reviewed at arXiv:2504.11703v3.

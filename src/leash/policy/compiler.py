@@ -42,7 +42,7 @@ _ASK = re.compile(r"\bask\s+me\s+when\s+uncertain\b", re.I)
 
 
 def extractor_prompt(instruction: str) -> str:
-    """A fixed-output prompt for a model called outside this package."""
+    """Instructions for the cardholder-side model; this package makes no model call."""
     if not isinstance(instruction, str) or not instruction.strip():
         raise InvalidDraft("instruction is required")
     vocabulary = ", ".join(sorted(FIELDS))
@@ -53,6 +53,14 @@ def extractor_prompt(instruction: str) -> str:
         "source_text and plain_english; currency, scope and period_days are optional. "
         "source_text must be an exact substring of the instruction. Use only these fields: "
         f"{vocabulary}. Rule values are a number, a string or a list of strings, never a boolean. "
+        "Numeric fields are authorization.billing_amount_chf, authorization.items_subtotal, "
+        "authorization.delivery_fee, items.count, facts.return_days, and state.approvals_count. "
+        "Risk flags and history fields use the strings true and false. All other fields use strings. "
+        "Use scope period and period_days only for a supported cumulative amount rule. "
+        "Examples should include a clearly allowed purchase, a forbidden purchase, and an unknown-fact case. "
+        "A broad merchant category does not establish that a retailer is a specialist. A screen size "
+        "does not identify a selected model. Surface these as open questions and require an enforceable "
+        "merchant or product identifier, or the cardholder's explicit consent to broader permissions. "
         "When a meaning is unclear, add an open question; do not invent permission. "
         "Each example has description, expected and why. Each open question has question, "
         "options and answer (null until the cardholder answers). "
@@ -153,8 +161,8 @@ def compile_instruction(instruction: str) -> dict[str, Any]:
         )
         questions.append(
             {
-                "question": "Which exact monitor did you choose? A screen size alone cannot identify the model.",
-                "options": ["I will provide the model", "Ask me for each purchase"],
+                "question": "Which exact monitor did you choose? A screen size alone cannot identify it, and no purchase can be confirmed until a supported identifier is added to the rules.",
+                "options": ["I will provide the exact model", "Ask me for each purchase"],
                 "answer": None,
             }
         )
@@ -187,8 +195,8 @@ def compile_instruction(instruction: str) -> dict[str, Any]:
     if specialist:
         questions.append(
             {
-                "question": "Does a sporting goods category alone establish a specialist sports retailer?",
-                "options": ["yes", "ask me", "decline"],
+                "question": "May any sporting goods retailer qualify, including general sellers, or must a supported merchant identifier be added before confirmation?",
+                "options": ["Allow any sporting goods retailer", "I will provide a merchant", "Ask me for each purchase"],
                 "answer": None,
             }
         )
