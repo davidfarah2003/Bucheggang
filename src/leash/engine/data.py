@@ -37,8 +37,10 @@ class History:
         devices: dict[tuple[str, str], list[datetime]] = {}
         countries: dict[tuple[str, str], list[datetime]] = {}
         names: dict[str, dict[str, str]] = {}
+        cards: dict[str, list[datetime]] = {}
         with open(path, newline="") as handle:
             for row in csv.DictReader(handle):
+                cards.setdefault(row["card_id"], []).append(_ts(row["timestamp"]))
                 if row["status"] != "approved" or row["transaction_type"] != "purchase":
                     continue
                 when = _ts(row["timestamp"])
@@ -47,16 +49,21 @@ class History:
                 names.setdefault(row["card_id"], {})[row["merchant_id"]] = row["merchant_name"]
                 if row["customer_device_id"]:
                     devices.setdefault((row["card_id"], row["customer_device_id"]), []).append(when)
-        for series in (*merchants.values(), *devices.values(), *countries.values()):
+        for series in (*merchants.values(), *devices.values(), *countries.values(), *cards.values()):
             series.sort()
         self._merchants = merchants
         self._devices = devices
         self._countries = countries
         self._names = names
+        self._cards = cards
 
     @staticmethod
     def _count_before(series: list[datetime] | None, before: datetime) -> int:
         return 0 if not series else bisect_left(series, before)
+
+    def card_rows(self, card_id: str, before: datetime) -> int:
+        """Rows of any status and type for this card before `before`."""
+        return self._count_before(self._cards.get(card_id), before)
 
     def merchant_count(self, card_id: str, merchant_id: str, before: datetime) -> int:
         return self._count_before(self._merchants.get((card_id, merchant_id)), before)

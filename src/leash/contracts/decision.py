@@ -14,7 +14,7 @@ REASON_CODES = frozenset(
         "return_terms_missing", "return_terms_short", "merchant_type_mismatch",
         "unfamiliar_merchant", "lookalike_merchant", "gift_card", "subscription",
         "protection_plan", "duplicate_order", "requote_after_decline", "velocity", "new_device",
-        "country_blocked", "injected_instructions", "customer_confirmation", "customer_declined",
+        "country_blocked", "country_unfamiliar", "no_card_history", "injected_instructions", "customer_confirmation", "customer_declined",
         "step_up_timeout", "engine_timeout",
     }
 )
@@ -24,7 +24,7 @@ ReasonCode = Literal[
     "return_terms_missing", "return_terms_short", "merchant_type_mismatch",
     "unfamiliar_merchant", "lookalike_merchant", "gift_card", "subscription",
     "protection_plan", "duplicate_order", "requote_after_decline", "velocity", "new_device",
-    "country_blocked", "injected_instructions", "customer_confirmation", "customer_declined",
+    "country_blocked", "country_unfamiliar", "no_card_history", "injected_instructions", "customer_confirmation", "customer_declined",
     "step_up_timeout", "engine_timeout",
 ]
 Outcome = Literal["approve", "decline", "step_up"]

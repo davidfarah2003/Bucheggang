@@ -12,7 +12,7 @@ from . import checks
 from .rules import RuleContext, evaluate_rule, reason_code
 from .words import Finding, compose
 
-ENGINE_VERSION = "leash-engine 0.3"
+ENGINE_VERSION = "leash-engine 0.4"
 STRICTNESS = {"approve": 0, "ask": 1, "decline": 2}
 FACT_FIELDS = ("product_type", "size", "return_days", "is_addon", "is_gift_card", "is_subscription",
                "is_protection_plan", "matches_request")
@@ -70,7 +70,8 @@ def evaluate(event: Event, policy: PolicyDraft, state: MandateState,
         add(check, reason_code(rule, check), rule)
     for fn in checks.CHECKS:
         result = fn(raw_ctx if fn is checks.injected else ctx)
-        add(result.check, result.code)
+        if result is not None:  # a check another check already covers for this purchase
+            add(result.check, result.code)
 
     policy_mode = _uncertainty(policy, event)
     if fails:
