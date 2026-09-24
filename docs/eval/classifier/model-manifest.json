@@ -1,0 +1,857 @@
+{
+  "artifact_path": "docs/eval/classifier/model-evaluation-only.joblib",
+  "artifact_release_status": "evaluation_only_no_operational_threshold",
+  "artifact_sha256": "e4815c5677073c4e985c56f09f045be3d72c4e3ae624b75f9d06870630c828cf",
+  "calibration_bands": {
+    "reserved: agent purchases": [
+      {
+        "band": "0.0-0.1",
+        "declines": 20,
+        "mean_score": 0.02848392195834856,
+        "n": 411,
+        "observed_rate": 0.04866180048661801,
+        "status": "measured"
+      },
+      {
+        "band": "0.1-0.2",
+        "declines": 3,
+        "mean_score": 0.12578349070183073,
+        "n": 14,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.2-0.3",
+        "declines": 0,
+        "mean_score": 0.2297031536946743,
+        "n": 2,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.3-0.4",
+        "declines": 0,
+        "mean_score": 0.31259997274592677,
+        "n": 1,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.4-0.5",
+        "declines": 1,
+        "mean_score": 0.4515187968155068,
+        "n": 1,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.5-0.6",
+        "declines": 0,
+        "mean_score": null,
+        "n": 0,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.6-0.7",
+        "declines": 0,
+        "mean_score": null,
+        "n": 0,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.7-0.8",
+        "declines": 2,
+        "mean_score": 0.7506035106678408,
+        "n": 2,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.8-0.9",
+        "declines": 0,
+        "mean_score": null,
+        "n": 0,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.9-1.0",
+        "declines": 9,
+        "mean_score": 0.9873556031785777,
+        "n": 9,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      }
+    ],
+    "reserved: all purchases": [
+      {
+        "band": "0.0-0.1",
+        "declines": 83,
+        "mean_score": 0.024496241907116852,
+        "n": 2478,
+        "observed_rate": 0.03349475383373689,
+        "status": "measured"
+      },
+      {
+        "band": "0.1-0.2",
+        "declines": 8,
+        "mean_score": 0.12729943570276725,
+        "n": 60,
+        "observed_rate": 0.13333333333333333,
+        "status": "measured"
+      },
+      {
+        "band": "0.2-0.3",
+        "declines": 2,
+        "mean_score": 0.2526407470553319,
+        "n": 10,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.3-0.4",
+        "declines": 1,
+        "mean_score": 0.3375649971201974,
+        "n": 5,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.4-0.5",
+        "declines": 2,
+        "mean_score": 0.44143578157526103,
+        "n": 3,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.5-0.6",
+        "declines": 2,
+        "mean_score": 0.5735674546262554,
+        "n": 3,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.6-0.7",
+        "declines": 1,
+        "mean_score": 0.643987293477783,
+        "n": 2,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.7-0.8",
+        "declines": 4,
+        "mean_score": 0.7672532331772096,
+        "n": 4,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.8-0.9",
+        "declines": 6,
+        "mean_score": 0.848020960200493,
+        "n": 6,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.9-1.0",
+        "declines": 25,
+        "mean_score": 0.9792767645257672,
+        "n": 25,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      }
+    ],
+    "reserved: human purchases": [
+      {
+        "band": "0.0-0.1",
+        "declines": 63,
+        "mean_score": 0.023703336004332026,
+        "n": 2067,
+        "observed_rate": 0.030478955007256895,
+        "status": "measured"
+      },
+      {
+        "band": "0.1-0.2",
+        "declines": 5,
+        "mean_score": 0.12776081026826966,
+        "n": 46,
+        "observed_rate": 0.10869565217391304,
+        "status": "measured"
+      },
+      {
+        "band": "0.2-0.3",
+        "declines": 2,
+        "mean_score": 0.25837514539549633,
+        "n": 8,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.3-0.4",
+        "declines": 1,
+        "mean_score": 0.3438062532137651,
+        "n": 4,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.4-0.5",
+        "declines": 1,
+        "mean_score": 0.43639427395513825,
+        "n": 2,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.5-0.6",
+        "declines": 2,
+        "mean_score": 0.5735674546262554,
+        "n": 3,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.6-0.7",
+        "declines": 1,
+        "mean_score": 0.643987293477783,
+        "n": 2,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.7-0.8",
+        "declines": 2,
+        "mean_score": 0.7839029556865786,
+        "n": 2,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.8-0.9",
+        "declines": 6,
+        "mean_score": 0.848020960200493,
+        "n": 6,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.9-1.0",
+        "declines": 16,
+        "mean_score": 0.9747324177835612,
+        "n": 16,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      }
+    ],
+    "reserved: issuer-rule-pass proxy": [
+      {
+        "band": "0.0-0.1",
+        "declines": 83,
+        "mean_score": 0.02447548350728698,
+        "n": 2476,
+        "observed_rate": 0.033521809369951534,
+        "status": "measured"
+      },
+      {
+        "band": "0.1-0.2",
+        "declines": 6,
+        "mean_score": 0.12522438591072554,
+        "n": 58,
+        "observed_rate": 0.10344827586206896,
+        "status": "measured"
+      },
+      {
+        "band": "0.2-0.3",
+        "declines": 2,
+        "mean_score": 0.2526407470553319,
+        "n": 10,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.3-0.4",
+        "declines": 0,
+        "mean_score": 0.34151093060487714,
+        "n": 4,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.4-0.5",
+        "declines": 0,
+        "mean_score": 0.4376973855480795,
+        "n": 1,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.5-0.6",
+        "declines": 0,
+        "mean_score": 0.5845020128640606,
+        "n": 1,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.6-0.7",
+        "declines": 0,
+        "mean_score": 0.6878625425918469,
+        "n": 1,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.7-0.8",
+        "declines": 0,
+        "mean_score": null,
+        "n": 0,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.8-0.9",
+        "declines": 0,
+        "mean_score": null,
+        "n": 0,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.9-1.0",
+        "declines": 0,
+        "mean_score": null,
+        "n": 0,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      }
+    ],
+    "seen: agent purchases": [
+      {
+        "band": "0.0-0.1",
+        "declines": 93,
+        "mean_score": 0.028628790326298448,
+        "n": 1877,
+        "observed_rate": 0.049547149706979224,
+        "status": "measured"
+      },
+      {
+        "band": "0.1-0.2",
+        "declines": 15,
+        "mean_score": 0.1292018043981002,
+        "n": 81,
+        "observed_rate": 0.18518518518518517,
+        "status": "measured"
+      },
+      {
+        "band": "0.2-0.3",
+        "declines": 2,
+        "mean_score": 0.24891377121946576,
+        "n": 11,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.3-0.4",
+        "declines": 1,
+        "mean_score": 0.34604075295004705,
+        "n": 7,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.4-0.5",
+        "declines": 5,
+        "mean_score": 0.44567512021474887,
+        "n": 7,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.5-0.6",
+        "declines": 1,
+        "mean_score": 0.531527590853396,
+        "n": 3,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.6-0.7",
+        "declines": 1,
+        "mean_score": 0.6749899444825228,
+        "n": 1,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.7-0.8",
+        "declines": 7,
+        "mean_score": 0.7643455719876641,
+        "n": 9,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.8-0.9",
+        "declines": 9,
+        "mean_score": 0.8515322439719251,
+        "n": 10,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.9-1.0",
+        "declines": 31,
+        "mean_score": 0.9586100755029998,
+        "n": 31,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      }
+    ],
+    "seen: all purchases": [
+      {
+        "band": "0.0-0.1",
+        "declines": 340,
+        "mean_score": 0.024571720635000238,
+        "n": 9807,
+        "observed_rate": 0.03466911389823595,
+        "status": "measured"
+      },
+      {
+        "band": "0.1-0.2",
+        "declines": 20,
+        "mean_score": 0.12965426354222329,
+        "n": 197,
+        "observed_rate": 0.10152284263959391,
+        "status": "measured"
+      },
+      {
+        "band": "0.2-0.3",
+        "declines": 10,
+        "mean_score": 0.24819964794525803,
+        "n": 48,
+        "observed_rate": 0.20833333333333334,
+        "status": "measured"
+      },
+      {
+        "band": "0.3-0.4",
+        "declines": 11,
+        "mean_score": 0.34692995257907705,
+        "n": 41,
+        "observed_rate": 0.2682926829268293,
+        "status": "measured"
+      },
+      {
+        "band": "0.4-0.5",
+        "declines": 22,
+        "mean_score": 0.4443274345646664,
+        "n": 34,
+        "observed_rate": 0.6470588235294118,
+        "status": "measured"
+      },
+      {
+        "band": "0.5-0.6",
+        "declines": 9,
+        "mean_score": 0.5447280399349855,
+        "n": 14,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.6-0.7",
+        "declines": 17,
+        "mean_score": 0.6518171621964499,
+        "n": 19,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.7-0.8",
+        "declines": 27,
+        "mean_score": 0.7497341868852865,
+        "n": 33,
+        "observed_rate": 0.8181818181818182,
+        "status": "measured"
+      },
+      {
+        "band": "0.8-0.9",
+        "declines": 33,
+        "mean_score": 0.855123134324106,
+        "n": 36,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.9-1.0",
+        "declines": 114,
+        "mean_score": 0.9659117286666038,
+        "n": 116,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      }
+    ],
+    "seen: human purchases": [
+      {
+        "band": "0.0-0.1",
+        "declines": 247,
+        "mean_score": 0.023611428098989307,
+        "n": 7930,
+        "observed_rate": 0.03114754098360656,
+        "status": "measured"
+      },
+      {
+        "band": "0.1-0.2",
+        "declines": 5,
+        "mean_score": 0.12997020484113686,
+        "n": 116,
+        "observed_rate": 0.04310344827586207,
+        "status": "measured"
+      },
+      {
+        "band": "0.2-0.3",
+        "declines": 8,
+        "mean_score": 0.24798734102589892,
+        "n": 37,
+        "observed_rate": 0.21621621621621623,
+        "status": "measured"
+      },
+      {
+        "band": "0.3-0.4",
+        "declines": 10,
+        "mean_score": 0.3471130230909361,
+        "n": 34,
+        "observed_rate": 0.29411764705882354,
+        "status": "measured"
+      },
+      {
+        "band": "0.4-0.5",
+        "declines": 17,
+        "mean_score": 0.44397803458131163,
+        "n": 27,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.5-0.6",
+        "declines": 8,
+        "mean_score": 0.5483281624117828,
+        "n": 11,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.6-0.7",
+        "declines": 16,
+        "mean_score": 0.6505297854027793,
+        "n": 18,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.7-0.8",
+        "declines": 20,
+        "mean_score": 0.744254917471895,
+        "n": 24,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.8-0.9",
+        "declines": 24,
+        "mean_score": 0.8565042459980217,
+        "n": 26,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.9-1.0",
+        "declines": 83,
+        "mean_score": 0.9685746845262713,
+        "n": 85,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      }
+    ],
+    "seen: issuer-rule-pass proxy": [
+      {
+        "band": "0.0-0.1",
+        "declines": 336,
+        "mean_score": 0.024571674336706605,
+        "n": 9800,
+        "observed_rate": 0.03428571428571429,
+        "status": "measured"
+      },
+      {
+        "band": "0.1-0.2",
+        "declines": 19,
+        "mean_score": 0.12951373410940256,
+        "n": 195,
+        "observed_rate": 0.09743589743589744,
+        "status": "measured"
+      },
+      {
+        "band": "0.2-0.3",
+        "declines": 3,
+        "mean_score": 0.2467267779806983,
+        "n": 40,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.3-0.4",
+        "declines": 2,
+        "mean_score": 0.3394241671234782,
+        "n": 31,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.4-0.5",
+        "declines": 0,
+        "mean_score": 0.44160032613058514,
+        "n": 12,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.5-0.6",
+        "declines": 0,
+        "mean_score": 0.5412996391760336,
+        "n": 5,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.6-0.7",
+        "declines": 0,
+        "mean_score": 0.6153089764755202,
+        "n": 1,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.7-0.8",
+        "declines": 0,
+        "mean_score": 0.7317867051724836,
+        "n": 6,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.8-0.9",
+        "declines": 1,
+        "mean_score": 0.8434478566557074,
+        "n": 3,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      },
+      {
+        "band": "0.9-1.0",
+        "declines": 0,
+        "mean_score": null,
+        "n": 0,
+        "observed_rate": null,
+        "status": "insufficient outcomes"
+      }
+    ]
+  },
+  "calibration_method": "L2 logistic regression on clipped model log-odds, June 1-15",
+  "candidate_configurations": {
+    "catboost": {
+      "depth": 5,
+      "iterations": 300,
+      "l2_leaf_reg": 3.0,
+      "learning_rate": 0.05,
+      "thread_count": 4
+    },
+    "lr": {
+      "C": 1.0,
+      "max_iter": 500,
+      "solver": "lbfgs"
+    }
+  },
+  "feature_names": [
+    "amount_to_monthly_limit",
+    "amount_to_per_transaction_limit",
+    "card_active_at_attempt",
+    "card_agent_approved_count",
+    "card_agent_attempt_count",
+    "card_approved_purchase_count",
+    "card_attempt_count_10m",
+    "card_attempt_count_1h",
+    "card_attempt_count_24h",
+    "card_category_amount_median_chf",
+    "card_category_amount_percentile",
+    "card_category_approved_count",
+    "card_category_last_approved_days",
+    "card_channel_approved_count",
+    "card_channel_last_approved_days",
+    "card_country_approved_count",
+    "card_country_last_approved_days",
+    "card_declined_attempt_count_10m",
+    "card_declined_attempt_count_1h",
+    "card_declined_attempt_count_24h",
+    "card_device_approved_count",
+    "card_device_last_approved_days",
+    "card_last_approved_purchase_days",
+    "card_merchant_approved_count",
+    "card_merchant_last_approved_days",
+    "card_prior_attempt_count",
+    "customer_agent_approved_count",
+    "customer_agent_attempt_count",
+    "customer_approved_purchase_count",
+    "customer_attempt_count_10m",
+    "customer_attempt_count_1h",
+    "customer_attempt_count_24h",
+    "customer_category_amount_median_chf",
+    "customer_category_amount_percentile",
+    "customer_category_approved_count",
+    "customer_category_last_approved_days",
+    "customer_channel_approved_count",
+    "customer_channel_last_approved_days",
+    "customer_country_approved_count",
+    "customer_country_last_approved_days",
+    "customer_declined_attempt_count_10m",
+    "customer_declined_attempt_count_1h",
+    "customer_declined_attempt_count_24h",
+    "customer_device_approved_count",
+    "customer_device_last_approved_days",
+    "customer_last_approved_purchase_days",
+    "customer_merchant_approved_count",
+    "customer_merchant_last_approved_days",
+    "customer_prior_attempt_count",
+    "initiator_is_agent"
+  ],
+  "feature_schema_version": "hist-1",
+  "fit_customer_count": 400,
+  "input_sha256": {
+    "docs/eval/classifier/feature-schema.md": "91fab4bf5951054e034d2c51354342bd42c47bba8c10e2d212002925fc6b3314",
+    "docs/plans/02-classifier-design.md": "4d8ea6601aa2a23927a895b03ccd8e90ec8ae275da818dbc377d01e258409eb9",
+    "viseca-2026/additional-data-history/accounts.csv": "52f65aa31b2886640876674f0b90bef38a9714655b6be12c4e246169dd851826",
+    "viseca-2026/additional-data-history/authorization_history.csv": "23ae437b581b6187527b136ac16c82a6592c4aa9def94cd570fe9d5f89700883",
+    "viseca-2026/additional-data-history/cards.csv": "f717400b22cdefcc5b16f0312f0f4403e52f3fc36b3f0d5d3753d66bb549b3c1",
+    "viseca-2026/additional-data-history/metadata.json": "a24ed12e82a25f0f061c29db80f8f0684ae735b83724d7d2f679ce42acb17fae",
+    "viseca-2026/data/accounts.csv": "267fd41fb1c558956c9f32af6d5f9b6855039d3027f28372b9295b461e543769",
+    "viseca-2026/data/cards.csv": "50acf666bce48bb1cc7c321496dafbe684c7dd6605ab13cccb8f6624e2889809"
+  },
+  "july_rates_at_june_proposals": {
+    "reserved": [
+      {
+        "july_actual_rate": 0.00963020030816641,
+        "july_agent_rate": 0.020454545454545454,
+        "july_human_rate": 0.0074211502782931356,
+        "june_requested_rate": 0.01,
+        "june_score_cut": 0.8950478918645203
+      },
+      {
+        "july_actual_rate": 0.015408320493066256,
+        "july_agent_rate": 0.025,
+        "july_human_rate": 0.013450834879406308,
+        "june_requested_rate": 0.02,
+        "june_score_cut": 0.49796745288337796
+      },
+      {
+        "july_actual_rate": 0.047380585516178735,
+        "july_agent_rate": 0.07045454545454545,
+        "july_human_rate": 0.04267161410018553,
+        "june_requested_rate": 0.05,
+        "june_score_cut": 0.09606648143863497
+      },
+      {
+        "july_actual_rate": 0.1113251155624037,
+        "july_agent_rate": 0.15454545454545454,
+        "july_human_rate": 0.10250463821892393,
+        "june_requested_rate": 0.1,
+        "june_score_cut": 0.05230630820977337
+      }
+    ],
+    "seen": [
+      {
+        "july_actual_rate": 0.011503141614306428,
+        "july_agent_rate": 0.01521845851742759,
+        "july_human_rate": 0.01059220028887819,
+        "june_requested_rate": 0.01,
+        "june_score_cut": 0.8950478918645203
+      },
+      {
+        "july_actual_rate": 0.021072982116964716,
+        "july_agent_rate": 0.026509572901325478,
+        "july_human_rate": 0.01974000962927299,
+        "june_requested_rate": 0.02,
+        "june_score_cut": 0.49796745288337796
+      },
+      {
+        "july_actual_rate": 0.05451909134847752,
+        "july_agent_rate": 0.08100147275405008,
+        "july_human_rate": 0.0480259990370727,
+        "june_requested_rate": 0.05,
+        "june_score_cut": 0.09606648143863497
+      },
+      {
+        "july_actual_rate": 0.1152247462542291,
+        "july_agent_rate": 0.16838487972508592,
+        "july_human_rate": 0.10219065960519981,
+        "june_requested_rate": 0.1,
+        "june_score_cut": 0.05230630820977337
+      }
+    ]
+  },
+  "june_threshold_proposals": [
+    {
+      "actual_rate": 0.010087025316455696,
+      "agent_decline_recall": 0.225,
+      "agent_rate": 0.018518518518518517,
+      "decline_recall": 0.1791044776119403,
+      "human_decline_recall": 0.1595744680851064,
+      "human_rate": 0.008080313418217433,
+      "requested_rate": 0.01,
+      "score_cut": 0.8950478918645203
+    },
+    {
+      "actual_rate": 0.020174050632911392,
+      "agent_decline_recall": 0.4,
+      "agent_rate": 0.03292181069958848,
+      "decline_recall": 0.3208955223880597,
+      "human_decline_recall": 0.2872340425531915,
+      "human_rate": 0.017140058765915768,
+      "requested_rate": 0.02,
+      "score_cut": 0.49796745288337796
+    },
+    {
+      "actual_rate": 0.05003955696202532,
+      "agent_decline_recall": 0.5375,
+      "agent_rate": 0.07818930041152264,
+      "decline_recall": 0.47388059701492535,
+      "human_decline_recall": 0.44680851063829785,
+      "human_rate": 0.04333986287952987,
+      "requested_rate": 0.05,
+      "score_cut": 0.09606648143863497
+    },
+    {
+      "actual_rate": 0.10007911392405064,
+      "agent_decline_recall": 0.6125,
+      "agent_rate": 0.15946502057613168,
+      "decline_recall": 0.5335820895522388,
+      "human_decline_recall": 0.5,
+      "human_rate": 0.08594515181194907,
+      "requested_rate": 0.1,
+      "score_cut": 0.05230630820977337
+    }
+  ],
+  "library_versions": {
+    "catboost": "1.2.10",
+    "numpy": "2.5.3",
+    "scikit-learn": "1.9.1"
+  },
+  "reserved_customer_count": 100,
+  "schema_version": "model-eval-1",
+  "selected_candidate": "catboost",
+  "selection_metric": "May average precision, fixed LR tie-break",
+  "split_manifest_sha256": "3292abbe5b9722642bfcd23fcc9f03002168364da2556daeeda65df0e270e51a",
+  "threshold_status": "proposals_only_owner_O4_pending"
+}
