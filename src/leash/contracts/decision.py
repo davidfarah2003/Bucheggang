@@ -28,7 +28,7 @@ ReasonCode = Literal[
     "step_up_timeout", "engine_timeout",
 ]
 Outcome = Literal["approve", "decline", "step_up"]
-FactSource = Literal["structured", "merchant_text", "model"]
+FactSource = Literal["agent_form", "structured", "merchant_text"]
 
 
 class PurchaseFacts(Contract):
@@ -52,7 +52,7 @@ class Check(Contract):
     name: NonEmpty
     result: Literal["pass", "fail", "uncertain"]
     value: str | int | float | None
-    source: Literal["event", "history", "merchant_text", "model", "state"]
+    source: Literal["event", "history", "agent_form", "merchant_text", "state"]
     note: str
 
 

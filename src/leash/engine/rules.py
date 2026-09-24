@@ -146,7 +146,7 @@ def resolve(rule: AnyRule, ctx: RuleContext) -> list[Observed]:
                 continue
             if name not in fact.sources:
                 raise ValueError(f"facts for {item.item_id} give {name} without a source")
-            source = "model" if fact.sources[name] == "model" else "merchant_text"
+            source = fact.sources[name]
             out.append(Observed(value, source, f"line {item.line_no}"))
         return out
 

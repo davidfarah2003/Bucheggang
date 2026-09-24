@@ -26,9 +26,8 @@ The full list is in `~/.jcode/config.toml` (`grep '^id = '`).
 | `reviewer` | `gemini-3.8-flash` (no effort tier; jcode refuses one for Gemini) | a different family from the builder; fast enough for one PR per spawn | `grok-4.7` for the security-shaped PRs (engine combine step, runner deadline guard) |
 | `librarian` | `gemini-3.8-flash` | long context, cheap, stays up all event | |
 | `labeler` | `grok-4.7` | independent from the builder family | the second labeler is `gpt-5.6-sol`; the two files are reconciled by a human |
-| extraction model inside the product (plan 03) | `claude-haiku-4-5-20251001` via the Anthropic API | latency; this is product code, not a seat | none at runtime: one model, no fallback. Apertus 70B only replaces it if measured better (plan 03) |
 
-Pair a builder with a reviewer from a different family.
+Pair a builder with a reviewer from a different family. No model runs inside the product at purchase time (docs/idea, Decision pipeline); the seats above are the only models we run.
 
 ## Seat budget
 
