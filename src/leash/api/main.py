@@ -53,8 +53,8 @@ def create_app(store: DraftStore, mandates: MandateClient, step_up_book: StepUpB
     @app.post("/session")
     def login(body: LoginBody, response: Response) -> dict[str, str]:
         username = body.username.strip()
-        if not username or len(username) > 80:
-            raise HTTPException(status_code=422, detail="username must contain 1 to 80 characters")
+        if not username or any(character.isspace() for character in username) or len(username) > 80:
+            raise HTTPException(status_code=422, detail="username must contain 1 to 80 non-whitespace characters")
         token = secrets.token_urlsafe(32)
         with sessions_lock:
             sessions[token] = username
