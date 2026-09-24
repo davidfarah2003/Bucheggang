@@ -13,7 +13,7 @@ from datetime import timedelta
 
 from leash.contracts import Check, PurchaseFacts
 
-from .rules import RuleContext
+from .rules import RuleContext, check_source
 
 VELOCITY_LIMIT = 2  # attempts in the previous 10 minutes that make a session uncertain
 LOOKALIKE_RATIO = 0.85
@@ -53,7 +53,7 @@ def cart_lines(ctx: RuleContext) -> Result:
     auth = ctx.event.authorization
     for line_no, name, fact in _facts_by_line(ctx):
         if fact is not None and fact.matches_request is False:
-            return _bad("cart lines", "fail", name, fact.sources.get("matches_request", "merchant_text"),
+            return _bad("cart lines", "fail", name, check_source(fact.sources["matches_request"]),
                         f"Line {line_no} ({name}) is not the requested item.", "item_mismatch")
     categories = [i.item_category for i in auth.items]
     main = auth.merchant.merchant_category
@@ -70,7 +70,7 @@ def cart_lines(ctx: RuleContext) -> Result:
 def addons(ctx: RuleContext) -> Result:
     for line_no, name, fact in _facts_by_line(ctx):
         if fact is not None and fact.is_addon:
-            return _bad("add-ons", "fail", name, fact.sources["is_addon"],
+            return _bad("add-ons", "fail", name, check_source(fact.sources["is_addon"]),
                         f"Line {line_no} ({name}) is an add-on the customer did not ask for.", "unrequested_item")
     return _ok("add-ons", None, "merchant_text", "No add-on line was detected.")
 
@@ -103,7 +103,12 @@ def _merchant_seen(ctx: RuleContext) -> int:
 
 
 def familiarity(ctx: RuleContext) -> Result:
-    """Merchant and device familiarity. A required prior-use rule is enforced by the rules."""
+    """Device and merchant familiarity from the card's history.
+
+    Owner ruling (plan 02 Decisions): an unseen merchant fails only through a
+    customer rule that requires prior use (history.merchant_seen_on_card). This
+    check never fails; an unseen device or merchant makes it uncertain.
+    """
     auth = ctx.event.authorization
     devices = ctx.history.device_count(auth.card_id, auth.customer_device_id, auth.timestamp)
     if devices == 0:
@@ -111,9 +116,12 @@ def familiarity(ctx: RuleContext) -> Result:
                     f"Device {auth.customer_device_id} has never made an approved purchase on this card.",
                     "new_device")
     merchants = _merchant_seen(ctx)
-    note = (f"{auth.merchant.merchant_name} has {merchants} earlier approved purchases on this card"
-            if merchants else f"First purchase at {auth.merchant.merchant_name} on this card")
-    return _ok("familiarity", merchants, "history", f"{note}; the device is known ({devices} purchases).")
+    if merchants == 0:
+        return _bad("familiarity", "uncertain", auth.merchant.merchant_name, "history",
+                    f"This card has never bought from {auth.merchant.merchant_name}.", "unfamiliar_merchant")
+    return _ok("familiarity", merchants, "history",
+               f"{auth.merchant.merchant_name} has {merchants} earlier approved purchases on this card; "
+               f"the device is known ({devices} purchases).")
 
 
 def velocity(ctx: RuleContext) -> Result:
@@ -165,7 +173,7 @@ def _flag(ctx: RuleContext, name: str, attr: str, categories: set[str], code: st
                         f"Line {item.line_no} ({item.item_name}) is a {label}.", code)
     for line_no, item_name, fact in _facts_by_line(ctx):
         if fact is not None and getattr(fact, attr):
-            return _bad(name, "fail", item_name, fact.sources[attr],
+            return _bad(name, "fail", item_name, check_source(fact.sources[attr]),
                         f"Line {line_no} ({item_name}) is a {label}.", code)
     return _ok(name, None, "merchant_text", f"No {label} detected.")
 
