@@ -21,7 +21,7 @@ Labels to check decisions against, a report the pitch can quote, and a demo that
 - decisions per scenario: approve, decline, step_up counts;
 - agreement with labels, with every disagreement listed and explained;
 - autonomy rate (share decided without a step-up) and error rate on those, per scenario;
-- extract lane's corpus table (pass 1, pass 1 plus 2);
+- extract lane's corpus table (pass 1; there is no model pass, docs/idea Decision pipeline);
 - latency p50 and p99 for extract, evaluate and end-to-end, from the fake-simulator run and the live run;
 - attacks in SCEN0004 stopped or escalated, and ordinary purchases in SCEN0000 to SCEN0002 approved without a question.
 
