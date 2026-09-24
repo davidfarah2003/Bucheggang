@@ -1,0 +1,63 @@
+{
+  "draft_id": "37af8a14-da49-45d9-9032-aa575bcce5ed",
+  "version": 1,
+  "hash": "cadc9f401fb0ca103cf76906ae0dc60d2543bef0262a9a7dd4c2033845e3eea4",
+  "instruction": "Do the weekly grocery shopping online at supermarkets I already use. Never spend more than CHF 100 per order or CHF 250 in any 7-day window; groceries and household basics only. If unsure, ask.",
+  "rules": [
+    {
+      "currency": "CHF",
+      "field": "authorization.billing_amount_chf",
+      "operator": "<=",
+      "plain_english": "Each order including delivery must cost CHF 100 or less.",
+      "scope": "purchase",
+      "source_text": "CHF 100 per order",
+      "value": 100
+    },
+    {
+      "currency": "CHF",
+      "field": "authorization.billing_amount_chf",
+      "operator": "<=",
+      "period_days": 7,
+      "plain_english": "Approved purchases plus this order must total CHF 250 or less over seven days.",
+      "scope": "period",
+      "source_text": "CHF 250 in any 7-day window",
+      "value": 250
+    },
+    {
+      "field": "authorization.channel",
+      "operator": "=",
+      "plain_english": "Use the ecommerce channel.",
+      "scope": "purchase",
+      "source_text": "shopping online",
+      "value": "ecommerce"
+    },
+    {
+      "field": "authorization.merchant.merchant_category",
+      "operator": "=",
+      "plain_english": "Use a grocery retailer.",
+      "scope": "purchase",
+      "source_text": "supermarkets",
+      "value": "groceries"
+    },
+    {
+      "field": "items.category",
+      "operator": "=",
+      "plain_english": "Evaluate grocery-labelled basket lines; the broader household-basics taxonomy is not confirmed.",
+      "scope": "purchase",
+      "source_text": "groceries and household basics only",
+      "value": "groceries"
+    },
+    {
+      "field": "history.merchant_seen_on_card",
+      "operator": "=",
+      "plain_english": "Require a prior approved purchase on this card.",
+      "scope": "purchase",
+      "source_text": "I already use",
+      "value": "true"
+    }
+  ],
+  "examples": [],
+  "open_questions": [],
+  "uncertainty_policy": "ask",
+  "created_at": "2026-09-24T20:13:57.502596Z"
+}
