@@ -138,6 +138,8 @@ class HistoryIndex:
                         or self._accounts[card_id] != row["account_id"]):
                     raise ValueError(f"{auth_id}: card, account and customer ownership disagree")
                 if row["transaction_type"] == "purchase":
+                    if row["initiator_type"] not in {"agent", "human"}:
+                        raise ValueError(f"{auth_id}: unsupported purchase initiator type {row['initiator_type']!r}")
                     if row["status"] not in {"approved", "declined"}:
                         raise ValueError(f"{auth_id}: unknown purchase status")
                     if not all(row[field] for field in (
@@ -263,7 +265,10 @@ class HistoryIndex:
             raise ValueError(f"{auth.authorization_id}: authorization and mandate identity differ")
         if self._owners.get(card_id) != customer_id:
             raise ValueError(f"{auth.authorization_id}: mandate card does not belong to customer")
-        per_limit, monthly_limit = self._limits[card_id]
+        limits = self._limits.get(card_id)
+        if limits is None:
+            raise ValueError(f"{auth.authorization_id}: account limits unavailable for mandate card")
+        per_limit, monthly_limit = limits
         purchase = _Purchase(
             customer_id=customer_id, card_id=card_id,
             authorization_id=auth.authorization_id, when=auth.timestamp,

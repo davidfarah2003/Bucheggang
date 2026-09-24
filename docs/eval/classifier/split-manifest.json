@@ -406,7 +406,7 @@
     "CU1500"
   ],
   "input_sha256": {
-    "docs/eval/classifier/feature-schema.md": "3864e4789f7ac1f83c608f837063eea940267c2635040b2ee36affd194019932",
+    "docs/eval/classifier/feature-schema.md": "91fab4bf5951054e034d2c51354342bd42c47bba8c10e2d212002925fc6b3314",
     "docs/plans/02-classifier-design.md": "4d8ea6601aa2a23927a895b03ccd8e90ec8ae275da818dbc377d01e258409eb9",
     "viseca-2026/additional-data-history/accounts.csv": "52f65aa31b2886640876674f0b90bef38a9714655b6be12c4e246169dd851826",
     "viseca-2026/additional-data-history/authorization_history.csv": "23ae437b581b6187527b136ac16c82a6592c4aa9def94cd570fe9d5f89700883",

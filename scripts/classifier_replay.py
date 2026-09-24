@@ -70,15 +70,16 @@ def main() -> None:
             raise ValueError(f"{scenario_id}: attempt card differs from its authority")
         state = MandateState(mandate_id=f"offline-mandate-{uuid4().hex}")
         prior_events = {}
-        previous_time = None
+        previous_key = None
         for row in scenario_rows:
             auth_id = row["authorization_id"]
             authority = authorities[row["authority_id"]]
             event = base.build_event(row, authority, merchants[row["merchant_id"]], items[auth_id],
                                      policy, state, prior_events, 8.0)
-            if previous_time is not None and event.authorization.timestamp < previous_time:
-                raise ValueError(f"{scenario_id}/{auth_id}: scenario time moved backwards")
-            previous_time = event.authorization.timestamp
+            current_key = (event.authorization.timestamp, auth_id)
+            if previous_key is not None and current_key <= previous_key:
+                raise ValueError(f"{scenario_id}/{auth_id}: scenario event-time key did not advance")
+            previous_key = current_key
             started = perf_counter()
             bundle = history_bundle(event, policy, history)
             facts = [PurchaseFacts.model_validate(fact) for fact in
