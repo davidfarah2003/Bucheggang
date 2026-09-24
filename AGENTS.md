@@ -157,6 +157,18 @@ Across lanes:
 
 This is a hackathon. We move fast and try things as we go.
 
+### No fallbacks
+
+This applies to the whole application and to every plan. When something fails, it fails loudly and we fix it.
+
+- No fallback code paths. No `try`/`except` that swallows an error and carries on, no default value substituted for a failed call, no "if the model fails, use X", no retry loop that hides a broken dependency.
+- No mock or stub mode in shipped code, and no alternative model, provider or data source switched in when the first one fails.
+- No recorded demo standing in for the live one.
+- A missing key, a timeout, a bad response or an unexpected input raises an error with a message that says what failed, and the runner logs it.
+- A reviewer blocks any fallback it finds.
+
+### Checking your work
+
 - No tests. Do not write unit tests, test files, fixtures for tests, or test suites, and do not run a linter. Nobody spends tokens on them.
 - A task is done when you ran it once and saw it work: run the script, call the route, open the page, replay the attempts. Put the command and what came out in the Log line.
 - `scripts/replay.py` over the 45 public attempts is the one check that matters. Once it exists, run it before asking for review and paste the decision table in the PR body.

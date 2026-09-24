@@ -31,7 +31,7 @@ Out:
 ## Steps
 
 1. Pick the frontend approach and write it here: plain HTML plus a little JS served by FastAPI (fastest), or a small React or Svelte build in `app/`. Either way the pages must work at 400 px wide.
-2. Build against the `SCEN0002` fixture draft from plan 01 and the example event from `viseca-2026/data/scenario_fixtures/` before the backend routes exist. A `--mock` flag in `leash.api` serves the fixtures.
+2. Build against the `SCEN0002` fixture draft from plan 01 and the example event from `viseca-2026/data/scenario_fixtures/` before the backend routes exist. Until the routes exist, the pages read the sample JSON directly. That code is deleted when the routes land; there is no mock mode in the app.
 3. Confirmation screen, then step-up screen. These two are in the demo.
 4. Policy page with tighten and revoke.
 5. History and judge panel.

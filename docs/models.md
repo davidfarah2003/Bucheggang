@@ -20,13 +20,13 @@ The full list is in `~/.jcode/config.toml` (`grep '^id = '`).
 
 ## Assignment by role
 
-| Persona | Default | Why | Swap to |
+| Persona | Default | Why | Other seats |
 | --- | --- | --- | --- |
 | `<lane>_builder` | `claude-opus-5-5` high | strongest on multi-file Python | `gpt-6-sol` for a second builder in the same lane, so the two seats do not share blind spots |
-| `reviewer` | `gemini-3.8-flash` high | a different family from the builder; fast enough for one PR per spawn | `grok-4.7` for the security-shaped PRs (engine combine step, runner deadline guard) |
-| `librarian` | `gemini-3.8-flash` medium | long context, cheap, stays up all event | `glm-5.3` if Gemini quota runs out |
+| `reviewer` | `gemini-3.8-flash` (no effort tier; jcode refuses one for Gemini) | a different family from the builder; fast enough for one PR per spawn | `grok-4.7` for the security-shaped PRs (engine combine step, runner deadline guard) |
+| `librarian` | `gemini-3.8-flash` | long context, cheap, stays up all event | |
 | `labeler` | `grok-4.7` high | independent from the builder family | the second labeler is `gpt-5.6-sol`; the two files are reconciled by a human |
-| extraction model inside the product (plan 03) | `claude-haiku-4-5-20251001` via the Anthropic API | latency; this is product code, not a seat | Apertus 70B from the event's Swisscom credits, if measured better |
+| extraction model inside the product (plan 03) | `claude-haiku-4-5-20251001` via the Anthropic API | latency; this is product code, not a seat | none at runtime: one model, no fallback. Apertus 70B only replaces it if measured better (plan 03) |
 
 Pair a builder with a reviewer from a different family.
 

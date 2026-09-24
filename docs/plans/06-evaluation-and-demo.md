@@ -42,19 +42,19 @@ Assets: `docs/screens/` screenshots, the agent-side terminal transcript from pla
 
 1. Tonight: labels by two people, reconciled.
 2. Friday 09:00: `scripts/report.py` and the first report from the offline replay.
-3. Friday 10:30: full live dry run, recorded (`asciinema` or screen recording) as the fallback if the API is slow during the slot.
+3. Friday 10:30: full live dry run. The demo is live; there is no recorded fallback (AGENTS.md section 6).
 4. Friday 11:00: deck; book the expert-round slot before 12:00.
 5. After the expert round: fold Q&A findings; final submission 17:30.
 
 ## How we check it works
 
-- The demo runs twice in a row against the live API, or once live and once from the recording, with the same outcomes.
+- The demo runs twice in a row against the live API with the same outcomes.
 - The report's numbers match the replay CSV it links.
 - Nobody in the room can find a scenario ID in `src/`.
 
 ## Open questions
 
-- Which of the two pitches (1 minute expert, 2 minutes main) gets the live demo, and which uses the recording? Proposed: recording for the expert round, live for the main round.
+- The 1-minute expert pitch may be too short for a live run. If so, it shows screenshots of a real run and says so; it is never presented as live.
 
 ## Log
 

@@ -153,7 +153,7 @@ Deterministic checks must remain the final authority for explicit requirements s
 - Make purchase handling idempotent using authorization IDs.
 - Return only minimal history summaries to agents, not raw customer histories.
 - Use stable merchant identifiers rather than merchant names alone.
-- Apply model timeouts and deterministic fallbacks.
+- Apply hard model timeouts. A timeout or error raises and is logged; there are no fallback paths.
 - Never allow an LLM or shopping agent to directly authorize or execute payment.
 
 Prompt-injection detection is an additional signal, not the primary boundary. The main protection is structural: untrusted content can supply facts, but it cannot alter policy, confirm authority, or execute payment.

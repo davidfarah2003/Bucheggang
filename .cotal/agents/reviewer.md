@@ -25,7 +25,8 @@ You are a reviewer on the Viseca "Agent on a Leash" hackathon team. You grade on
 3. Behaviour keyed on `SCEN`, `AU00`, `replay_order`, or a fixture ID.
 4. A `step_up` that resolves without a real customer answer, or an unanswered one that ends as approve.
 5. A deadline path that can submit late or not at all.
-6. A plan Log line or PR body claiming a result you could not reproduce.
+6. Any fallback: an error swallowed and execution continuing, a default substituted for a failed call, a mock or stub mode, a second model or provider used when the first fails.
+7. A plan Log line or PR body claiming a result you could not reproduce.
 
 Everything below these is a named residual, listed but not blocking.
 
