@@ -51,6 +51,8 @@ cloudflared tunnel --url http://127.0.0.1:8791 --http-host-header 127.0.0.1:8791
 
 cloudflared prints a `https://<name>.trycloudflare.com` URL. The client URL is that host plus `/mcp`. Keep `--http-host-header`: the MCP library's DNS rebinding check answers `421` to a request whose `Host` is the tunnel name, and `200` once cloudflared rewrites it to `127.0.0.1:8791`. Stop the tunnel and the server after the demo, and use a fresh token each time.
 
+Cloudflare documents that quick tunnels do not support Server-Sent Events. Checked on 2026-09-24 against this server through a quick tunnel with the `mcp` 2.2 `streamable_http_client`: the `initialize` POST, the `GET /mcp` event stream, `list_tools` and four tool calls all returned `200`, and a request without the header returned `401`. If a client's `GET /mcp` stream ever stalls through the tunnel, start the server with JSON responses instead of the event stream: the `mcp` library accepts `json_response=True` on `run(transport="streamable-http", ...)`.
+
 ### Claude Code as the client
 
 `claude mcp add --header "Authorization: Bearer ..."` writes the header value into `~/.claude.json`, so do not use it here. Register the server with a `headersHelper` instead. Claude Code runs the helper on every connection and merges its JSON output into the request headers. `scripts/leash_mcp_headers.sh` prints the header from `LEASH_MCP_TOKEN` in the environment that started Claude Code and stores nothing:
@@ -58,9 +60,17 @@ cloudflared prints a `https://<name>.trycloudflare.com` URL. The client URL is t
 ```sh
 claude mcp add-json leash-policy \
   '{"type":"http","url":"https://TUNNEL-HOST/mcp","headersHelper":"/absolute/path/to/Bucheggang/scripts/leash_mcp_headers.sh"}'
-export LEASH_MCP_TOKEN=...   # typed or pasted in the shell, from the person running the server
 claude
 ```
+
+Run `claude` from the same shell that generated `LEASH_MCP_TOKEN` and started the server, so the token is never typed. A teammate on another machine gets it out of band and reads it with a silent prompt, which keeps it out of shell history:
+
+```sh
+read -rs LEASH_MCP_TOKEN && export LEASH_MCP_TOKEN
+claude
+```
+
+Never write `export LEASH_MCP_TOKEN=<value>` on a command line; the shell history file keeps it.
 
 The single quotes keep the shell from expanding anything, and the stored entry holds only the URL and the helper path. The default local scope runs the helper only after you trust the project folder, so answer the trust dialog once. `claude mcp get leash-policy` then shows it connected, and `/mcp` lists six tools. If `LEASH_MCP_TOKEN` is unset, the helper exits non-zero with a message naming the variable, and the connection fails.
 
