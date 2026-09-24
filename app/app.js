@@ -338,16 +338,20 @@ async function needsContent(serial) {
     ${draft || pending.length ? "" : `<p class="calm-copy">Spending requests and purchases that need a decision will appear here.</p>`}</div>`;
 }
 
+function pendingTimeLabel(expiresAt) {
+  const remaining = new Date(expiresAt).getTime() - Date.now();
+  if (!Number.isFinite(remaining)) throw new Error("A pending purchase has an invalid deadline.");
+  return remaining > 0 ? `${Math.floor(remaining / 60000)}m ${String(Math.floor(remaining / 1000) % 60).padStart(2, "0")}s left` : "Deadline reached";
+}
+
 function pendingCard(item) {
   text(item.authorization_id, "Pending purchase ID");
   text(item.expires_at, "Pending purchase deadline");
   if (!item.event?.authorization?.merchant || !item.decision || !Array.isArray(item.decision.evidence)) throw new Error("A pending purchase is incomplete.");
   const auth = item.event.authorization;
   const merchant = text(auth.merchant.merchant_name, "Pending merchant");
-  const remaining = new Date(item.expires_at).getTime() - Date.now();
-  if (!Number.isFinite(remaining)) throw new Error("A pending purchase has an invalid deadline.");
   const issue = item.decision.evidence.find((check) => check.result === "uncertain" || check.result === "fail");
-  return `<button type="button" class="need-card uncertain-card" data-action="open-pending" data-id="${esc(item.authorization_id)}"><span class="section-kicker">PURCHASE REVIEW · ${remaining > 0 ? `${Math.floor(remaining / 60000)}m ${String(Math.floor(remaining / 1000) % 60).padStart(2, "0")}s left` : "Deadline reached"}</span><strong>One detail needs a decision</strong><span>${esc(merchant)} · ${esc(money(auth.billing_amount_chf, auth.currency))}</span><small>${esc(issue?.note || item.decision.customer_message)}</small><b aria-hidden="true">›</b></button>`;
+  return `<button type="button" class="need-card uncertain-card" data-action="open-pending" data-id="${esc(item.authorization_id)}"><span class="section-kicker" aria-live="off">PURCHASE REVIEW · ${esc(pendingTimeLabel(item.expires_at))}</span><strong>One detail needs a decision</strong><span>${esc(merchant)} · ${esc(money(auth.billing_amount_chf, auth.currency))}</span><small>${esc(issue?.note || item.decision.customer_message)}</small><b aria-hidden="true">›</b></button>`;
 }
 
 async function refreshPending() {
@@ -362,8 +366,31 @@ async function refreshPending() {
     if (!Array.isArray(pending)) throw new Error("Pending purchases must be a list.");
     if (request !== state.pendingSerial || route !== state.serial || id !== mandateId() || !container.isConnected) return;
     const markup = pending.map(pendingCard).join("");
+    const unchanged = pending.length === state.pending.length && pending.every((item, index) =>
+      item.authorization_id === state.pending[index].authorization_id &&
+      item.expires_at === state.pending[index].expires_at &&
+      item.decision.customer_message === state.pending[index].decision.customer_message);
+    if (unchanged) {
+      pending.forEach((item, index) => {
+        const label = container.children[index]?.querySelector(".section-kicker");
+        if (!label) throw new Error("The pending purchase card is missing its deadline.");
+        const next = `PURCHASE REVIEW · ${pendingTimeLabel(item.expires_at)}`;
+        if (label.textContent !== next) label.textContent = next;
+      });
+    } else {
+      const focusedId = container.contains(document.activeElement) ? document.activeElement.closest('[data-action="open-pending"]')?.dataset.id : null;
+      container.innerHTML = markup;
+      if (focusedId) {
+        const card = [...container.querySelectorAll('[data-action="open-pending"]')].find((item) => item.dataset.id === focusedId);
+        if (card) card.focus();
+        else {
+          const heading = document.querySelector("#needs-heading");
+          heading.tabIndex = -1;
+          heading.focus();
+        }
+      }
+    }
     state.pending = pending;
-    container.innerHTML = markup;
     const openAnswer = overlayRoot.querySelector('[data-action="resolve"]');
     if (openAnswer) {
       const current = pending.find((item) => item.authorization_id === openAnswer.dataset.id);
@@ -374,7 +401,9 @@ async function refreshPending() {
       }
     }
     const count = pending.length + (state.draft ? 1 : 0);
-    document.querySelector("#needs-heading").textContent = count ? `${count} thing${count === 1 ? " needs" : "s need"} you` : "You're all caught up";
+    const heading = document.querySelector("#needs-heading");
+    const title = count ? `${count} thing${count === 1 ? " needs" : "s need"} you` : "You're all caught up";
+    if (heading.textContent !== title) heading.textContent = title;
     document.querySelector("#wallet-indicator").hidden = !count;
     return true;
   } catch (error) {
