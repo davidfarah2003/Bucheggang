@@ -172,8 +172,20 @@ p { margin: 0; line-height: 1.48; }
   border: 1px solid #e9e4df;
   border-radius: 50%;
 }
-.orbit-ring.one { transform: rotate(-13deg); }
-.orbit-ring.two { transform: rotate(13deg); }
+.orbit-ring.one { transform: rotate(-13deg); animation: orbit-one 15s ease-in-out infinite alternate; }
+.orbit-ring.two { transform: rotate(13deg); animation: orbit-two 17s ease-in-out infinite alternate; }
+.orbit-glow { position: absolute; inset: 17px 17px; border-radius: 50%; background: radial-gradient(ellipse, #fcebe8 0, #f9f3ed 30%, transparent 70%); filter: blur(9px); animation: orbit-breathe 6s ease-in-out infinite alternate; }
+.category-float { position: absolute; z-index: 2; display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; border: 1px solid #eee7df; border-radius: 100px; background: rgb(255 255 255 / 88%); color: #556267; box-shadow: 0 5px 18px rgb(49 34 31 / 6%); font-size: 10px; font-weight: 620; letter-spacing: .02em; animation: category-drift 5s ease-in-out infinite alternate; }
+.category-float svg { width: 12px; height: 12px; flex: 0 0 12px; }
+.category-float.tech { left: 2px; top: 11px; }
+.category-float.travel { right: 3px; top: 8px; animation-delay: -2s; }
+.category-float.gifts { left: 3px; bottom: 10px; animation-delay: -3s; }
+.category-float.home { right: 2px; bottom: 13px; animation-delay: -1s; }
+.category-float.style { left: calc(50% - 19px); bottom: -9px; animation-delay: -4s; }
+@keyframes orbit-one { to { transform: rotate(-21deg) scale(1.04); } }
+@keyframes orbit-two { to { transform: rotate(22deg) scale(.98); } }
+@keyframes orbit-breathe { to { opacity: .55; transform: scale(1.12); } }
+@keyframes category-drift { to { transform: translateY(-6px); } }
 .orbit-center, .orbit-core {
   position: relative;
   z-index: 1;
@@ -191,10 +203,10 @@ p { margin: 0; line-height: 1.48; }
 .orbit-dot { left: 13%; top: 34%; }
 .orbit-dot::after { position: absolute; left: 205px; top: 31px; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); content: ""; }
 .composer {
+  position: relative;
   display: grid;
-  gap: 14px;
-  min-height: 174px;
-  padding: 20px;
+  min-height: 136px;
+  padding: 20px 20px 54px;
   border: 1px solid #e4ded6;
   border-radius: 23px;
   background: #fff;
@@ -210,14 +222,19 @@ p { margin: 0; line-height: 1.48; }
   font-size: 17px;
   line-height: 1.45;
 }
-.composer textarea { min-height: 54px; }
+.composer textarea { min-height: 62px; padding-right: 50px; }
 .composer textarea::placeholder, .composer input::placeholder { color: #687479; opacity: 1; }
 .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgb(200 56 49 / 10%); }
-.prompt-example { display: grid; gap: 7px; max-width: calc(100% - 52px); color: var(--ink); font-size: 15px; line-height: 1.3; }
-.prompt-example span { color: var(--muted); font-size: 10px; font-weight: 650; }
-.prompt-example button { min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--ink); font-size: 15px; line-height: 1.3; text-align: left; }
-.prompt-example button:hover { color: var(--accent); }
-.prompt-example [hidden] { display: none; }
+.prompt-example { display: grid; gap: 7px; min-height: 98px; margin-top: 15px; padding: 13px 16px; border: 1px solid #f0e9e5; border-radius: 17px; background: linear-gradient(125deg, #fffefd 20%, #fbf6f2 100%); color: var(--muted); }
+.prompt-example span { color: #7b7777; font-size: 10px; font-weight: 650; letter-spacing: .07em; }
+.prompt-example button { display: flex; min-height: 44px; align-items: center; padding: 0; border: 0; background: transparent; color: #58666a; font-size: 14px; line-height: 1.35; text-align: left; text-shadow: 0 0 15px rgb(200 56 49 / 8%); }
+.prompt-example button::before { width: 7px; height: 7px; flex: 0 0 7px; margin-right: 11px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 5px rgb(200 56 49 / 7%); content: ""; }
+.prompt-example button:hover { color: var(--accent-dark); }
+.request-hint { margin-top: 10px; color: #758083; font-size: 12px; line-height: 1.45; }
+.clarification { display: grid; gap: 9px; margin-top: 15px; padding: 15px; border: 1px solid #f0e9e5; border-radius: 17px; background: linear-gradient(125deg, #fffefd 20%, #fbf6f2 100%); }
+.clarification label { color: var(--ink); font-size: 14px; font-weight: 650; }
+.clarification textarea { width: 100%; min-height: 72px; padding: 11px 12px; border: 1px solid #e4ded6; border-radius: 12px; background: #fff; color: var(--ink); font-size: 14px; line-height: 1.45; resize: vertical; }
+.clarification small { color: var(--muted); font-size: 11px; line-height: 1.45; }
 .composer-actions { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .composer-submit, .send-button {
   display: grid;
@@ -233,11 +250,10 @@ p { margin: 0; line-height: 1.48; }
 }
 .composer-submit:not(:disabled):hover, .send-button:not(:disabled):hover { background: var(--accent-dark); color: #fff; }
 .send-button:not(:disabled) { background: var(--accent); color: #fff; }
-.send-button { width: 56px; font-size: 13px; font-weight: 680; }
-.composer { position: relative; padding-bottom: 24px; }
+.send-button { width: 44px; height: 44px; font-size: 13px; font-weight: 680; }
+.send-button svg { width: 21px; height: 21px; }
 .composer .send-button { position: absolute; right: 17px; bottom: 17px; }
-.agent-state { display: grid; gap: 20px; margin-top: 26px; color: var(--accent); font-size: 14px; font-weight: 650; }
-.agent-state { display: block; }
+.agent-state { margin-top: 20px; color: var(--accent); font-size: 14px; font-weight: 650; }
 .agent-state span { color: var(--muted); font-weight: 450; }
 .agent-state button { width: fit-content; padding: 0; border: 0; background: transparent; color: var(--accent); text-align: left; }
 .agent-state small, .agent-state a { color: var(--muted); font-size: 13px; font-weight: 450; text-decoration: none; }
@@ -245,7 +261,7 @@ p { margin: 0; line-height: 1.48; }
 .shop-plan h2 { font-size: 20px; }
 .shop-plan p { margin-top: 8px; color: var(--muted); }
 .shop-plan .text-button { margin-top: 17px; }
-.external-agent { margin-top: 30px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.external-agent { margin-top: 12px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 
 .page-title { margin-bottom: 22px; }
 .page-title h1 { font-size: 36px; }

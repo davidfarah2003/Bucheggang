@@ -7,11 +7,12 @@ const screen = document.querySelector("#screen");
 const overlayRoot = document.querySelector("#overlay-root");
 const toastRoot = document.querySelector("#toast-root");
 const examples = [
-  "Find me a 27-inch USB-C monitor below CHF 400",
-  "Book a train from Zürich to Milan tomorrow",
-  "Find a birthday gift around CHF 80",
-  "Get noise-cancelling headphones below CHF 300",
-  "Buy EU 43 running shoes with at least 14-day returns",
+  "Find a 27-inch USB-C monitor below CHF 400 with excellent colour accuracy",
+  "Book a morning train from Zürich to Milan with a window seat",
+  "Find a compact blue birthday gift around CHF 80",
+  "Get foldable black noise-cancelling headphones below CHF 300",
+  "Find blue EU 43 running shoes with at least 14-day returns",
+  "Find a round walnut dining table below CHF 700",
 ];
 const state = {
   user: null,
@@ -26,6 +27,7 @@ const state = {
   details: new Map(),
   detail: null,
   prompt: "",
+  extraDetails: "",
   serial: 0,
   pendingSerial: 0,
   timer: null,
@@ -191,6 +193,7 @@ function sessionExpired(error) {
   state.history = [];
   state.detail = null;
   state.prompt = "";
+  state.extraDetails = "";
   closeOverlay();
   state.overlayTrigger = null;
   document.querySelector("#wallet-indicator").hidden = true;
@@ -267,9 +270,11 @@ async function renderShop(serial) {
   if (linkedDraftId()) plan = validateDraft(await walletApi.draft(linkedDraftId()));
   if (serial !== state.serial) return;
   const cap = plan && purchaseCap(plan.rules);
-  setScreen(`<section class="shop-view"><div class="shop-intro"><h1>What can I<br />get for you?</h1><div class="orbit" aria-hidden="true"><span class="orbit-ring one"></span><span class="orbit-ring two"></span><span class="orbit-core">✓</span><span class="orbit-dot"></span></div></div>
-    <div class="composer"><label for="shop-prompt" class="sr-only">Your shopping request</label><textarea id="shop-prompt" rows="2" placeholder="Ask Viseca to buy something…">${esc(state.prompt)}</textarea><div class="prompt-example" ${state.prompt.trim() ? "hidden" : ""}><span>FOR EXAMPLE</span><button type="button" data-action="use-example" id="animated-example" data-example="${esc(examples[0])}" aria-label="Use example: ${esc(examples[0])}">${esc(examples[0])}</button></div><button class="send-button" type="button" data-action="copy-prompt" aria-label="Copy request for your shopping agent" ${state.prompt.trim() ? "" : "disabled"}>Copy</button></div>
-    <p class="agent-state">Shopping agent <span>· use an external MCP client</span></p><p class="external-agent">No shopping model is connected inside this demo. Copy your request to an MCP-compatible agent. The agent can send you a Wallet review link.</p>
+  setScreen(`<section class="shop-view"><div class="shop-intro"><h1>What can I<br />get for you?</h1><div class="orbit" aria-hidden="true"><span class="orbit-glow"></span><span class="orbit-ring one"></span><span class="orbit-ring two"></span><span class="orbit-core">✓</span><span class="orbit-dot"></span><span class="category-float tech"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Tech</span><span class="category-float travel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5" y="3" width="14" height="16" rx="4"/><path d="M5 12h14M9 19l-2 3m8-3 2 3"/></svg>Travel</span><span class="category-float gifts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M2 9h20M12 9v12M12 9c-5 0-7-2-5-5s5 0 5 5Zm0 0c5 0 7-2 5-5s-5 0-5 5Z"/></svg>Gifts</span><span class="category-float home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 10 12 3l9 7v11H3V10Z"/><path d="M9 21v-7h6v7"/></svg>Home</span><span class="category-float style"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m8 3-5 4-1 5 4 2v7h12v-7l4-2-1-5-5-4-4 3-4-3Z"/></svg>Style</span></div></div>
+    <div class="composer"><label for="shop-prompt" class="sr-only">Your shopping request</label><textarea id="shop-prompt" rows="2" placeholder="Ask Viseca to buy something…">${esc(state.prompt)}</textarea><button class="send-button" type="button" data-action="copy-prompt" aria-label="Copy request for your shopping agent" title="Copy request for your shopping agent" ${state.prompt.trim() ? "" : "disabled"}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 20V4M5 11l7-7 7 7"/></svg></button></div>
+    <div class="prompt-example" aria-live="off" ${state.prompt.trim() ? "hidden" : ""}><span>TRY ASKING</span><button type="button" data-action="use-example" id="animated-example" data-example="${esc(examples[0])}" aria-label="Use example: ${esc(examples[0])}">${esc(examples[0])}</button></div><p class="request-hint" ${state.prompt.trim() ? "hidden" : ""}>Include details that matter to you, such as colour, size, shape, price or returns.</p>
+    <div class="clarification" ${state.prompt.trim() ? "" : "hidden"}><label for="request-details">Anything else your agent should know?</label><textarea id="request-details" rows="2" placeholder="Colour, size, shape, delivery or returns…">${esc(state.extraDetails)}</textarea><small>These details are copied with your request. Review any spending limits in the Wallet before authorizing.</small></div>
+    <p class="agent-state">Shopping agent <span>· use an external MCP client</span></p><p class="external-agent">The arrow copies your request for your external agent. This demo has no in-app shopping model. Your agent can send you a Wallet review link after saving a plan.</p>
     ${plan ? `<section class="shop-plan"><span class="section-kicker">PLAN SAVED BY YOUR AGENT</span><h2>${esc(productName(plan))}</h2><p>${cap ? `${cap.strict ? "Below" : "Up to"} ${esc(money(cap.amount))}` : "Review the saved limits"}</p><button type="button" class="text-button" data-route="review">Review in Wallet <span aria-hidden="true">→</span></button></section>` : ""}
   </section>`);
   startExamples();
@@ -642,6 +647,7 @@ document.addEventListener("click", async (event) => {
       state.history = [];
       state.detail = null;
       state.prompt = "";
+      state.extraDetails = "";
       state.details.clear();
       document.querySelector("#wallet-indicator").hidden = true;
       closeOverlay();
@@ -653,8 +659,10 @@ document.addEventListener("click", async (event) => {
     else if (action === "revoke") await performRevoke();
     else if (action === "copy-prompt") {
       const prompt = text(document.querySelector("#shop-prompt").value.trim(), "Shopping request");
-      if (!navigator.clipboard?.writeText) throw new Error("Clipboard access requires a secure browser connection. Select the request and copy it manually.");
-      await navigator.clipboard.writeText(prompt);
+      const details = document.querySelector("#request-details").value.trim();
+      const request = details ? `${prompt}\nMore details: ${details}` : prompt;
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard access requires a secure browser connection. Copy the request and any extra details manually.");
+      await navigator.clipboard.writeText(request);
       button.disabled = false;
       toast("Request copied. Paste it into your connected shopping agent.", "success");
     }
@@ -668,13 +676,24 @@ document.addEventListener("click", async (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.id === "request-details") { state.extraDetails = event.target.value; return; }
   if (event.target.id !== "shop-prompt") return;
   state.prompt = event.target.value;
+  const hasPrompt = Boolean(state.prompt.trim());
+  if (!hasPrompt) {
+    state.extraDetails = "";
+    const details = document.querySelector("#request-details");
+    if (details) details.value = "";
+  }
   const send = document.querySelector(".send-button");
-  if (send) send.disabled = !state.prompt.trim();
+  if (send) send.disabled = !hasPrompt;
   if (state.exampleTimer) window.clearTimeout(state.exampleTimer);
   const example = document.querySelector(".prompt-example");
-  if (example) example.hidden = Boolean(state.prompt);
+  if (example) example.hidden = hasPrompt;
+  const hint = document.querySelector(".request-hint");
+  if (hint) hint.hidden = hasPrompt;
+  const clarification = document.querySelector(".clarification");
+  if (clarification) clarification.hidden = !hasPrompt;
 });
 
 document.addEventListener("focusin", (event) => {
