@@ -1,6 +1,6 @@
 # 06 Evaluation and demo
 
-- Status: draft
+- Status: report generator implemented and exercised, review pending. Labels remain provisional; human Wallet E2E, two full live dry runs and pitch/submission work remain open.
 - Owner: everyone; Rishabh drives the pitch
 - Channel: `team.zurichbuchegg` (spine)
 - Papers: [Selective Conformal Risk Control](../papers/2512.12844v2.pdf) (report the two numbers: how often the system decides alone, and how often it is wrong when it does; its guarantees need more labelled, exchangeable data than 45 attempts, so no guarantee is claimed), [CaMeL](../papers/2503.18813v2.pdf) (report lost utility next to blocked attacks)
@@ -22,15 +22,17 @@ Labels to check decisions against, a report the pitch can quote, and a demo that
 - agreement with labels, with every disagreement listed and explained;
 - autonomy rate (share decided without a step-up) and error rate on those, per scenario;
 - extract lane's corpus table (pass 1; there is no model pass, docs/idea Decision pipeline);
-- latency p50 and p99 for extract, evaluate and end-to-end, from the fake-simulator run and the live run;
+- latency p50 and p99 for offline extraction/evaluation and the available live measurements; complete live end-to-end timing remains unavailable until both ends are recorded;
 - attacks in SCEN0004 stopped or escalated, and ordinary purchases in SCEN0000 to SCEN0002 approved without a question.
 
-Numbers come from files in `docs/eval/`; the report links to them. No number appears in the pitch that is not in the report.
+Numbers come from files in `docs/eval/`; the report links to them. No number appears in the pitch that is not in the report. [run-report.md](../run-report.md) documents explicit inputs, labels-pending operation and measurement limits. [live-demo-checklist.md](../live-demo-checklist.md) separates observed evidence from the customer flow still to be exercised.
 
 ## Demo script (four minutes of content, cut to the slot)
 
+This is the intended sequence. The public attempt IDs below identify offline examples, not selectable live purchases. Use the live bootstrap's team scenario IDs, the customer's actual choices and the resulting decisions. Do not announce an approval or fixed latency before observing it.
+
 1. The external shopping agent proposes a `SCEN0002` draft through MCP and opens the Wallet at `/app/?draft=<id>`. Review the saved draft and examples, answer the return-terms question, and confirm. Show the `mandate_id` the agent receives. The Wallet also works directly without any built-in Harness.
-2. Ordinary purchase approved with no question (an early `SCEN0002` attempt). Show the judge panel: every check passed, 6 ms.
+2. Show an ordinary purchase's actual outcome and judge panel. Quote the measured timing. The early `SCEN0002` approval is an offline reference; missing live-card history may cause a step-up.
 3. A manipulated purchase from `SCEN0004`: injected merchant text is shown verbatim on the panel, flagged, and the decision is driven by the rule it tried to override.
 4. A `step_up` on the phone: AU0016, return terms not stated; the customer rejects; the next attempt at the same merchant is declined as a re-quote.
 5. Revoke on the policy page; the following purchase is declined with `mandate_revoked`.
