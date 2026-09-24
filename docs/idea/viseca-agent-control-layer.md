@@ -141,7 +141,7 @@ For each proposed purchase, the backend should:
 9. Return `approve`, `decline`, or `step_up` with evidence and a plain-language explanation.
 10. Continue to payment only after a final approval.
 
-No language model reads merchant text or fills the form on the backend's behalf. The shopping agent's model fills the form before it calls `buy`; the backend checks the form, and every explicit requirement, with deterministic rules. A bounded classifier over the customer's own purchase history (the Jev decision classifier, `docs/plans/07-classifier.md`) may add a risk signal in step 8; it never overrides a deterministic check and never reads merchant text.
+No language model reads merchant text or fills the form on the backend's behalf. The shopping agent's model fills the form before it calls `buy`; the backend checks the form, and every explicit requirement, with deterministic rules. A bounded classifier over the customer's own purchase history (the Jev decision classifier, `docs/plans/02-classifier-design.md` on `lane/classifier`, [pinned](https://github.com/davidfarah2003/Bucheggang/blob/d9bd26dc62784fad954c921e6fa5a58e19c69080/docs/plans/02-classifier-design.md) until it merges) may add a risk signal in step 8; it never overrides a deterministic check and never reads merchant text.
 
 Deterministic checks must remain the final authority for explicit requirements such as price limits, permitted categories, rolling budgets, mandate expiry, and maximum purchase count.
 

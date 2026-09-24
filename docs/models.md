@@ -27,7 +27,7 @@ The full list is in `~/.jcode/config.toml` (`grep '^id = '`).
 | `librarian` | `gemini-3.8-flash` | long context, cheap, stays up all event | |
 | `labeler` | `grok-4.7` | independent from the builder family | the second labeler is `gpt-5.6-sol`; the two files are reconciled by a human |
 
-Pair a builder with a reviewer from a different family. No model runs inside the product at purchase time (docs/idea, Decision pipeline); the seats above are the only models we run.
+Pair a builder with a reviewer from a different family. Inside the product, no model reads merchant text or fills the purchase facts form (docs/idea, Decision pipeline). The one model in the decision path is the Jev history classifier (`docs/plans/02-classifier-design.md`), which reads the customer's own history and adds a risk signal; its model choice is recorded in that plan.
 
 ## Seat budget
 
