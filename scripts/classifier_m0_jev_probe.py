@@ -42,6 +42,7 @@ BODY = {
             },
         }
     },
+    "provider": {"only": ["typesafe"], "allow_fallbacks": False},
 }
 
 

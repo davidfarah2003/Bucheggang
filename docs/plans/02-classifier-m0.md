@@ -75,24 +75,24 @@ B1 is still open on main: `facts.py:130` sets `sources["matches_request"] = sour
 - `Check.source: Literal["event", "history", "agent_form", "merchant_text", "state"]` (line 55). There is no value for a model assessment.
 - `PurchaseFacts` (line 34) keys a line by `item_id` only. There is no `line_no`, so two lines with the same item are not distinguishable in facts.
 
-Proposal P1, a contract PR owned by engine_builder, agreed on `contracts` before any classifier code depends on it:
+Proposal P1, an engine-owned contract change that the classifier lane may draft as a separate PR under the engine owner's review. The boundary was confirmed on `contracts` after r1 froze:
 
 - Add `"model"` to `Check.source`. A check built from a behavioural or Jev assessment carries it, plus the model id and artifact or snapshot version in its evidence.
-- Add `line_no` to `PurchaseFacts`. The history classifier does not need it. M3 needs it only if O1 allows line inputs.
+- Defer `line_no` on `PurchaseFacts` until O1 allows line inputs. The history classifier does not need it.
 - Per-field dependency lists for derived facts (design section 6) wait on O1. If Jev never reads line facts, the classifier has no need for them and the item stays with extraction as B1.
 
 ## 4. Where the classifier plugs in
 
 `evaluate(event, policy, state, facts)` (`src/leash/engine/evaluate.py:42`) is pure: no network, no model call. The design keeps it that way (section 9): `assess(...) -> AssessmentBundle` runs first, outside it, then the evaluator composes.
 
-Proposal P2, agreed with engine_builder:
+Proposal P2. The engine owner confirmed the module boundary and conditional interface on `team.zurichbuchegg.contracts` after the r1 target was frozen. The proposed contract change remains unmerged:
 
 - New subpackage `src/leash/engine/classifier/`, owned and written only by the classifier lane:
   - `history.py`: `HistoryFeatures` built from pre-event rows, with separate card and customer scopes.
   - `behaviour.py`: loads one versioned artifact and scores `HistoryFeatures`. Loading fails at startup when the artifact is missing or its schema differs.
   - `jev.py`: the provider adapter (section 7).
   - `assess.py`: `assess(event, state, as_of) -> AssessmentBundle`.
-- `evaluate()` gains one optional argument, `assessments: AssessmentBundle | None`. `None` means the model-enabled configuration is off, a release setting fixed at startup. It never means a model failed; a failure raises before `evaluate` is called. engine_builder writes this change in `evaluate.py` and `checks.py`. The classifier lane proposes the check function and its `ReasonCode` in the same PR.
+- `evaluate()` gains one optional argument, `assessments: AssessmentBundle | None = None`. `None` means the model-enabled configuration is off, a release setting fixed at startup. It never means a model failed; a failure raises before `evaluate` is called. The classifier lane drafts the engine-owned edits in `evaluate.py` and `checks.py` as a separate PR for the engine owner to review and merge. A model check returns `pass` or `uncertain`, never `fail`; it cannot decline alone or overturn a deterministic failure. `AssessmentBundle` moves into `src/leash/contracts/` with a matching `docs/contracts.md` entry in that PR. The engine owner has held integration on main until after the 12:00 submission freeze.
 - Offline scripts are `scripts/classifier_*.py`. Split manifests, artifacts and reports go under `docs/eval/classifier/`.
 
 Engine history today (`src/leash/engine/data.py:32-57`) holds approved purchases per card, from the base pack only (line 78). Checks call it with `auth.card_id` (`checks.py:100, 113, 138, 200`). The classifier reads the same CSVs through its own module and does not change `History`.
@@ -161,7 +161,7 @@ The Jev response carries both a `choice` and a probability map. Rule for the ada
 
 ## 9. Provider and model pin
 
-Checked live with `scripts/classifier_m0_jev_probe.py` (one small catalogue-field question per call, no history, no merchant text; the key is `OPENROUTER_API` in the main checkout `.env` and is never printed):
+The first live calls used `scripts/classifier_m0_jev_probe.py` with one small catalogue-field question per call, no history and no merchant text. That version of the script did not send a provider restriction, so those calls establish served model names only. Grok's r1 report found the gap. The script now sends `provider: {"only": ["typesafe"], "allow_fallbacks": false}`. A new call exercised the restriction. The key is `OPENROUTER_API` in the main checkout `.env` and was not printed:
 
 | Requested model | HTTP | Latency | Served model |
 | --- | --- | --- | --- |
@@ -169,10 +169,11 @@ Checked live with `scripts/classifier_m0_jev_probe.py` (one small catalogue-fiel
 | `typesafe/jev-1.13` | 200 | 684 ms | `typesafe/jev-1.13-20260917` |
 | `~typesafe/jev-latest` | 200 | 334 ms | `typesafe/jev-1.13-20260917` |
 | `jev-1.13.0` (design section 6 name) | 400 | | "Model typesafe/jev-1.13.0 does not exist" |
+| `typesafe/jev-1.13-20260917`, provider pinned, fallbacks off (r2) | 200 | 478 ms | `typesafe/jev-1.13-20260917`, provider TypeSafe |
 
-The 501 ms call used 379 input and 40 output tokens at a cost of 1.5918e-05.
+The 501 ms call used 379 input and 40 output tokens at a cost of 1.5918e-05. The r2 call used the corrected script and produced HTTP 200, served model `typesafe/jev-1.13-20260917` and provider `TypeSafe`. Its response is retained outside the repository at `/private/tmp/classifier-m0-r2-jev-probe.log`; no credential value appears there.
 
-Pin: `POST https://openrouter.ai/api/v1/systemone` with `model: "typesafe/jev-1.13-20260917"` and `provider: {"only": ["typesafe"], "allow_fallbacks": false}`. If the response names a different model, the adapter raises. The design's `jev-1.13.0` does not exist on this route. The dated snapshot is the same release, so M3 treats this as a name correction. Five calls are not a latency measurement; M3 measures under the real deadline.
+Pin: `POST https://openrouter.ai/api/v1/systemone` with `model: "typesafe/jev-1.13-20260917"` and `provider: {"only": ["typesafe"], "allow_fallbacks": false}`. If the response names a different model, the adapter raises. The design's `jev-1.13.0` does not exist on this route. The dated snapshot is the same release, so M3 treats this as a name correction. These calls are not a latency measurement; M3 measures under the real deadline.
 
 ## 10. Dependencies for M2
 
@@ -183,6 +184,8 @@ Pin: `POST https://openrouter.ai/api/v1/systemone` with `model: "typesafe/jev-1.
 
 M2 picks after the comparison. The `pyproject.toml` change is a shared-file edit and goes by PR with a line on `contracts`. `uv.lock` in this worktree was created by `uv run`, is untracked, and stays out of commits until P5.
 
+M2 split disposition for GLM G1: keep the design's fixed candidate selection on May, then refit the selected configuration through May. The July rows and the reserved 20% of customers do not enter selection, fitting, calibration or threshold choice. May selection and refitting reuse outcomes from the same customers, so the seen-customer July metrics are labeled selection-informed. Lead the generalization table with reserved-customer July metrics and show seen-customer July metrics separately. The split manifest records this protocol, the fixed seed and customer membership before fitting. July cannot change the candidate or operating point. The report also leads with the subset that passes deterministic checks and separates agent and human calibration and escalation rates. The zero-history slice has no examples in either supplied pack, so its outcome metrics are unavailable.
+
 ## 11. Ownership map
 
 | Path or item | Owner | Classifier lane role |
@@ -191,8 +194,8 @@ M2 picks after the comparison. The `pyproject.toml` change is a shared-file edit
 | `scripts/classifier_*.py` | classifier lane | sole writer |
 | `docs/eval/classifier/**` (new) | classifier lane | sole writer |
 | `docs/plans/02-classifier-*.md`, `docs/reviews/classifier/**` | classifier lane | sole writer; design file frozen at its reviewed hash |
-| `src/leash/contracts/**`, `docs/contracts.md` | engine_builder | proposes P1 and the `evaluate()` argument on `contracts` |
-| `src/leash/engine/evaluate.py`, `checks.py`, `state.py`, `data.py`, `rules.py` | engine_builder | proposes the assessment check; does not edit |
+| `src/leash/contracts/**`, `docs/contracts.md` | engine lane, coordinated by david_main | drafts only the agreed `AssessmentBundle` and `Check.source` edits in a separate classifier PR; engine owner reviews and merges |
+| `src/leash/engine/evaluate.py`, `checks.py`, `state.py`, `data.py`, `rules.py` | engine lane, coordinated by david_main | drafts only the agreed `evaluate()` argument and pass-or-uncertain model check in that PR; leaves other engine code unchanged |
 | `src/leash/runner/**` | runner_builder | proposes P3 and P4; does not edit |
 | `scripts/replay.py` | david_orch | uses it; does not duplicate it |
 | `src/leash/extract/**`, `src/leash/policy/**` | Oskar | B1 and O2 are Oskar's |
@@ -203,14 +206,14 @@ M2 picks after the comparison. The `pyproject.toml` change is a shared-file edit
 
 | Id | Question | Who rules | Blocks |
 | --- | --- | --- | --- |
-| O1 | May Jev read catalogue `item_name` and `item_category` beside the confirmed requirement? `item_details` stays excluded either way. | David, with Oskar | M3 input design |
+| O1 | May Jev read catalogue `item_name` and `item_category` beside the confirmed requirement? `item_details` stays excluded either way. | David, with Oskar | Optional M3 line-input extension only; history-only M3 proceeds |
 | O2 | Do drafts store the customer-confirmed catalogue product name in `facts.product_type`? | Oskar (policy) | nothing in the classifier; SCEN0000 to SCEN0004 approvals |
 | O3 | Does a local tightening or revocation apply to runs already started? | David | M4 policy binding |
 | O4 | Operating threshold and escalation budget for the behavioural model (design section 5). | David, after the M2 June table | enabling a live effect in M4 |
 
 ## 13. Milestone sequence after M0
 
-- M1 builds `history.py` over both packs with card, customer and mandate scopes and pre-event cutoffs, then runs it once through `evaluate` by way of the replay path with the model effect disabled. It needs P2 agreed with engine_builder. It does not need P1, P3 or P4.
-- M2 is offline and needs only P5.
-- M3 needs O1 and P1.
-- M4 needs P3, P4, O3 and O4.
+- M1 builds `history.py` over both packs with card and customer scopes and pre-event cutoffs; mandate state stays in the evaluator. It runs the history path once with the model effect disabled. P2's module boundary is agreed with the engine owner. Engine contract integration remains a separate PR.
+- M2 is offline and needs P5. Its split and reporting follow the G1 disposition above.
+- M3 uses only the customer's own history until O1 is answered. Its provider adapter and standalone assessment can run without P1; model checks in `evaluate` need the separate engine contract PR. No catalogue line input is assumed.
+- M4 needs the runner/app changes P3 and P4 from their owners, an O3 policy-binding ruling, and O4 before any live behavioural-score effect. An isolated replay may exercise the off configuration without those release gates.
