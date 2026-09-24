@@ -77,7 +77,20 @@ def confirm_policy(
     if not confirmed_by:
         raise InvalidDraft("authenticated customer identity is required")
     draft = _answered_draft(store, draft_id, version, hash_value, answers)
+    attempt_id = store.begin_confirmation(
+        draft_id,
+        version=draft["version"],
+        hash_value=draft["hash"],
+        confirmed_by=confirmed_by,
+    )
     simulator_draft_id = mandates.create(draft)
+    store.record_simulator_draft(
+        draft_id,
+        version=draft["version"],
+        hash_value=draft["hash"],
+        attempt_id=attempt_id,
+        simulator_draft_id=simulator_draft_id,
+    )
     mandate_id = mandates.confirm(simulator_draft_id)
     result = store.record_confirmation(
         draft_id,
@@ -86,6 +99,7 @@ def confirm_policy(
         simulator_draft_id=simulator_draft_id,
         mandate_id=mandate_id,
         confirmed_by=confirmed_by,
+        attempt_id=attempt_id,
     )
     return {
         "mandate_id": mandate_id,
