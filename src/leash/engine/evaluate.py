@@ -10,6 +10,7 @@ from leash.contracts.event import MandateRule
 
 from . import checks
 from .rules import RuleContext, evaluate_rule, reason_code
+from .words import Finding, compose
 
 ENGINE_VERSION = "leash-engine 0.3"
 STRICTNESS = {"approve": 0, "ask": 1, "decline": 2}
@@ -50,11 +51,13 @@ def evaluate(event: Event, policy: PolicyDraft, state: MandateState,
     ctx = RuleContext(event, state, _quarantine(facts))
 
     evidence: list[Check] = []
+    findings: list[Finding] = []
     fails: list[str] = []
     uncertain: list[str] = []
 
-    def add(check: Check, code: str | None) -> None:
+    def add(check: Check, code: str | None, rule=None) -> None:
         evidence.append(check)
+        findings.append(Finding(check, rule))
         if check.result == "fail":
             fails.append(code)
         elif check.result == "uncertain":
@@ -64,7 +67,7 @@ def evaluate(event: Event, policy: PolicyDraft, state: MandateState,
     add(first.check, first.code)
     for rule in _rules(policy, event):
         check = evaluate_rule(rule, ctx)
-        add(check, reason_code(rule, check))
+        add(check, reason_code(rule, check), rule)
     for fn in checks.CHECKS:
         result = fn(raw_ctx if fn is checks.injected else ctx)
         add(result.check, result.code)
@@ -79,8 +82,7 @@ def evaluate(event: Event, policy: PolicyDraft, state: MandateState,
         outcome, codes = "approve", ["within_policy"]
     codes = list(dict.fromkeys(codes))
 
-    problems = [c for c in evidence if c.result == "fail"] + [c for c in evidence if c.result == "uncertain"]
-    message, explanation = _words(outcome, problems, policy_mode)
+    message, explanation = compose(outcome, findings, policy_mode, event)
     return Decision(
         authorization_id=auth_id,
         decision=outcome,
@@ -94,14 +96,3 @@ def evaluate(event: Event, policy: PolicyDraft, state: MandateState,
         decided_at=datetime.now(timezone.utc),
     )
 
-
-def _words(outcome: str, problems: list[Check], policy_mode: str) -> tuple[str, str]:
-    """Plain wording. Plan 02 step 6 replaces this with the customer's own terms."""
-    if outcome == "approve" and not problems:
-        return ("Approved: the purchase meets every rule you set.",
-                "Every rule and built-in check passed.")
-    lines = " ".join(c.note for c in problems)
-    verb = {"approve": "Approved", "decline": "Declined", "step_up": "Needs your confirmation"}[outcome]
-    extra = f" Uncertain checks follow the '{policy_mode}' setting." if outcome != "decline" or not any(
-        c.result == "fail" for c in problems) else ""
-    return f"{verb}: {problems[0].note}", f"{verb}. {lines}{extra}"
