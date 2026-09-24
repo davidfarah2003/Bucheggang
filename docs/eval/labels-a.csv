@@ -143,4 +143,3 @@ AU0042,approve,re-quote of the declined over-cap monitor now at 350,related AU00
 AU0043,decline,gift voucher is not the 27-inch monitor,digital fulfilment; customer did not ask for store credit
 AU0044,decline,Circuit and Pine has no purchase on this card,customer bought there on the other card; this card has not
 AU0045,approve,399.90 is within 400 from a seller bought from before,boundary allowed; AU0042 was a declined re-quote path and this is the priced monitor
-# count check: AU0001-AU0045 is 45 data rows
