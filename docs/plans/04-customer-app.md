@@ -57,23 +57,11 @@ Out:
 
 - Use plain HTML, CSS and JavaScript in `app/`, served by FastAPI. This keeps the app readable and removes a build step before the deadline.
 - Show the saved policy draft as the authoritative view, with a sentence explaining that the shopping agent proposed it. There is no second policy display.
-<<<<<<< HEAD
-<<<<<<< HEAD
 - Use the local `/session` cookie contract for the demo. The app loads saved drafts through `GET /drafts/{id}` and uses the runner's live step-up routes.
 - Deliver the mobile-first Wallet demo first. It works directly from `/app/?draft=<id>` without a Shopping Harness.
-- Mount the customer UI in the FastAPI shell with `leash.api.static.mount_customer_app(api)`.
+- Mount the customer UI in the FastAPI shell with `leash.api.static.mount_customer_app(api)`. The static mount does not expose a sample draft.
 - Disable Confirm for answers outside `open_questions[].confirming_answers`.
 - Read current permissions from `effective_policy`, separate from the immutable confirmed draft.
-=======
-- Integration still needed: the FastAPI shell must call `leash.api.static.mount_customer_app(api)`, and the policy draft route must replace the temporary direct JSON read. The app will take `draft_id` from its URL query because the contract has no draft list route.
-- The runner routes must expose pending step-ups and answers before the approve and reject flow can be checked against the simulator.
-=======
-- The app now reads `draft_id` from its URL query, fetches the stored draft through `GET /drafts/{id}`, and signs in through `/session`. The static mount no longer exposes the sample JSON. The FastAPI shell is being built in the policy/API lane and must call `leash.api.static.mount_customer_app(api)`.
-- The runner routes must expose pending step-ups and answers before the approve and reject flow can be checked against the simulator. Until they land, Approvals shows an unavailable notice and no controls or polling.
->>>>>>> ce8870d (app: record session integration smoke and pending routes)
-- The SCEN0002 sample carries `open_questions[].confirming_answers`. The app disables Confirm for answers outside that set and requires a revised policy. Live confirmation depends on the policy route merging.
-- The current mandate read returns `effective_policy` separately from its immutable draft. The policy page and tightening controls use `effective_policy` after each mutation. Live readback depends on the mandate route.
->>>>>>> de8ea30 (app: follow confirmation and effective policy contracts)
 - `docs/screens/` has a 400 px review capture and preview captures for approvals, policy, activity and the judge panel. The previews use the organizer's example Event and temporary browser data, not a live decision. Replace the judge preview with AU0016 after the decision detail route is live.
 
 ## Later
