@@ -24,6 +24,7 @@ let currentDecisionPayload = null;
 let currentUsername = null;
 let screenSerial = 0;
 let drawerSerial = 0;
+let drawerTrigger = null;
 
 function esc(value) {
   if (value === null || value === undefined) throw new Error("A required display value is missing.");
@@ -134,6 +135,14 @@ function mandateId() {
   return window.sessionStorage.getItem(MANDATE_SESSION_KEY);
 }
 
+function linkedDraftId() {
+  const query = new URLSearchParams(window.location.search);
+  const draft = query.get("draft");
+  const draftId = query.get("draft_id");
+  if (draft && draftId && draft !== draftId) throw new Error("The draft and draft_id links refer to different policies.");
+  return draft || draftId;
+}
+
 function showSession(username) {
   currentUsername = requireString(username, "Session.username");
   document.querySelector("#profile-name").textContent = currentUsername;
@@ -167,7 +176,7 @@ async function initialize() {
     }
     const session = await readJson(response, "GET /session");
     showSession(session.username);
-    setActiveRoute(window.location.hash.slice(1) || (new URLSearchParams(window.location.search).has("draft_id") ? "review" : "home"));
+    setActiveRoute(window.location.hash.slice(1) || (Boolean(linkedDraftId()) ? "review" : "home"));
   } catch (error) {
     setScreen(dataError("Your session could not be checked.", error));
   }
@@ -177,7 +186,7 @@ async function login() {
   const username = requireString(document.querySelector("#demo-username").value, "Username");
   const session = await api("/session", { method: "POST", body: JSON.stringify({ username }) });
   showSession(session.username);
-  setActiveRoute(window.location.hash.slice(1) || "review");
+  setActiveRoute(window.location.hash.slice(1) || (linkedDraftId() ? "review" : "home"));
 }
 
 async function logout() {
@@ -237,7 +246,7 @@ function ruleRows(rules = []) {
     "facts.product_type": "Product",
     "facts.size": "Size",
     "facts.return_days": "Returns",
-    "state.approvals_count": "Approved purchases",
+    "state.approvals_count": "Prior approved purchases",
   };
   return rules.map((rule) => {
     const label = labels[rule.field] || pretty(rule.field.split(".").at(-1));
@@ -246,6 +255,20 @@ function ruleRows(rules = []) {
     const value = `${comparison}${rule.currency ? `${rule.currency} ` : ""}${rawValue.replaceAll("_", " ")}${rule.field === "facts.return_days" ? " days" : ""}`;
     return `<div class="permission-row"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
   }).join("");
+}
+
+function reviewSummary(draft) {
+  const cap = draft.rules.filter((rule) => rule.scope === "purchase" && rule.field === "authorization.billing_amount_chf" && ["<", "<="].includes(rule.operator) && typeof rule.value === "number");
+  const limit = cap.length ? Math.min(...cap.map((rule) => rule.value)) : null;
+  const strictLimit = cap.some((rule) => rule.value === limit && rule.operator === "<");
+  const product = draft.rules.find((rule) => rule.field === "facts.product_type" && rule.operator === "=");
+  const size = draft.rules.find((rule) => rule.field === "facts.size" && rule.operator === "=");
+  const summary = product ? String(product.value).replaceAll("_", " ") : draft.instruction;
+  const specifics = size ? ` · ${String(size.value).replaceAll("_", " ")}` : "";
+  const featured = new Set([product, size, ...cap].filter(Boolean));
+  const rest = draft.rules.filter((rule) => !featured.has(rule));
+  return `<section class="review-permission" aria-label="Proposed agent permission"><span class="review-permission-label">Agent permission</span><strong>${esc(summary)}${esc(specifics)}</strong><div class="review-permission-limit"><span>${limit === null ? "No per-purchase cap in this proposal" : esc(money(limit, "CHF"))}</span>${limit === null ? "" : `<small>${strictLimit ? "Strictly below this amount" : "Maximum per purchase"}</small>`}</div></section>
+    ${rest.length ? `<div class="permission-list">${ruleRows(rest)}</div>` : ""}`;
 }
 
 function exampleCards(examples = []) {
@@ -298,8 +321,8 @@ function showRuleDetails() {
 }
 
 async function loadDraft() {
-  const draftId = new URLSearchParams(window.location.search).get("draft_id");
-  requireString(draftId, "URL query parameter draft_id");
+  const draftId = linkedDraftId();
+  requireString(draftId, "URL query parameter draft or draft_id");
   return api(`/drafts/${encodeURIComponent(draftId)}`);
 }
 
@@ -319,17 +342,15 @@ async function renderReview() {
     });
     const unanswered = draft.open_questions.filter((question) => !answers[question.question]).length;
     const needsRevision = draft.open_questions.filter((question) => answers[question.question] && !question.confirming_answers.includes(answers[question.question])).length;
-    const request = draft.instruction;
-    setScreen(`${heading("Wallet permission", "Review your agent's plan", "Only you can confirm these limits.")}
+    setScreen(`${heading("WALLET", "New agent permission", "You approve these limits.")}
       <div class="review-layout">
         <section class="review-card">
-          <div class="section-head"><h2 class="section-title">Your agent can buy</h2><span class="small-meta">Version ${esc(draft.version)}</span></div>
-          <div class="permission-list">${ruleRows(draft.rules)}</div>
-          <details class="request-details"><summary>Original request</summary><p>${esc(request)}</p></details>
-          <div class="review-links"><button type="button" data-action="show-rule-details">Rule details</button><button type="button" data-action="show-examples">Test this policy</button></div>
+          ${reviewSummary(draft)}
+          <details class="request-details"><summary>Original request</summary><p>${esc(draft.instruction)}</p></details>
+          <div class="review-links"><button type="button" data-action="show-rule-details">All rules · v${esc(draft.version)}</button><button type="button" data-action="show-examples">Test this policy</button></div>
         </section>
-        ${draft.open_questions.length ? `<section class="review-card"><div class="section-head"><h2 class="section-title">${draft.open_questions.length} choice${draft.open_questions.length === 1 ? "" : "s"} need your answer</h2><span class="small-meta">${unanswered ? `${unanswered} unanswered` : needsRevision ? "Needs revision" : "Ready"}</span></div><div class="question-list">${questionCards(draft.open_questions)}</div></section>` : ""}
-        <div class="review-actions">${needsRevision ? "" : `<span class="actions-note">You will confirm version ${esc(draft.version)}.</span>`}<div class="button-row"><button type="button" class="button button-quiet" data-action="reject-draft">Reject draft</button><button type="button" class="button button-primary" data-action="confirm-draft" ${unanswered || needsRevision ? "disabled" : ""}>Confirm policy</button></div></div>
+        ${draft.open_questions.length ? `<section class="review-card"><div class="section-head"><h2 class="section-title">${draft.open_questions.length} detail${draft.open_questions.length === 1 ? "" : "s"} to confirm</h2><span class="small-meta">${unanswered ? `${unanswered} unanswered` : needsRevision ? "Needs revision" : "Ready"}</span></div><div class="question-list">${questionCards(draft.open_questions)}</div></section>` : ""}
+        <div class="review-actions">${needsRevision ? "" : `<span class="actions-note">Only this Wallet can authorize the saved policy.</span>`}<div class="button-row"><button type="button" class="button button-quiet" data-action="reject-draft">Reject</button><button type="button" class="button button-primary" data-action="confirm-draft" ${unanswered || needsRevision ? "disabled" : ""}>Authorize agent</button></div></div>
       </div>`);
   } catch (error) {
     if (serial === screenSerial && currentRoute === "review") setScreen(`${heading("POLICY REQUEST", "Make sure it feels right.", "Review the policy saved by your shopping agent.")}${dataError("The policy draft could not be loaded.", error)}`);
@@ -376,7 +397,7 @@ function stepUpCard(stepUp) {
     <div class="approval-purchase"><span>${esc(merchant.merchant_name)}</span><strong>${esc(money(amount, "CHF"))}</strong><p>${esc(purchase)}</p></div>
     <div class="approval-checks"><h2>Checked against your wallet</h2><ul>${preview}</ul><p>${esc(decision.customer_message)}</p><button class="section-link" type="button" data-action="show-step-up-details" data-id="${esc(stepUp.authorization_id)}">Why?</button></div>
     <p class="approval-binding">Your answer applies only to this exact purchase.</p>
-    <div class="approval-actions"><button class="button button-secondary" type="button" data-action="answer-step-up" data-id="${esc(stepUp.authorization_id)}" data-decision="decline" ${left <= 0 || submittingStepUps.has(stepUp.authorization_id) ? "disabled" : ""}>Decline</button><button class="button button-primary" type="button" data-action="answer-step-up" data-id="${esc(stepUp.authorization_id)}" data-decision="approve" ${left <= 0 || submittingStepUps.has(stepUp.authorization_id) ? "disabled" : ""}>Approve</button></div>
+    <div class="approval-actions"><button class="button button-secondary" type="button" data-action="answer-step-up" data-id="${esc(stepUp.authorization_id)}" data-decision="decline" ${left <= 0 || submittingStepUps.has(stepUp.authorization_id) ? "disabled" : ""}>Decline</button><button class="button button-primary" type="button" data-action="answer-step-up" data-id="${esc(stepUp.authorization_id)}" data-decision="approve" ${left <= 0 || submittingStepUps.has(stepUp.authorization_id) ? "disabled" : ""}>Approve once</button></div>
   </article>`;
 }
 
@@ -444,7 +465,7 @@ async function renderApprovals() {
 }
 
 function noMandate() {
-  const hasDraft = new URLSearchParams(window.location.search).has("draft_id");
+  const hasDraft = Boolean(linkedDraftId());
   return `<section class="wallet-empty"><h2>No agent wallet yet</h2><p>Your shopping agent can send a policy draft for you to review. Only your confirmation activates it.</p>${hasDraft ? `<button class="button button-primary" type="button" data-route="review">Review policy</button>` : ""}</section>`;
 }
 
@@ -504,7 +525,7 @@ async function renderHome() {
   const serial = ++screenSerial;
   const id = mandateId();
   if (!id) {
-    if (new URLSearchParams(window.location.search).has("draft_id")) {
+    if (Boolean(linkedDraftId())) {
       setActiveRoute("review");
       return;
     }
@@ -668,8 +689,8 @@ function renderDebugger(payload, tab = "decision") {
   };
   drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer debugger-drawer" role="dialog" aria-modal="true" aria-label="Decision inspector" tabindex="-1">
     <div class="drawer-header"><div><span class="eyebrow">INSPECTOR</span><h2>Decision inspector</h2><p>${esc(auth.merchant.merchant_name)} · ${esc(money(auth.billing_amount_chf, "CHF"))}</p></div><button class="close-button" type="button" aria-label="Close inspector" data-action="close-drawer">×</button></div>
-    <nav class="debug-tabs" aria-label="Inspector sections">${tabs.map((name) => `<button type="button" data-action="debug-tab" data-tab="${name}" ${name === tab ? 'aria-current="page"' : ""}>${esc(pretty(name))}</button>`).join("")}</nav>
-    <div class="debug-content">${sections[tab]}</div>
+    <nav class="debug-tabs" role="tablist" aria-label="Inspector sections">${tabs.map((name) => `<button type="button" role="tab" id="inspector-tab-${name}" aria-controls="inspector-panel" aria-selected="${name === tab}" tabindex="${name === tab ? "0" : "-1"}" data-action="debug-tab" data-tab="${name}" ${name === tab ? 'aria-current="page"' : ""}>${esc(pretty(name))}</button>`).join("")}</nav>
+    <div class="debug-content" id="inspector-panel" role="tabpanel" aria-labelledby="inspector-tab-${tab}" tabindex="0">${sections[tab]}</div>
   </aside></div>`;
   drawerRoot.querySelector(".drawer").focus();
 }
@@ -747,8 +768,11 @@ async function confirmDraft() {
     const mandate = await api(`/drafts/${encodeURIComponent(activeDraft.draft_id)}/confirm`, { method: "POST", body: JSON.stringify(body) });
     requireString(mandate && mandate.mandate_id, "Policy confirmation response mandate_id");
     window.sessionStorage.setItem(MANDATE_SESSION_KEY, mandate.mandate_id);
-    showToast("Your policy is confirmed. The mandate is now active.", "success");
-    setActiveRoute("home");
+    setScreen(`<section class="authorization-complete" role="status"><span class="complete-mark" aria-hidden="true">✓</span><p>Viseca Wallet</p><h1>Agent authorized</h1><span>Policy v${esc(activeDraft.version)} · your limits are active</span></section>`);
+    const serial = screenSerial;
+    window.setTimeout(() => {
+      if (serial === screenSerial && currentRoute === "review") setActiveRoute("home");
+    }, 850);
   } catch (error) {
     if (error.status === 409) {
       showToast("The draft changed. Reloading the latest version for you.", "error");
@@ -809,6 +833,7 @@ document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   const action = button.dataset.action;
+  if (!drawerRoot.childElementCount) drawerTrigger = button;
   try {
     if (action === "login") {
       button.disabled = true;
@@ -857,6 +882,7 @@ document.addEventListener("click", async (event) => {
     } else if (action === "debug-tab") {
       if (!currentDecisionPayload) throw new Error("The decision record is not loaded.");
       renderDebugger(currentDecisionPayload, button.dataset.tab);
+      drawerRoot.querySelector(`[data-tab="${button.dataset.tab}"]`).focus();
     } else if (action === "close-drawer") {
       if (event.target === button || button === event.target.closest(".close-button") || event.target.classList.contains("drawer-backdrop")) {
         drawerSerial += 1;
@@ -884,8 +910,45 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+new MutationObserver(() => {
+  const dialog = drawerRoot.querySelector('[role="dialog"]');
+  document.querySelector(".app-frame").inert = Boolean(dialog);
+  document.querySelector(".mobile-nav").inert = Boolean(dialog);
+  document.body.classList.toggle("dialog-open", Boolean(dialog));
+  if (dialog) {
+    dialog.tabIndex = -1;
+    if (!dialog.contains(document.activeElement)) dialog.focus();
+  } else if (drawerTrigger?.isConnected) {
+    drawerTrigger.focus();
+    drawerTrigger = null;
+  }
+}).observe(drawerRoot, { childList: true });
+
 window.addEventListener("hashchange", () => setActiveRoute(window.location.hash.slice(1)));
 window.addEventListener("keydown", (event) => {
+  const dialog = drawerRoot.querySelector('[role="dialog"]');
+  if (dialog && event.key === "Tab") {
+    const focusable = [...dialog.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), summary, [tabindex="0"]')].filter((node) => node.tabIndex >= 0 && node.getClientRects().length);
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (!first) {
+      event.preventDefault();
+      dialog.focus();
+    } else if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+  if (event.target.matches('[role="tab"]') && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    const tabs = [...event.target.closest('[role="tablist"]').querySelectorAll('[role="tab"]')];
+    const index = tabs.indexOf(event.target);
+    const target = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    tabs[target].click();
+  }
   if (event.key === "Enter" && event.target.id === "demo-username") {
     event.preventDefault();
     document.querySelector('[data-action="login"]').click();
