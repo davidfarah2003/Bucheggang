@@ -102,5 +102,5 @@ class Mandate(Contract):
     draft_id: NonEmpty
     version: Annotated[int, Field(ge=1)]
     hash: NonEmpty
-    status: Literal["active", "revoked", "expired"]
+    status: Literal["active", "superseded", "revoked", "expired"]
     confirmed_at: Timestamp
