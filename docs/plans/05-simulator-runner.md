@@ -1,6 +1,6 @@
 # 05 Simulator runner
 
-- Status: draft
+- Status: runner implementation merged; offline replay and the five original live themes exercised. Final live reports await review. Known verification limits are listed below.
 - Owner: David (proposed)
 - Lane: runner. Channel `team.zurichbuchegg.runner`, branch `lane/runner`, worktree `.worktrees/runner`
 - User flow step: everything between "mandate confirmed" and "decision recorded": mandate calls, scenario start, polling, deadlines, decision submission, `/resolve`, state persistence, offline replay
@@ -34,17 +34,30 @@ Out:
 
 1. Settings and API client with a 30 s request timeout, matching the organizer's curl helper. No retry on 5xx or anywhere else: a non-2xx raises `ApiError(status, body)` (AGENTS.md section 6). Call `/healthz` and `/v1/bootstrap` once to see them answer.
 2. Mandate client. Try it on the `SCEN0000` instruction (the quickstart's rule) once the key arrives; before that, against a recorded response.
-3. `scripts/replay.py` with the `SCEN0002` fixture draft, then explicit evaluation drafts for all 45 public attempts. Implemented on `lane/runner-replay`; commands and assumptions are in [run-replay.md](../run-replay.md). Independent review and merge are still pending.
+3. `scripts/replay.py` with the `SCEN0002` fixture draft, then explicit evaluation drafts for all 45 public attempts. Reviewed and merged in #31 at `8cb591a`; commands and assumptions are in [run-replay.md](../run-replay.md).
 4. Run loop and deadline guard. Try it against the live API as soon as the key arrives.
 5. Step-up handling and timeout resolution.
 6. Persistence, so a restarted worker does not count spend twice. Try it once by killing the worker mid-run.
-7. Live run of `SCEN0000`, then `SCEN0001` to `SCEN0004`, log in `docs/eval/`.
+7. Live runs use the team's bootstrap IDs for the original five themes: `SCEN0101`, `SCEN0135`, `SCEN0130`, `SCEN0106`, `SCEN0122`. All completed; reports are `docs/eval/live-<scenario>-2026-09-24.md`. `SCEN0000` to `SCEN0004` remain the public offline pack. The five additional live themes listed later by bootstrap are outside this verification scope.
 
 ## How we check it works
 
-- Live `SCEN0000` accepted; live `SCEN0002` completes with the decision log in `docs/eval/`.
+- Real-engine `SCEN0101` completed in #29. The other four original themes completed with the recorded results below. Offline `SCEN0000` to `SCEN0004` replay covers all 45 public attempts.
 - `grep -rn "TEAM_API_KEY\|Bearer" src/` matches only `leash/runner/settings.py` and the client.
 - A worker killed mid-run and restarted counts spend once.
+
+## Recorded live verification
+
+| Scenario | Generated | Delivered and locally handled | Finalized | Pending at exit | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| SCEN0135 | 12 | 11 | 12 | 0 | One platform-only timeout during worker downtime; explicitly not a clean all-delivery pass |
+| SCEN0130 | 13 | 13 | 13 | 0 | Pending-step-up kill/restart completed without duplicate initial submission |
+| SCEN0106 | 12 | 12 | 12 | 0 | Completed |
+| SCEN0122 | 13 | 13 | 13 | 0 | Completed |
+
+These four runs finalized 50 attempts: 49 local declines and one platform-only timeout. No customer answers were sent and no purchase was approved. Missing history on the live cards kept otherwise compliant purchases uncertain, and unanswered step-ups declined after the real timeout. This verifies runner behavior, not purchase-decision accuracy or a successful customer approval journey.
+
+Known limits: the household downtime timeout remains recorded; the pending-state restart check had zero approvals and therefore does not demonstrate preservation of nonzero approved spend; the accepted-submit-before-persistence gap in the task 6 Log remains; runtime smoke evaluators and timeout substitute decisions remain in main and are separate classifier P4 work. A live revocation with requests already queued remains a Friday verification item. Model-enabled runner/app integration stays under the classifier lane's separate review and release hold.
 
 ## Decisions
 
@@ -64,3 +77,4 @@ Out:
 2026-09-24 21:44 runner_builder: step 7 with the real engine. leash.runner.cli EVALUATORS gains "engine" (leash.engine.evaluate.evaluate); the two smoke evaluators stay. Fresh mandate TMed393c21a6c87d01 from DraftStore.create on the SCEN0101 instruction (rule billing_amount_chf <= 20 CHF, ask) confirmed through leash.policy.confirmation.confirm_policy. `uv run python -m leash.runner.cli --scenario SCEN0101 --mandate-id TMed393c21a6c87d01 --draft <scratch>/scen0101_draft.json --evaluate engine --serve-port 8791` -> run_a883192a054a6746 completed 2/2: AU10001 step_up [new_device, country_blocked], answered approve by curl -> approved, decision_source human; AU10002 decline [amount_over_limit], accepted declined. Engine card history comes from the organizer pack, which has no rows for live card CA1331, so live purchases are uncertain on device and country. Decision log docs/eval/live-SCEN0101-2026-09-24.md. @778cd6d
 2026-09-24 22:04 david_orch: step 3, scripts/replay.py and docs/run-replay.md, @1dfa0e1. `uv run python scripts/replay.py --policy SCEN0002=docs/samples/scen0002_draft.json` evaluated 12 attempts: sequential approve 1/decline 11; independent mode approve 2/decline 8/step_up 2. `--all` with the four explicit unconfirmed drafts under docs/eval/replay-policies plus the shoes draft evaluated all 45 rows: approve 11/decline 32/step_up 2. Re-ran all 45 after rebasing on 7ccd7d7: same decisions, extract+evaluate p50 0.240 ms, p99/max 0.389 ms. No .env, simulator calls, persistent mandate state or customer answers. Missing --all policies, a zero deadline and existing output each failed with exit 2; existing report unchanged. CSVs retain evidence and timing. The monitor draft preserves the literal instruction while the extractor returns a different catalogue name; this produces item_mismatch and is documented, not silently corrected. Review pending.
 2026-09-24 22:28 david_orch: restart repair @2ec640a. Live SCEN0135 run_9328cc3adcf476d9 left AU10371-dcf476d9 and AU10372-dcf476d9 locally pending after the platform expired them during worker downtime. Original sweep failed on HTTP 409 authorization_not_pending. StepUpBook.sweep(mandate_id, run_id) now handles only that response by reading the run-filtered GET /v1/authorizations list and verifying the exact finalized timeout-decline record before persisting it. Tried on those same authorizations: two POST 409 / GET 200 sequences, two observed timeout declines recorded, pending 2 to 0, approvals stayed 0; second sweep returned [] with no calls or duplicate records. No customer answers. Direct GET /v1/authorizations/{id} was tried and returned 404; shipped code uses only the supported list route. CLI passes run_id to the sweeper. Full evidence and remaining limits: docs/eval/restart-reconcile-2026-09-24.md. All 45 offline attempts re-run on the current engine: 11 approve, 32 decline, 2 step_up, unchanged; total p50 0.245 ms, p99/max 0.424 ms. Remaining live scenarios await this repair's review.
+2026-09-24 23:41 david_orch: remaining original-theme live verification completed. SCEN0135 run_9328cc3adcf476d9 finalized 12, delivered/local 11, one platform-only timeout during repair downtime; SCEN0130 run_f3190df0414975d9 finalized/delivered/local 13 with a pending-state kill/restart and no duplicate initial submission; SCEN0106 run_4052aca422e9132a finalized/delivered/local 12; SCEN0122 run_3f7fdf8afb2858da finalized/delivered/local 13. All pending lists empty, all platform_rejected counts zero. Driver exited 0 and final worker exit verified. Authoritative run/authorization GETs matched the reports and CSVs. No customer answers, reset or live approvals. Four exact evaluation policies are recorded beside the reports. Reports are transport/state evidence, not an accuracy benchmark. Earlier checkpoints 2f41943, cfaabf8, 8f7dcf1; final report review pending.

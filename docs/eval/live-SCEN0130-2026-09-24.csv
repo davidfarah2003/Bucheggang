@@ -1,0 +1,14 @@
+authorization_id,initial_engine_decision,final_platform_status,final_platform_source,final_platform_reasons,local_final_decision,local_final_reasons,finalized_at,extract_ms,evaluate_ms,ms_to_deadline_at_submit
+AU10316-414975d9,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T20:47:06.520094Z,0,0,7769
+AU10317-414975d9,decline,declined,team,item_mismatch,decline,item_mismatch,2026-09-24T20:47:06.991011Z,0,0,7635
+AU10318-414975d9,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T20:49:02.332959Z,0,0,8000
+AU10319-414975d9,decline,declined,team,merchant_type_mismatch,decline,merchant_type_mismatch,2026-09-24T20:49:02.528598Z,0,0,7911
+AU10320-414975d9,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T20:50:58.240763Z,0,0,7978
+AU10321-414975d9,decline,declined,team,item_mismatch,decline,item_mismatch,2026-09-24T20:50:58.589804Z,0,0,7759
+AU10322-414975d9,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T20:52:54.126037Z,0,0,7994
+AU10323-414975d9,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T20:54:50.073079Z,0,0,7623
+AU10324-414975d9,decline,declined,team,amount_over_limit,decline,amount_over_limit,2026-09-24T20:54:50.526379Z,0,0,7656
+AU10325-414975d9,decline,declined,team,return_terms_short,decline,return_terms_short,2026-09-24T20:54:50.651054Z,0,0,7987
+AU10326-414975d9,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T20:56:46.023134Z,0,0,7965
+AU10327-414975d9,decline,declined,team,return_terms_short,decline,return_terms_short,2026-09-24T20:56:46.172439Z,0,0,7979
+AU10328-414975d9,decline,declined,team,item_mismatch,decline,item_mismatch,2026-09-24T20:56:46.361925Z,0,0,7932

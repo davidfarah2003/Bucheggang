@@ -1,0 +1,61 @@
+{
+  "draft_id": "d06a5ab3-cdd3-4c72-a0dd-36b7d9b3f288",
+  "version": 1,
+  "hash": "224d008360a4a48cb7141c332f43183a953dbbee7fc2f35aa661de69645965a4",
+  "instruction": "Buy the camera lens I chose, from a seller I have bought from before, for CHF 900 or less. Do not add anything I did not ask for. Ask me when uncertain.",
+  "rules": [
+    {
+      "currency": "CHF",
+      "field": "authorization.billing_amount_chf",
+      "operator": "<=",
+      "plain_english": "The total must be CHF 900 or less.",
+      "scope": "purchase",
+      "source_text": "CHF 900 or less",
+      "value": 900
+    },
+    {
+      "field": "facts.product_type",
+      "operator": "=",
+      "plain_english": "Compare the literal product type; the chosen model is not available in this evaluation.",
+      "scope": "purchase",
+      "source_text": "camera lens",
+      "value": "camera lens"
+    },
+    {
+      "field": "items.count",
+      "operator": "=",
+      "plain_english": "Buy one unit.",
+      "scope": "purchase",
+      "source_text": "Do not add anything",
+      "value": 1
+    },
+    {
+      "field": "history.merchant_seen_on_card",
+      "operator": "=",
+      "plain_english": "Require a prior approved purchase on this card.",
+      "scope": "purchase",
+      "source_text": "a seller I have bought from before",
+      "value": "true"
+    },
+    {
+      "field": "facts.is_addon",
+      "operator": "=",
+      "plain_english": "No add-on is allowed.",
+      "scope": "purchase",
+      "source_text": "Do not add anything",
+      "value": "false"
+    },
+    {
+      "field": "state.approvals_count",
+      "operator": "<",
+      "plain_english": "Allow one successful purchase for this request.",
+      "scope": "purchase",
+      "source_text": "Buy the camera lens",
+      "value": 1
+    }
+  ],
+  "examples": [],
+  "open_questions": [],
+  "uncertainty_policy": "ask",
+  "created_at": "2026-09-24T21:18:54.564977Z"
+}

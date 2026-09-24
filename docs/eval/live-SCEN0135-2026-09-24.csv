@@ -1,0 +1,13 @@
+authorization_id,initial_engine_decision,final_platform_status,final_platform_source,final_platform_reasons,local_final_decision,local_final_reasons,finalized_at,extract_ms,evaluate_ms,ms_to_deadline_at_submit
+AU10371-dcf476d9,step_up,declined,timeout,step_up_expired,decline,step_up_timeout,2026-09-24T20:16:14.383461Z,0,0,7394
+AU10372-dcf476d9,step_up,declined,timeout,step_up_expired,decline,step_up_timeout,2026-09-24T20:22:38.444001Z,0,0,7925
+AU10373-dcf476d9,not delivered locally,timeout,timeout,timeout,not handled,not handled,2026-09-24T20:33:07.328191Z,,,
+AU10374-dcf476d9,decline,declined,team,amount_over_limit,decline,amount_over_limit,2026-09-24T20:33:07.350414Z,0,0,8035
+AU10375-dcf476d9,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T20:35:02.824946Z,0,0,7953
+AU10376-dcf476d9,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T20:36:58.335043Z,0,0,7939
+AU10377-dcf476d9,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T20:38:54.850673Z,0,0,7056
+AU10378-dcf476d9,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T20:40:51.390848Z,0,0,7180
+AU10379-dcf476d9,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T20:42:47.968694Z,0,0,7321
+AU10380-dcf476d9,decline,declined,team,amount_over_limit,decline,amount_over_limit,2026-09-24T20:42:48.514076Z,0,0,7512
+AU10381-dcf476d9,decline,declined,team,amount_over_limit,decline,amount_over_limit,2026-09-24T20:42:48.601049Z,0,0,7970
+AU10382-dcf476d9,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T20:44:44.689434Z,0,0,7951
