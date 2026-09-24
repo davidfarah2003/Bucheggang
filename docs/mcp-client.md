@@ -1,6 +1,6 @@
 # Connect a shopping agent to the policy MCP server
 
-The policy MCP server is the only interface a shopping agent gets. It shares one draft directory with the Wallet API, so a draft the agent proposes is the draft the customer sees at `/app/?draft=<draft_id>`. The tools and their shapes are in `docs/contracts.md`, section "MCP tools".
+The policy MCP server is the only interface a shopping agent gets. It shares one draft directory with the Wallet API, so a draft the agent proposes is the draft the customer sees at `/app/?draft_id=<draft_id>`. The tools and their shapes are in `docs/contracts.md`, section "MCP tools".
 
 It runs over stdio by default. For a client on another machine it can also serve streamable HTTP behind a shared bearer token (plan 01, Decisions, 2026-09-24 23:35).
 
@@ -93,7 +93,7 @@ The resource `policy://authoring-guide` is the same guide without the per-instru
 
 1. Call `get_policy_authoring_instructions` with the customer's sentence.
 2. Draft the proposal with your own model and call `propose_task_policy`. Keep the `draft_id`.
-3. Give the customer the Wallet link `/app/?draft=<draft_id>` and wait.
+3. Give the customer the Wallet link `/app/?draft_id=<draft_id>` and wait.
 4. Poll `get_policy_status` until it is `confirmed`. Use the `mandate_id` it returns; you never see the rules again.
 5. A `rejected` status means the customer wants a different policy: start again from step 1 with what they said.
 
