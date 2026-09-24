@@ -2,12 +2,15 @@
 
 The loop polls GET /v1/decision-requests/next, validates the envelope and the
 Event strictly, skips a live authorization ID already in MandateState.handled,
-calls the given evaluate callable under a deadline guard, submits the decision,
-and records the accepted result in the in-memory MandateState.
+runs leash.extract.extract_event (deterministic, no model) under its budget, calls
+evaluate(event, policy, state, facts) under a deadline guard, submits the
+decision, and records the accepted result in the in-memory MandateState.
 
-The deadline guard: if evaluate has not returned GUARD_MARGIN_S before
-deadline_at, the loop submits step_up with reason engine_timeout and logs it.
-That is the plan's specified outcome for a slow engine, never an approval.
+Budgets. Extract gets min(EXTRACT_CAP_S, deadline_at - now - EXTRACT_RESERVE_S).
+If extract does not return inside it, the loop declines with engine_timeout and
+never calls evaluate with invented facts. An exception raised by extract
+propagates. Evaluate must return GUARD_MARGIN_S before deadline_at; if it does
+not, the loop submits step_up with engine_timeout and logs it.
 """
 
 from __future__ import annotations
@@ -23,15 +26,18 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from leash.contracts import Approval, Decision, Event, MandateState
+from leash.contracts import Approval, Decision, Event, MandateState, PolicyDraft, PurchaseFacts
+from leash.extract import extract_event
 
 from . import api
 
 POLL_WAIT_S = 25
 GUARD_MARGIN_S = 1.0
+EXTRACT_CAP_S = 1.5
+EXTRACT_RESERVE_S = 2.0
 RUNNER_VERSION = "runner-0.1"
 
-Evaluate = Callable[[Event, MandateState], Decision]
+Evaluate = Callable[[Event, PolicyDraft, MandateState, list[PurchaseFacts] | None], Decision]
 
 log = logging.getLogger("leash.runner")
 
@@ -82,7 +88,8 @@ def poll() -> Envelope | None:
     return Envelope.model_validate(response.json())
 
 
-def _engine_timeout_decision(event: Event, state: MandateState, started: float) -> Decision:
+def _engine_timeout_decision(event: Event, policy: PolicyDraft, started: float) -> Decision:
+    """Evaluate missed the guard: the purchase waits for the customer."""
     return Decision(
         authorization_id=event.authorization.authorization_id,
         decision="step_up",
@@ -91,23 +98,68 @@ def _engine_timeout_decision(event: Event, state: MandateState, started: float) 
         evidence=[],
         explanation="The decision engine did not return before the deadline guard; the purchase waits for the customer.",
         engine_version=RUNNER_VERSION,
-        mandate_version=0,
+        mandate_version=policy.version,
         elapsed_ms=int((time.monotonic() - started) * 1000),
         decided_at=_now(),
     )
 
 
-def decide_with_guard(evaluate: Evaluate, event: Event, state: MandateState, pool: ThreadPoolExecutor) -> tuple[Decision, bool]:
+def _extract_timeout_decision(event: Event, policy: PolicyDraft, started: float) -> Decision:
+    """Extract missed its budget: decline, never evaluate on invented facts."""
+    return Decision(
+        authorization_id=event.authorization.authorization_id,
+        decision="decline",
+        reason_codes=["engine_timeout"],
+        customer_message="We could not read this purchase's details in time, so it was declined.",
+        evidence=[],
+        explanation="Fact extraction did not finish inside its budget; the loop declines instead of deciding without facts.",
+        engine_version=RUNNER_VERSION,
+        mandate_version=policy.version,
+        elapsed_ms=int((time.monotonic() - started) * 1000),
+        decided_at=_now(),
+    )
+
+
+def requested_item(policy: PolicyDraft) -> dict[str, str] | None:
+    """The requested item for extract, from the confirmed draft's equality rules on facts.product_type and facts.size."""
+    requested: dict[str, str] = {}
+    for rule in policy.rules:
+        if rule.operator == "=" and rule.field in ("facts.product_type", "facts.size"):
+            requested[rule.field.removeprefix("facts.")] = str(rule.value)
+    return requested or None
+
+
+def extract_with_budget(event: Event, policy: PolicyDraft, pool: ThreadPoolExecutor) -> list[PurchaseFacts] | None:
+    """Run extract pass 1. None when it did not return inside its budget; its errors propagate."""
+    budget = min(EXTRACT_CAP_S, (event.deadline_at - _now()).total_seconds() - EXTRACT_RESERVE_S)
+    if budget <= 0:
+        return None
+    future = pool.submit(extract_event, event.model_dump(mode="json"), requested=requested_item(policy))
+    try:
+        rows = future.result(timeout=budget)
+    except FutureTimeout:
+        return None
+    return [PurchaseFacts.model_validate(row) for row in rows]
+
+
+def decide_with_guard(
+    evaluate: Evaluate,
+    event: Event,
+    policy: PolicyDraft,
+    state: MandateState,
+    facts: list[PurchaseFacts],
+    pool: ThreadPoolExecutor,
+) -> tuple[Decision, bool]:
     """Run evaluate; return (decision, guard_fired). Errors from evaluate propagate."""
     started = time.monotonic()
     budget = (event.deadline_at - _now()).total_seconds() - GUARD_MARGIN_S
     if budget <= 0:
-        return _engine_timeout_decision(event, state, started), True
-    future = pool.submit(evaluate, event, state)
+        return _engine_timeout_decision(event, policy, started), True
+    future = pool.submit(evaluate, event, policy, state, facts)
     try:
         decision = future.result(timeout=budget)
     except FutureTimeout:
-        return _engine_timeout_decision(event, state, started), True
+        return _engine_timeout_decision(event, policy, started), True
     if decision.authorization_id != event.authorization.authorization_id:
         raise RunLoopError(
             f"evaluate returned a decision for {decision.authorization_id}, expected {event.authorization.authorization_id}"
@@ -142,7 +194,9 @@ def record(state: MandateState, event: Event, decision: Decision) -> None:
         state.declined.append(auth.authorization_id)
 
 
-def handle(envelope: Envelope, evaluate: Evaluate, state: MandateState, pool: ThreadPoolExecutor) -> Decision | None:
+def handle(
+    envelope: Envelope, evaluate: Evaluate, policy: PolicyDraft, state: MandateState, pool: ThreadPoolExecutor
+) -> Decision | None:
     """Handle one delivered request. Returns the submitted decision, or None for a redelivery."""
     received = _now()
     event = Event.model_validate(envelope.data)
@@ -151,13 +205,23 @@ def handle(envelope: Envelope, evaluate: Evaluate, state: MandateState, pool: Th
         raise RunLoopError(f"envelope authorization_id {envelope.authorization_id} != event {auth_id}")
     if event.mandate.mandate_id != state.mandate_id:
         raise RunLoopError(f"event for mandate {event.mandate.mandate_id}, loop holds {state.mandate_id}")
+    if event.mandate.instruction != policy.instruction:
+        raise RunLoopError(f"event mandate instruction differs from the confirmed draft {policy.draft_id}")
     if auth_id in state.handled:
         _log({"authorization_id": auth_id, "run_id": envelope.run_id, "redelivery": True,
               "handled_as": state.handled[auth_id].decision})
         return None
     t0 = time.monotonic()
-    decision, guard_fired = decide_with_guard(evaluate, event, state, pool)
-    evaluate_ms = int((time.monotonic() - t0) * 1000)
+    facts = extract_with_budget(event, policy, pool)
+    extract_ms = int((time.monotonic() - t0) * 1000)
+    t1 = time.monotonic()
+    extract_timed_out = facts is None
+    if extract_timed_out:
+        decision, guard_fired = _extract_timeout_decision(event, policy, t0), False
+        log.error("extract missed its budget for %s: declined engine_timeout", auth_id)
+    else:
+        decision, guard_fired = decide_with_guard(evaluate, event, policy, state, facts, pool)
+    evaluate_ms = int((time.monotonic() - t1) * 1000)
     submitted_at = _now()
     accepted = submit(decision)
     record(state, event, decision)
@@ -168,11 +232,13 @@ def handle(envelope: Envelope, evaluate: Evaluate, state: MandateState, pool: Th
         "source_authorization_id": event.authorization.source_authorization_id,
         "run_id": envelope.run_id,
         "received_at": received.isoformat(),
+        "extract_ms": extract_ms,
         "evaluate_ms": evaluate_ms,
         "submitted_at": submitted_at.isoformat(),
         "ms_to_deadline_at_submit": int((event.deadline_at - submitted_at).total_seconds() * 1000),
         "decision": decision.decision,
         "reason_codes": list(decision.reason_codes),
+        "extract_timed_out": extract_timed_out,
         "guard_fired": guard_fired,
         "accepted": accepted,
     })
@@ -191,7 +257,7 @@ def _run_finished(progress: dict) -> bool:
     return status != "running"
 
 
-def run_loop(run_id: str, evaluate: Evaluate, state: MandateState) -> MandateState:
+def run_loop(run_id: str, evaluate: Evaluate, policy: PolicyDraft, state: MandateState) -> MandateState:
     """Poll and decide until the run reports no remaining work."""
     with ThreadPoolExecutor(max_workers=1) as pool:
         while True:
@@ -205,7 +271,7 @@ def run_loop(run_id: str, evaluate: Evaluate, state: MandateState) -> MandateSta
                 continue
             if envelope.run_id != run_id:
                 raise RunLoopError(f"received a request for run {envelope.run_id}, loop drives {run_id}")
-            handle(envelope, evaluate, state, pool)
+            handle(envelope, evaluate, policy, state, pool)
 
 
 def configure_logging() -> None:
