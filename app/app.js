@@ -271,7 +271,6 @@ function stepUpCard(stepUp) {
   const decision = stepUp.decision;
   const amount = Number(auth.billing_amount_chf);
   if (!Number.isFinite(amount)) throw new Error(`StepUp ${stepUp.authorization_id} has no valid billing_amount_chf.`);
-  requireString(auth.currency, `StepUp ${stepUp.authorization_id} currency`);
   requireString(decision.customer_message, "StepUp.decision.customer_message");
   requireString(merchant.merchant_name, "Event.authorization.merchant.merchant_name");
   const left = new Date(stepUp.expires_at).getTime() - Date.now();
@@ -280,7 +279,7 @@ function stepUpCard(stepUp) {
   return `<article class="card card-pad">
     <div class="section-head"><div><span class="outcome-pill step_up"><i class="outcome-dot"></i>Needs your decision</span><div class="section-subtitle" style="margin-top:8px">${esc(remaining)}</div></div><span class="small-meta">${esc(stepUp.authorization_id)}</span></div>
     <h2 class="section-title" style="font-size:15px;margin:0 0 5px">${esc(purchase)}</h2>
-    <p class="section-subtitle" style="margin:0 0 15px">${esc(merchant.merchant_name)} · ${esc(money(amount, auth.currency))}</p>
+    <p class="section-subtitle" style="margin:0 0 15px">${esc(merchant.merchant_name)} · ${esc(money(amount, "CHF"))}</p>
     <div class="untrusted-banner"><strong>Why we paused</strong><span>${esc(decision.customer_message)}</span></div>
     ${auth.items.some((item) => item.item_details) ? `<div class="event-copy">${auth.items.filter((item) => item.item_details).map((item) => esc(item.item_details)).join("\n")}</div>` : ""}
     <div class="button-row" style="justify-content:flex-end;margin-top:15px"><button class="button button-secondary" type="button" data-action="answer-step-up" data-id="${esc(stepUp.authorization_id)}" data-decision="decline" ${left <= 0 || submittingStepUps.has(stepUp.authorization_id) ? "disabled" : ""}>Reject</button><button class="button button-primary" type="button" data-action="answer-step-up" data-id="${esc(stepUp.authorization_id)}" data-decision="approve" ${left <= 0 || submittingStepUps.has(stepUp.authorization_id) ? "disabled" : ""}>Approve purchase <span class="button-arrow" aria-hidden="true">→</span></button></div>
