@@ -5,6 +5,6 @@ claims, even when a regular expression can read them unambiguously.
 """
 
 from .facts import extract_event, extract_item
-from .model import AnthropicFactClient, extract_event_with_model
+from .model import SwisscomFactClient, extract_event_with_model
 
-__all__ = ["AnthropicFactClient", "extract_event", "extract_event_with_model", "extract_item"]
+__all__ = ["SwisscomFactClient", "extract_event", "extract_event_with_model", "extract_item"]
