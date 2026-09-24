@@ -447,6 +447,26 @@ class DraftStore:
             raise KeyError(draft_id)
         return json.loads(path.read_text())
 
+    def decision_state(self, draft_id: str) -> str:
+        """Read-only: confirmed, rejected or pending. Unknown draft raises KeyError."""
+        self.get(draft_id)
+        folder = self._folder(draft_id)
+        confirmed = (folder / "confirmation.json").exists()
+        rejected = (folder / "rejection.json").exists()
+        if confirmed and rejected:
+            raise DraftConflict("draft has both a confirmation and a rejection record")
+        if confirmed:
+            return "confirmed"
+        if rejected:
+            return "rejected"
+        return "pending"
+
+    def get_rejection(self, draft_id: str) -> dict[str, Any]:
+        path = self._folder(draft_id) / "rejection.json"
+        if not path.exists():
+            raise KeyError(draft_id)
+        return json.loads(path.read_text())
+
     def reject(self, draft_id: str, *, version: int, hash_value: str, rejected_by: str, reason: str) -> None:
         with self._locked(draft_id) as folder:
             self.assert_current(draft_id, version, hash_value)

@@ -1,0 +1,13 @@
+authorization_id,initial_engine_decision,final_platform_status,final_platform_source,final_platform_reasons,local_final_decision,local_final_reasons,finalized_at,extract_ms,evaluate_ms,ms_to_deadline_at_submit
+AU10049-22e9132a,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T20:59:07.869530Z,0,0,7755
+AU10050-22e9132a,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:01:04.402533Z,0,0,7560
+AU10051-22e9132a,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:02:59.911377Z,0,0,7701
+AU10052-22e9132a,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:04:55.504635Z,0,0,7866
+AU10053-22e9132a,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:06:51.045638Z,0,0,7917
+AU10054-22e9132a,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:08:47.662094Z,0,0,7264
+AU10055-22e9132a,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:10:43.416723Z,0,0,7529
+AU10056-22e9132a,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:12:40.004347Z,0,0,7316
+AU10057-22e9132a,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:14:35.626391Z,0,0,7516
+AU10058-22e9132a,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:16:31.257697Z,0,0,7786
+AU10059-22e9132a,decline,declined,team,amount_over_limit,decline,amount_over_limit,2026-09-24T21:16:32.289831Z,0,0,7027
+AU10060-22e9132a,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:18:27.863433Z,0,0,7901
