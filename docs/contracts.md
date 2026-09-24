@@ -213,3 +213,18 @@ Served by `leash.api`. Paths and shapes are what the app lane codes against.
 | `GET /decisions/{authorization_id}` | `Decision` + `Event` + state before and after |
 
 All customer routes except `POST /session` require a valid local session cookie and return 401 without one. The demo login identifies a customer by username without a password. Confirmation, tightening, revocation and step-up answers are only reachable through these authenticated app routes. None of them is an MCP tool.
+
+## MCP tools
+
+Served by `leash.policy.mcp_server` over stdio, backed by the same `LEASH_POLICY_STORE` directory as `leash.api`. This is the whole agent-facing surface (plan 01, steps 2 and 9 to 12). Every tool raises on bad input; nothing is defaulted. No tool confirms, resolves, tightens or revokes, and no tool returns a rule field or a hash to the agent.
+
+| Tool | Input → returns |
+| --- | --- |
+| `get_policy_authoring_instructions` | `{ instruction: str }` → `{ guide, request_instructions }`; `guide` is the `policy://authoring-guide` resource (field vocabulary, rule format, proposal shape, restrictions) |
+| `propose_task_policy` | `{ instruction: str, proposal: { rules: [Rule], examples: [...], open_questions: [...], uncertainty_policy } }` → the stored `PolicyDraft` (`draft_id`, `version: 1`, `hash`, the validated fields). Invalid proposal raises `InvalidDraft` with the reason. The agent then hands the customer `/app/?draft=<draft_id>` |
+| `get_policy_status` | `{ draft_id: str }` → `{ draft_id, version, status: pending \| confirmed \| rejected, mandate_id: str \| null, confirmed_at: datetime \| null, rejected_reason: str \| null }`. `mandate_id` is set only when `status` is `confirmed`. Unknown draft raises |
+| `get_policy_summary` | `{ draft_id: str }` → `{ draft_id, version, instruction, plain_english: [str], examples: [{ description, expected, why }], open_questions: [{ question, options, answer: str \| null }], uncertainty_policy }`. The sentences are the same ones the Wallet shows |
+| `buy` | `{ mandate_id: str, cart: [{ item_id, item_name, item_category, item_details, unit_price_chf, quantity }], merchant: { merchant_id, merchant_name, merchant_category, merchant_mcc, merchant_country }, facts: [PurchaseFacts] }` → `Decision` (`approve`, `decline` or `step_up` with `authorization_id`). Parked for the submission: raises `NotImplementedError("purchases arrive through the simulator in demo mode; see plan 01 step 12")` |
+| `get_purchase_status` | `{ authorization_id: str }` → `{ authorization_id, decision: Decision, resolved: bool, final: approve \| decline \| null }`; a `step_up` is `resolved: false` until the Wallet answers or it times out. Parked with `buy` |
+
+`facts` in `buy` is the form the agent's own model fills; the backend checks it deterministically and records `sources[field] = agent_form` for every field the agent supplied. The agent never sends the policy; the backend reads the confirmed policy for `mandate_id` from its own store.
