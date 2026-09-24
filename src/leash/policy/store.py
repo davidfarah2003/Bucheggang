@@ -7,9 +7,11 @@ module performs no authentication and never exposes that action to an agent.
 from __future__ import annotations
 
 import hashlib
+import fcntl
 import json
 import math
 import os
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -42,6 +44,14 @@ FIELDS = frozenset(
         "history.device_seen_on_card",
         "state.approvals_count",
     }
+)
+NUMBER_FIELDS = frozenset(
+    {"authorization.billing_amount_chf", "authorization.items_subtotal", "authorization.delivery_fee",
+     "items.count", "facts.return_days", "state.approvals_count"}
+)
+BOOLEAN_STRING_FIELDS = frozenset(
+    {"facts.is_gift_card", "facts.is_subscription", "facts.is_protection_plan",
+     "facts.is_addon", "history.merchant_seen_on_card", "history.device_seen_on_card"}
 )
 OPERATORS = frozenset({"<", "<=", "=", "!=", ">", ">=", "in", "not_in"})
 RULE_KEYS = frozenset(
@@ -97,6 +107,18 @@ def _validate_rule(rule: dict[str, Any], instruction: str) -> None:
         raise InvalidDraft("unsupported rule operator")
     if not _valid_value(rule.get("value")):
         raise InvalidDraft("rule value must be a finite number, nonempty string or nonempty string list")
+    value = rule["value"]
+    if rule["field"] in NUMBER_FIELDS:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise InvalidDraft(f"{rule['field']} needs a numeric rule value")
+    elif not isinstance(value, (str, list)):
+        raise InvalidDraft(f"{rule['field']} needs a string rule value")
+    if rule["field"] in BOOLEAN_STRING_FIELDS:
+        values = value if isinstance(value, list) else [value]
+        if any(item not in {"true", "false"} for item in values):
+            raise InvalidDraft(f"{rule['field']} needs 'true' or 'false'")
+    if rule.get("scope") == "period" and rule["field"] not in NUMBER_FIELDS:
+        raise InvalidDraft("period scope requires a numeric field")
     if "currency" in rule and rule["currency"] not in CURRENCIES:
         raise InvalidDraft("unsupported currency")
     if "scope" in rule and rule["scope"] not in {"purchase", "period"}:
@@ -185,6 +207,20 @@ class DraftStore:
             raise InvalidDraft("draft_id must use canonical UUID formatting")
         return self.root / draft_id
 
+    @contextmanager
+    def _locked(self, draft_id: str):
+        """Serialize state changes to one draft across local processes."""
+        folder = self._folder(draft_id)
+        if not folder.is_dir():
+            raise KeyError(draft_id)
+        descriptor = os.open(folder / ".lock", os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            yield folder
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
+
     @staticmethod
     def _write_exclusive(path: Path, value: dict[str, Any]) -> None:
         data = json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2).encode("utf-8") + b"\n"
@@ -260,29 +296,29 @@ class DraftStore:
         examples: list[dict[str, Any]] | None = None,
         open_questions: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        previous = self.assert_current(draft_id, expected_version, expected_hash)
-        new_rules = rules if rules is not None else previous["rules"]
-        new_policy = uncertainty_policy if uncertainty_policy is not None else previous["uncertainty_policy"]
-        new_examples = examples if examples is not None else previous["examples"]
-        new_questions = open_questions if open_questions is not None else previous["open_questions"]
-        _validate_draft(previous["instruction"], new_rules, new_policy, new_examples, new_questions)
-        revised = {
-            **previous,
-            "version": previous["version"] + 1,
-            "hash": draft_hash(previous["instruction"], new_rules, new_policy),
-            "rules": new_rules,
-            "uncertainty_policy": new_policy,
-            "examples": new_examples,
-            "open_questions": new_questions,
-            "created_at": _now(),
-        }
-        folder = self._folder(draft_id)
-        try:
-            self._write_exclusive(folder / f"v{revised['version']}.json", revised)
-        except FileExistsError as exc:
-            raise DraftConflict("another revision was saved first") from exc
-        self._audit(folder, "draft_revised", version=revised["version"], hash=revised["hash"])
-        return revised
+        with self._locked(draft_id) as folder:
+            previous = self.assert_current(draft_id, expected_version, expected_hash)
+            new_rules = rules if rules is not None else previous["rules"]
+            new_policy = uncertainty_policy if uncertainty_policy is not None else previous["uncertainty_policy"]
+            new_examples = examples if examples is not None else previous["examples"]
+            new_questions = open_questions if open_questions is not None else previous["open_questions"]
+            _validate_draft(previous["instruction"], new_rules, new_policy, new_examples, new_questions)
+            revised = {
+                **previous,
+                "version": previous["version"] + 1,
+                "hash": draft_hash(previous["instruction"], new_rules, new_policy),
+                "rules": new_rules,
+                "uncertainty_policy": new_policy,
+                "examples": new_examples,
+                "open_questions": new_questions,
+                "created_at": _now(),
+            }
+            try:
+                self._write_exclusive(folder / f"v{revised['version']}.json", revised)
+            except FileExistsError as exc:
+                raise DraftConflict("another revision was saved first") from exc
+            self._audit(folder, "draft_revised", version=revised["version"], hash=revised["hash"])
+            return revised
 
     def assert_current(self, draft_id: str, version: int, hash_value: str) -> dict[str, Any]:
         draft = self.get(draft_id)
@@ -305,25 +341,25 @@ class DraftStore:
         mandate_id: str,
         confirmed_by: str,
     ) -> dict[str, Any]:
-        draft = self.assert_current(draft_id, version, hash_value)
-        if not simulator_draft_id or not mandate_id or not confirmed_by:
-            raise InvalidDraft("simulator draft ID, mandate ID and confirmer are required")
-        folder = self._folder(draft_id)
-        record = {
-            "draft_id": draft_id,
-            "version": version,
-            "hash": hash_value,
-            "simulator_draft_id": simulator_draft_id,
-            "mandate_id": mandate_id,
-            "confirmed_by": confirmed_by,
-            "confirmed_at": _now(),
-        }
-        try:
-            self._write_exclusive(folder / "confirmation.json", record)
-        except FileExistsError as exc:
-            raise DraftConflict("draft was already confirmed") from exc
-        self._audit(folder, "draft_confirmed", **record)
-        return {"draft": draft, "confirmation": record}
+        with self._locked(draft_id) as folder:
+            draft = self.assert_current(draft_id, version, hash_value)
+            if not simulator_draft_id or not mandate_id or not confirmed_by:
+                raise InvalidDraft("simulator draft ID, mandate ID and confirmer are required")
+            record = {
+                "draft_id": draft_id,
+                "version": version,
+                "hash": hash_value,
+                "simulator_draft_id": simulator_draft_id,
+                "mandate_id": mandate_id,
+                "confirmed_by": confirmed_by,
+                "confirmed_at": _now(),
+            }
+            try:
+                self._write_exclusive(folder / "confirmation.json", record)
+            except FileExistsError as exc:
+                raise DraftConflict("draft was already confirmed") from exc
+            self._audit(folder, "draft_confirmed", **record)
+            return {"draft": draft, "confirmation": record}
 
     def get_confirmation(self, draft_id: str) -> dict[str, Any]:
         path = self._folder(draft_id) / "confirmation.json"
@@ -332,19 +368,19 @@ class DraftStore:
         return json.loads(path.read_text())
 
     def reject(self, draft_id: str, *, version: int, hash_value: str, rejected_by: str, reason: str) -> None:
-        self.assert_current(draft_id, version, hash_value)
-        if not rejected_by:
-            raise InvalidDraft("rejecter is required")
-        folder = self._folder(draft_id)
-        record = {
-            "draft_id": draft_id,
-            "version": version,
-            "hash": hash_value,
-            "rejected_by": rejected_by,
-            "reason": reason,
-        }
-        try:
-            self._write_exclusive(folder / "rejection.json", record)
-        except FileExistsError as exc:
-            raise DraftConflict("draft was already rejected") from exc
-        self._audit(folder, "draft_rejected", **record)
+        with self._locked(draft_id) as folder:
+            self.assert_current(draft_id, version, hash_value)
+            if not rejected_by:
+                raise InvalidDraft("rejecter is required")
+            record = {
+                "draft_id": draft_id,
+                "version": version,
+                "hash": hash_value,
+                "rejected_by": rejected_by,
+                "reason": reason,
+            }
+            try:
+                self._write_exclusive(folder / "rejection.json", record)
+            except FileExistsError as exc:
+                raise DraftConflict("draft was already rejected") from exc
+            self._audit(folder, "draft_rejected", **record)
