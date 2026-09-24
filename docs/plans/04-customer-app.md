@@ -73,6 +73,31 @@ Out:
 - Add persistent account-wide global policy controls after the live runner loop, app step-up flow and replay work end to end. Do not add `GlobalPolicy` to `docs/contracts.md` or the engine signature before then.
 - When global policies are added, compose their rules with the task rules into one effective `PolicyDraft` at confirmation and hash exactly what is sent to the simulator. The live API supports one active mandate per team; a new confirmation supersedes it, and hard-rule PATCH returns `409 mandate_widening` even for an unchanged list. Global updates therefore apply on the next confirmed mandate; the Wallet must disclose when an existing active mandate still uses the earlier version.
 
+## Mobile interaction revision
+
+The Wallet remains the live app entry for this release. A separate Penpot storyboard, `Purchase journey 20s`, maps the full agent-to-payment story. Its shopping and purchase screens are illustrative. The current HTTP API has no route to select a shopping provider, run an agent from the composer, find a product or submit a purchase. The app will not render those phases as if they happened. The standalone Wallet still opens a saved draft from an external agent at `/app/?draft_id=<id>`.
+
+Live state mapping for the mobile app:
+
+1. `GET /drafts/{id}` loads the backend-stored proposal. The review view foregrounds the purchase cap and task, with questions and rule details disclosed as needed. `POST /drafts/{id}/confirm` carries the exact version, hash and answers.
+2. A successful confirm shows a short trusted-Wallet acknowledgment, then opens Home automatically. `GET /mandates/{id}` supplies the effective policy and state. No agent-side UI can confirm.
+3. `GET /step-ups/pending` supplies exact pending purchases. Approve once or Decline sends `POST /step-ups/{authorization_id}/answer`. A completed answer updates the Wallet view automatically.
+4. `GET /mandates/{id}/decisions` supplies the activity feed. A row opens customer wording from `GET /decisions/{authorization_id}`; the separate inspector contains raw Event, evidence, policy, security and state.
+
+Component references reviewed for the plain HTML/CSS/JavaScript stack:
+
+- [Motion Primitives Morphing Dialog](https://motion-primitives.com/docs/morphing-dialog): considered for expanding a purchase row. This revision keeps the existing sliding sheet; shared-element morphing is deferred.
+- [Motion Primitives Disclosure](https://motion-primitives.com/docs/disclosure): the existing native `details` supplies disclosure for the original request and merchant text. No React dependency added.
+- [Motion Primitives Animated Number](https://motion-primitives.com/docs/animated-number): considered, deferred. Monetary amounts remain exact, without an intermediate counting value.
+- [Magic UI Animated List](https://magicui.design/docs/components/animated-list): adapted its staggered-entry pattern into CSS for activity rows, with reduced-motion support. No invented progress entries.
+- [Aceternity Timeline](https://ui.aceternity.com/components/timeline): retained compact outcome-marked rows rather than its scroll-beam effect.
+- [shadcn/Radix Tabs](https://ui.shadcn.com/docs/components/radix/tabs): adapted tab semantics, arrow keys, Home/End navigation and one active panel in the technical inspector using native DOM.
+- [shadcn/Radix Dialog](https://ui.shadcn.com/docs/components/radix/dialog): adapted focus entry, background inertness, Tab containment, Escape and return-focus behavior in the existing sheets.
+
+Uiverse returned HTTP 403 through WebFetch and a Cloudflare challenge in the browser, so no component source was copied. The component packages above require React and were not installed. Their interaction patterns informed this small revision; the app keeps its existing CSS tokens and 16 px mobile gutter.
+
+Check at 390-400 px and at a laptop width: review question gating, confirmation acknowledgment, an actual pending step-up and its resolved result, activity expansion, inspector keyboard use, session expiry and HTTP error display. The simulator-driven purchase flow depends on a live runner and an external shopping agent. No shipped mock, recorded purchase or synthetic customer answer substitutes for that check.
+
 ## Log
 
 (one line per finished task: date time, who, what, how it was tried, sha)
