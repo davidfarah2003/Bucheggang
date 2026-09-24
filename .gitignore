@@ -222,3 +222,6 @@ __marimo__/
 .cotal/*
 !.cotal/agents/
 data/state/
+data/decisions/
+data/stepups/
+data/locks/
