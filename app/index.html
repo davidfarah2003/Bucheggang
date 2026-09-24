@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f3ee" />
+    <meta name="description" content="Review and control purchases made by your shopping agent." />
+    <title>Viseca · Agent control</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-frame">
+      <aside class="rail" aria-label="Main navigation">
+        <a class="brand" href="#review" aria-label="Viseca home">
+          <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span class="brand-word">viseca<span>+</span></span>
+        </a>
+
+        <div class="rail-label">YOUR WALLET</div>
+        <nav class="primary-nav">
+          <button class="nav-item is-active" type="button" data-route="review">
+            <span class="nav-icon icon-inbox" aria-hidden="true"></span><span>Review request</span><span class="nav-count" id="review-count">—</span>
+          </button>
+          <button class="nav-item" type="button" data-route="approvals">
+            <span class="nav-icon icon-shield" aria-hidden="true"></span><span>Approvals</span><span class="nav-count nav-count-muted" id="approval-count">—</span>
+          </button>
+          <button class="nav-item" type="button" data-route="policy">
+            <span class="nav-icon icon-sliders" aria-hidden="true"></span><span>My policy</span>
+          </button>
+          <button class="nav-item" type="button" data-route="activity">
+            <span class="nav-icon icon-clock" aria-hidden="true"></span><span>Activity</span>
+          </button>
+        </nav>
+
+        <div class="rail-bottom">
+          <div class="trust-card">
+            <span class="trust-icon" aria-hidden="true">✓</span>
+            <div><strong>Your rules stay yours</strong><small>Only you can approve a purchase.</small></div>
+          </div>
+          <div class="profile-row">
+            <span class="avatar">RB</span>
+            <span class="profile-copy"><strong>Rishabh</strong><small>Personal account</small></span>
+            <span class="profile-menu" aria-hidden="true">···</span>
+          </div>
+        </div>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <div class="mobile-brand">
+            <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+            <span class="brand-word">viseca<span>+</span></span>
+          </div>
+          <div class="topbar-context"><span class="status-dot"></span><span>Agent control</span><span class="context-separator">/</span><span id="page-context">Review request</span></div>
+          <div class="topbar-actions">
+            <span class="secure-label"><span class="lock-icon" aria-hidden="true"></span>Secure session</span>
+            <button class="icon-button" type="button" aria-label="Notifications"><span class="bell-icon" aria-hidden="true"></span><i></i></button>
+            <span class="avatar top-avatar" aria-label="Rishabh">RB</span>
+          </div>
+        </header>
+
+        <main id="main-content" class="main-content" tabindex="-1">
+          <div id="screen" class="screen" aria-live="polite" aria-busy="true">
+            <div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Preparing your secure wallet…</span></div>
+          </div>
+        </main>
+        <footer class="footer-note"><span>Viseca control demo</span><span>Local demo account · no payment credentials stored here</span></footer>
+      </div>
+    </div>
+
+    <nav class="mobile-nav" aria-label="Main navigation">
+      <button class="mobile-nav-item is-active" type="button" data-route="review"><span class="nav-icon icon-inbox" aria-hidden="true"></span><span>Review</span></button>
+      <button class="mobile-nav-item" type="button" data-route="approvals"><span class="nav-icon icon-shield" aria-hidden="true"></span><span>Approvals</span></button>
+      <button class="mobile-nav-item" type="button" data-route="policy"><span class="nav-icon icon-sliders" aria-hidden="true"></span><span>Policy</span></button>
+      <button class="mobile-nav-item" type="button" data-route="activity"><span class="nav-icon icon-clock" aria-hidden="true"></span><span>Activity</span></button>
+    </nav>
+
+    <div id="drawer-root"></div>
+    <div id="toast-root" class="toast-root" aria-live="assertive" aria-atomic="true"></div>
+  </body>
+</html>
