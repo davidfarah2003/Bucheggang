@@ -1,4 +1,3 @@
-const SAMPLE_DRAFT_URL = "../docs/samples/scen0002_draft.json";
 const API_BASE = "";
 const MANDATE_SESSION_KEY = "viseca.demo.mandateId";
 const screen = document.querySelector("#screen");
@@ -6,19 +5,25 @@ const drawerRoot = document.querySelector("#drawer-root");
 const toastRoot = document.querySelector("#toast-root");
 const pageContext = document.querySelector("#page-context");
 const pageTitles = {
-  review: "Review request",
+  home: "Home",
+  review: "Review policy",
   approvals: "Approvals",
-  policy: "My policy",
+  policy: "Policy",
   activity: "Activity",
 };
 
-let currentRoute = "review";
+let currentRoute = "home";
 let activeDraft = null;
 let answers = {};
 let pendingIds = new Set();
+let pendingStepUps = new Map();
 let submittingStepUps = new Set();
 let approvalTimer = null;
 let currentPolicy = null;
+let currentDecisionPayload = null;
+let currentUsername = null;
+let screenSerial = 0;
+let drawerSerial = 0;
 
 function esc(value) {
   if (value === null || value === undefined) throw new Error("A required display value is missing.");
@@ -63,8 +68,21 @@ function requireString(value, field) {
   return value;
 }
 
+function validateRules(rules, field) {
+  if (!Array.isArray(rules)) throw new Error(`${field} must be a list.`);
+  rules.forEach((rule, index) => {
+    if (!rule || typeof rule !== "object") throw new Error(`${field}[${index}] must be an object.`);
+    requireString(rule.field, `${field}[${index}].field`);
+    requireString(rule.operator, `${field}[${index}].operator`);
+    requireString(rule.source_text, `${field}[${index}].source_text`);
+    requireString(rule.plain_english, `${field}[${index}].plain_english`);
+    if (!(typeof rule.value === "number" || typeof rule.value === "string" || (Array.isArray(rule.value) && rule.value.every((item) => typeof item === "string")))) throw new Error(`${field}[${index}].value has an unsupported type.`);
+    if (rule.scope === "period" && (!Number.isInteger(rule.period_days) || rule.period_days < 1)) throw new Error(`${field}[${index}].period_days must be a positive integer for a period rule.`);
+  });
+}
+
 function validateDraft(draft) {
-  if (!draft || typeof draft !== "object") throw new Error("SCEN0002 draft must be a JSON object.");
+  if (!draft || typeof draft !== "object") throw new Error("The policy draft must be a JSON object.");
   requireString(draft.draft_id, "draft_id");
   requireString(draft.hash, "hash");
   requireString(draft.instruction, "instruction");
@@ -72,15 +90,8 @@ function validateDraft(draft) {
   requireString(draft.created_at, "created_at");
   if (!["ask", "decline", "approve"].includes(draft.uncertainty_policy)) throw new Error(`uncertainty_policy ${draft.uncertainty_policy} is not supported.`);
   if (!Number.isInteger(draft.version)) throw new Error("version must be an integer.");
-  if (!Array.isArray(draft.rules) || !Array.isArray(draft.examples) || !Array.isArray(draft.open_questions)) throw new Error("rules, examples and open_questions must be arrays.");
-  draft.rules.forEach((rule, index) => {
-    requireString(rule.field, `rules[${index}].field`);
-    requireString(rule.operator, `rules[${index}].operator`);
-    requireString(rule.source_text, `rules[${index}].source_text`);
-    requireString(rule.plain_english, `rules[${index}].plain_english`);
-    if (!(typeof rule.value === "number" || typeof rule.value === "string" || (Array.isArray(rule.value) && rule.value.every((item) => typeof item === "string")))) throw new Error(`rules[${index}].value has an unsupported type.`);
-    if (rule.scope === "period" && (!Number.isInteger(rule.period_days) || rule.period_days < 1)) throw new Error(`rules[${index}].period_days must be a positive integer for a period rule.`);
-  });
+  validateRules(draft.rules, "rules");
+  if (!Array.isArray(draft.examples) || !Array.isArray(draft.open_questions)) throw new Error("examples and open_questions must be arrays.");
   draft.examples.forEach((example, index) => {
     requireString(example.description, `examples[${index}].description`);
     requireString(example.why, `examples[${index}].why`);
@@ -89,7 +100,9 @@ function validateDraft(draft) {
   draft.open_questions.forEach((question, index) => {
     requireString(question.question, `open_questions[${index}].question`);
     if (!Array.isArray(question.options) || !question.options.length || !question.options.every((option) => typeof option === "string" && option.length)) throw new Error(`open_questions[${index}].options must be a non-empty string list.`);
+    if (!Array.isArray(question.confirming_answers) || !question.confirming_answers.every((answer) => typeof answer === "string" && question.options.includes(answer))) throw new Error(`open_questions[${index}].confirming_answers must be a subset of options.`);
     if (question.answer !== null && typeof question.answer !== "string") throw new Error(`open_questions[${index}].answer must be a string or null.`);
+    if (question.answer !== null && !question.options.includes(question.answer)) throw new Error(`open_questions[${index}].answer must be one of the listed options.`);
   });
   return draft;
 }
@@ -105,6 +118,7 @@ async function readJson(response, label) {
 async function api(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
   });
   if (response.status === 409) {
@@ -120,16 +134,79 @@ function mandateId() {
   return window.sessionStorage.getItem(MANDATE_SESSION_KEY);
 }
 
+function showSession(username) {
+  currentUsername = requireString(username, "Session.username");
+  document.querySelector("#profile-name").textContent = currentUsername;
+  const initials = currentUsername.slice(0, 2).toUpperCase();
+  document.querySelector("#profile-avatar").textContent = initials;
+  const topAvatar = document.querySelector("#top-avatar");
+  topAvatar.textContent = initials;
+  topAvatar.setAttribute("aria-label", currentUsername);
+  document.querySelectorAll('[data-action="logout"]').forEach((button) => { button.hidden = false; });
+}
+
+function renderLogin() {
+  currentUsername = null;
+  if (approvalTimer) window.clearInterval(approvalTimer);
+  approvalTimer = null;
+  pageContext.textContent = "Demo sign in";
+  document.querySelectorAll('[data-action="logout"]').forEach((button) => { button.hidden = true; });
+  setScreen(`${heading("LOCAL DEMO ACCOUNT", "Sign in to your wallet.", "Enter a local username to review the policy your shopping agent proposed.")}
+    <section class="card card-pad login-card"><label class="field-label" for="demo-username">Username<input id="demo-username" autocomplete="username" maxlength="80" required placeholder="Your name" /></label>
+    <p class="helper-text">This demo uses a local username. It does not connect to your Viseca login.</p>
+    <button class="button button-primary" type="button" data-action="login">Continue</button></section>`);
+}
+
+async function initialize() {
+  try {
+    const response = await fetch("/session", { credentials: "same-origin" });
+    if (response.status === 401) {
+      window.sessionStorage.removeItem(MANDATE_SESSION_KEY);
+      renderLogin();
+      return;
+    }
+    const session = await readJson(response, "GET /session");
+    showSession(session.username);
+    setActiveRoute(window.location.hash.slice(1) || (new URLSearchParams(window.location.search).has("draft_id") ? "review" : "home"));
+  } catch (error) {
+    setScreen(dataError("Your session could not be checked.", error));
+  }
+}
+
+async function login() {
+  const username = requireString(document.querySelector("#demo-username").value, "Username");
+  const session = await api("/session", { method: "POST", body: JSON.stringify({ username }) });
+  showSession(session.username);
+  setActiveRoute(window.location.hash.slice(1) || "review");
+}
+
+async function logout() {
+  await api("/session", { method: "DELETE" });
+  window.sessionStorage.removeItem(MANDATE_SESSION_KEY);
+  activeDraft = null;
+  currentPolicy = null;
+  currentDecisionPayload = null;
+  answers = {};
+  renderLogin();
+}
+
 function setActiveRoute(route) {
+  if (!currentUsername) {
+    renderLogin();
+    return;
+  }
   if (!pageTitles[route]) {
     screen.innerHTML = dataError("Page could not be opened.", new Error(`Unknown app route: ${route}`));
     screen.setAttribute("aria-busy", "false");
     return;
   }
   currentRoute = route;
+  screenSerial += 1;
+  drawerSerial += 1;
+  currentDecisionPayload = null;
   if (window.location.hash !== `#${route}`) window.history.replaceState(null, "", `#${route}`);
   document.querySelectorAll("[data-route]").forEach((button) => {
-    const active = button.dataset.route === route;
+    const active = button.dataset.route === route || (route === "review" && button.dataset.route === "home");
     button.classList.toggle("is-active", active);
     if (button.matches(".nav-item")) {
       if (active) button.setAttribute("aria-current", "page");
@@ -153,21 +230,22 @@ function heading(eyebrow, title, description, action = "") {
   return `<div class="page-heading"><div><span class="eyebrow"><i class="eyebrow-mark"></i>${esc(eyebrow)}</span><h1>${esc(title)}</h1><p>${esc(description)}</p></div>${action ? `<div class="heading-actions">${action}</div>` : ""}</div>`;
 }
 
-function symbolFor(field) {
-  if (field.includes("amount") || field.includes("subtotal")) return "CHF";
-  if (field.includes("merchant")) return "⌂";
-  if (field.includes("return")) return "↺";
-  if (field.includes("size")) return "↕";
-  if (field.includes("product") || field.includes("items")) return "◇";
-  return "✓";
-}
-
 function ruleRows(rules = []) {
-  return rules.map((rule) => `<div class="rule-row">
-    <span class="rule-icon" aria-hidden="true">${esc(symbolFor(rule.field))}</span>
-    <span class="rule-copy"><strong>${esc(rule.plain_english)}</strong><small>From your request: <mark>${esc(rule.source_text)}</mark></small></span>
-    <span class="rule-tag">MUST HOLD</span>
-  </div>`).join("");
+  const labels = {
+    "authorization.billing_amount_chf": "Maximum purchase",
+    "authorization.merchant.merchant_category": "Merchant",
+    "facts.product_type": "Product",
+    "facts.size": "Size",
+    "facts.return_days": "Returns",
+    "state.approvals_count": "Approved purchases",
+  };
+  return rules.map((rule) => {
+    const label = labels[rule.field] || pretty(rule.field.split(".").at(-1));
+    const comparison = rule.operator === "=" ? "" : rule.operator === "<=" ? "≤ " : rule.operator === ">=" ? "≥ " : `${rule.operator} `;
+    const rawValue = Array.isArray(rule.value) ? rule.value.join(", ") : String(rule.value);
+    const value = `${comparison}${rule.currency ? `${rule.currency} ` : ""}${rawValue.replaceAll("_", " ")}${rule.field === "facts.return_days" ? " days" : ""}`;
+    return `<div class="permission-row"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+  }).join("");
 }
 
 function exampleCards(examples = []) {
@@ -194,35 +272,43 @@ function answerLabel(value) {
 function questionCards(questions = []) {
   return questions.map((question, index) => {
     const selected = answers[question.question] === undefined ? question.answer : answers[question.question];
+    const needsRevision = selected && !question.confirming_answers.includes(selected);
     return `<div class="question-item"><div class="question-text"><span class="question-number">${index + 1}</span><span>${esc(question.question)}</span></div>
       <div class="choice-row" role="group" aria-label="${esc(question.question)}">
         ${question.options.map((option) => `<button class="choice-button ${selected === option ? "is-selected" : ""}" type="button" data-action="answer" data-question="${esc(question.question)}" data-value="${esc(option)}" aria-pressed="${selected === option}">${esc(answerLabel(option))}</button>`).join("")}
       </div>
+      ${needsRevision ? `<p class="revision-note">This choice needs a revised policy before you can confirm.</p>` : ""}
     </div>`;
   }).join("");
 }
 
-function summaryCard(ruleCount, questionCount) {
-  return `<section class="card side-summary">
-    <div class="summary-top"><span class="eyebrow"><i class="eyebrow-mark"></i>YOUR CONTROL</span><h3>Your rules, your call.</h3><p>The shopping agent can work within these limits. Only you can approve an exception.</p></div>
-    <div class="summary-body">
-      <div class="summary-row"><span>Rules to protect you</span><strong>${ruleCount} checks</strong></div>
-      <div class="summary-row"><span>Questions for you</span><strong>${questionCount} to answer</strong></div>
-      <div class="summary-row"><span>Card details shared</span><strong>No</strong></div>
-    </div>
-  </section>
-  <section class="learn-card"><span class="learn-icon" aria-hidden="true">i</span><strong>Why am I seeing this?</strong><p>Your shopping agent suggested a policy. Review the exact saved version here before it can make a purchase.</p><button type="button" data-action="show-policy-note">How confirmation works <span aria-hidden="true">→</span></button></section>`;
+function showExamples() {
+  if (!activeDraft) throw new Error("There is no loaded policy draft to inspect.");
+  drawerSerial += 1;
+  drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Policy examples" tabindex="-1"><div class="drawer-header"><h2>Test this policy</h2><button class="close-button" type="button" aria-label="Close examples" data-action="close-drawer">×</button></div><div class="example-grid">${exampleCards(activeDraft.examples)}</div></aside></div>`;
+  drawerRoot.querySelector(".drawer").focus();
+}
+
+function showRuleDetails() {
+  const rules = currentRoute === "policy" ? currentPolicy?.effective_policy.rules : activeDraft?.rules;
+  if (!rules) throw new Error("Policy rules have not been loaded.");
+  drawerSerial += 1;
+  drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Policy rule details" tabindex="-1"><div class="drawer-header"><h2>Rule details</h2><button class="close-button" type="button" aria-label="Close rule details" data-action="close-drawer">×</button></div>${rules.map((rule) => `<section class="drawer-section"><h3>${esc(rule.plain_english)}</h3><p class="section-subtitle">From your request: <mark>${esc(rule.source_text)}</mark></p><small>${esc(rule.field)} ${esc(rule.operator)} ${esc(Array.isArray(rule.value) ? rule.value.join(", ") : rule.value)}</small></section>`).join("")}</aside></div>`;
+  drawerRoot.querySelector(".drawer").focus();
 }
 
 async function loadDraft() {
-  const response = await fetch(SAMPLE_DRAFT_URL, { cache: "no-store" });
-  return readJson(response, "SCEN0002 draft sample");
+  const draftId = new URLSearchParams(window.location.search).get("draft_id");
+  requireString(draftId, "URL query parameter draft_id");
+  return api(`/drafts/${encodeURIComponent(draftId)}`);
 }
 
 async function renderReview() {
+  const serial = ++screenSerial;
   try {
     const selectedAnswers = { ...answers };
     const draft = validateDraft(await loadDraft());
+    if (serial !== screenSerial || currentRoute !== "review") return;
     activeDraft = draft;
     answers = {};
     draft.open_questions.forEach((question) => {
@@ -232,31 +318,22 @@ async function renderReview() {
       if (draft.open_questions.some((item) => item.question === question)) answers[question] = selectedAnswers[question];
     });
     const unanswered = draft.open_questions.filter((question) => !answers[question.question]).length;
-    document.querySelector("#review-count").textContent = unanswered ? String(unanswered) : "✓";
+    const needsRevision = draft.open_questions.filter((question) => answers[question.question] && !question.confirming_answers.includes(answers[question.question])).length;
     const request = draft.instruction;
-    setScreen(`${heading("POLICY REQUEST", "Make sure it feels right.", "Review what your shopping agent plans to follow. Every limit below comes from your request.")}
-      <div class="content-grid">
-        <div class="main-column">
-          <section class="hero-card">
-            <div class="hero-topline"><span class="status-chip"><i class="chip-dot"></i>Waiting for your review</span><span class="small-meta">Draft version ${esc(draft.version)}</span></div>
-            <div class="hero-copy"><h2>A clearer plan. A safer way to shop.</h2><p>Read the saved policy in your own words. The agent only gets permission after you confirm this exact version.</p></div>
-            <div class="instruction-quote"><strong>Your request</strong><br />“${esc(request)}”</div>
-          </section>
-          <section class="card card-pad">
-            <div class="section-head"><div><h2 class="section-title">The rules you asked for</h2><div class="section-subtitle">Each check stays attached to the words you used.</div></div><span class="rule-tag">${draft.rules.length} RULES</span></div>
-            <div class="rules-list">${ruleRows(draft.rules)}</div>
-          </section>
-          <section class="card card-pad">
-            <div class="section-head"><div><h2 class="section-title">Try a few examples</h2><div class="section-subtitle">See what these rules would allow.</div></div><span class="small-meta">From your policy draft</span></div>
-            <div class="example-grid">${exampleCards(draft.examples)}</div>
-          </section>
-          ${draft.open_questions.length ? `<section class="card card-pad"><div class="section-head"><div><h2 class="section-title">A couple of choices need you</h2><div class="section-subtitle">Your answers become part of this policy.</div></div><span class="status-chip"><i class="chip-dot"></i>${unanswered ? `${unanswered} unanswered` : "Complete"}</span></div><div class="question-list">${questionCards(draft.open_questions)}</div></section>` : ""}
-          <div class="confirm-actions"><span class="actions-note"><i class="mini-lock" aria-hidden="true"></i>Confirmation applies to version ${esc(draft.version)} only.</span><div class="button-row"><button type="button" class="button button-secondary" data-action="reject-draft">Reject</button><button type="button" class="button button-primary" data-action="confirm-draft" ${unanswered ? "disabled" : ""}>Confirm policy <span class="button-arrow" aria-hidden="true">→</span></button></div></div>
-        </div>
-        <aside class="side-column">${summaryCard(draft.rules.length, unanswered)}</aside>
+    setScreen(`${heading("Wallet permission", "Review your agent's plan", "Only you can confirm these limits.")}
+      <div class="review-layout">
+        <section class="review-card">
+          <div class="section-head"><h2 class="section-title">Your agent can buy</h2><span class="small-meta">Version ${esc(draft.version)}</span></div>
+          <div class="permission-list">${ruleRows(draft.rules)}</div>
+          <details class="request-details"><summary>Original request</summary><p>${esc(request)}</p></details>
+          <div class="review-links"><button type="button" data-action="show-rule-details">Rule details</button><button type="button" data-action="show-examples">Test this policy</button></div>
+        </section>
+        ${draft.open_questions.length ? `<section class="review-card"><div class="section-head"><h2 class="section-title">${draft.open_questions.length} choice${draft.open_questions.length === 1 ? "" : "s"} need your answer</h2><span class="small-meta">${unanswered ? `${unanswered} unanswered` : needsRevision ? "Needs revision" : "Ready"}</span></div><div class="question-list">${questionCards(draft.open_questions)}</div></section>` : ""}
+        <div class="review-actions">${needsRevision ? "" : `<span class="actions-note">You will confirm version ${esc(draft.version)}.</span>`}<div class="button-row"><button type="button" class="button button-quiet" data-action="reject-draft">Reject draft</button><button type="button" class="button button-primary" data-action="confirm-draft" ${unanswered || needsRevision ? "disabled" : ""}>Confirm policy</button></div></div>
       </div>`);
   } catch (error) {
-    setScreen(`${heading("POLICY REQUEST", "Make sure it feels right.", "Review the policy saved by your shopping agent.")}${dataError("The policy draft could not be loaded.", error)}`);
+    if (serial === screenSerial && currentRoute === "review") setScreen(`${heading("POLICY REQUEST", "Make sure it feels right.", "Review the policy saved by your shopping agent.")}${dataError("The policy draft could not be loaded.", error)}`);
+    else showToast(`A previous policy load failed: ${error.message}`, "error");
   }
 }
 
@@ -276,21 +353,53 @@ function stepUpCard(stepUp) {
   const left = new Date(stepUp.expires_at).getTime() - Date.now();
   if (!Number.isFinite(left)) throw new Error(`StepUp ${stepUp.authorization_id} has an invalid expires_at timestamp.`);
   const remaining = left > 0 ? `${Math.floor(left / 60000)}m ${String(Math.floor(left / 1000) % 60).padStart(2, "0")}s left` : "Deadline reached";
-  return `<article class="card card-pad">
-    <div class="section-head"><div><span class="outcome-pill step_up"><i class="outcome-dot"></i>Needs your decision</span><div class="section-subtitle" style="margin-top:8px">${esc(remaining)}</div></div><span class="small-meta">${esc(stepUp.authorization_id)}</span></div>
-    <h2 class="section-title" style="font-size:15px;margin:0 0 5px">${esc(purchase)}</h2>
-    <p class="section-subtitle" style="margin:0 0 15px">${esc(merchant.merchant_name)} · ${esc(money(amount, "CHF"))}</p>
-    <div class="untrusted-banner"><strong>Why we paused</strong><span>${esc(decision.customer_message)}</span></div>
-    ${auth.items.some((item) => item.item_details) ? `<div class="event-copy">${auth.items.filter((item) => item.item_details).map((item) => esc(item.item_details)).join("\n")}</div>` : ""}
-    <div class="button-row" style="justify-content:flex-end;margin-top:15px"><button class="button button-secondary" type="button" data-action="answer-step-up" data-id="${esc(stepUp.authorization_id)}" data-decision="decline" ${left <= 0 || submittingStepUps.has(stepUp.authorization_id) ? "disabled" : ""}>Reject</button><button class="button button-primary" type="button" data-action="answer-step-up" data-id="${esc(stepUp.authorization_id)}" data-decision="approve" ${left <= 0 || submittingStepUps.has(stepUp.authorization_id) ? "disabled" : ""}>Approve purchase <span class="button-arrow" aria-hidden="true">→</span></button></div>
+  if (!Array.isArray(decision.evidence)) throw new Error(`StepUp ${stepUp.authorization_id} has no decision evidence.`);
+  const labels = {
+    "authorization.billing_amount_chf": "Amount", "facts.product_type": "Product", "facts.size": "Size", "facts.return_days": "Return window",
+    "authorization.merchant.merchant_category": "Merchant", "state.approvals_count": "Purchase count",
+  };
+  const checks = [...decision.evidence];
+  const priority = { fail: 0, uncertain: 1, pass: 2 };
+  checks.forEach((check) => {
+    requireString(check.name, "StepUp Check.name");
+    if (!Object.hasOwn(priority, check.result)) throw new Error(`StepUp check result ${check.result} is unsupported.`);
+  });
+  checks.sort((a, b) => priority[a.result] - priority[b.result]);
+  const preview = checks.slice(0, 4).map((check) => {
+    const field = check.name.startsWith("rule ") ? check.name.slice(5).split(" ")[0] : check.name;
+    const label = labels[field] || pretty(field.split(".").at(-1));
+    const status = check.result === "pass" ? "Passed" : check.result === "fail" ? "Failed" : "Unknown";
+    return `<li><span class="approval-check-mark ${esc(check.result)}" aria-hidden="true">${check.result === "pass" ? "✓" : check.result === "fail" ? "×" : "?"}</span><span>${esc(label)}</span><strong>${status}</strong></li>`;
+  }).join("");
+  return `<article class="approval-card">
+    <div class="approval-topline"><span>${esc(remaining)}</span><span>Needs your decision</span></div>
+    <div class="approval-purchase"><span>${esc(merchant.merchant_name)}</span><strong>${esc(money(amount, "CHF"))}</strong><p>${esc(purchase)}</p></div>
+    <div class="approval-checks"><h2>Checked against your wallet</h2><ul>${preview}</ul><p>${esc(decision.customer_message)}</p><button class="section-link" type="button" data-action="show-step-up-details" data-id="${esc(stepUp.authorization_id)}">Why?</button></div>
+    <p class="approval-binding">Your answer applies only to this exact purchase.</p>
+    <div class="approval-actions"><button class="button button-secondary" type="button" data-action="answer-step-up" data-id="${esc(stepUp.authorization_id)}" data-decision="decline" ${left <= 0 || submittingStepUps.has(stepUp.authorization_id) ? "disabled" : ""}>Decline</button><button class="button button-primary" type="button" data-action="answer-step-up" data-id="${esc(stepUp.authorization_id)}" data-decision="approve" ${left <= 0 || submittingStepUps.has(stepUp.authorization_id) ? "disabled" : ""}>Approve</button></div>
   </article>`;
+}
+
+function showStepUpDetails(id) {
+  const stepUp = pendingStepUps.get(id);
+  if (!stepUp) throw new Error(`Pending purchase ${id} is no longer available.`);
+  if (!Array.isArray(stepUp.decision.evidence)) throw new Error(`StepUp ${id} has no evidence list.`);
+  drawerSerial += 1;
+  const checks = stepUp.decision.evidence.map((check, index) => {
+    requireString(check.name, `StepUp.evidence[${index}].name`);
+    requireString(check.source, `StepUp.evidence[${index}].source`);
+    return `<div class="check-row"><span class="check-copy"><strong>${esc(pretty(check.name))}</strong><small>${esc(check.note)}</small><small>Value: ${check.value === null ? "unknown" : esc(check.value)} · Source: ${esc(check.source)}</small></span><span class="check-result ${esc(check.result)}">${esc(check.result)}</span></div>`;
+  }).join("");
+  const details = stepUp.event.authorization.items.map((item) => esc(item.item_details)).join("\n");
+  drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Why this purchase needs approval" tabindex="-1"><div class="drawer-header"><div><h2>Why we paused</h2><p>${esc(stepUp.authorization_id)}</p></div><button class="close-button" type="button" aria-label="Close details" data-action="close-drawer">×</button></div><section class="drawer-section"><p>${esc(stepUp.decision.customer_message)}</p></section><section class="drawer-section"><h3>Wallet checks</h3>${checks}</section><details class="drawer-section"><summary>Merchant-supplied text · untrusted</summary><div class="event-copy">${details}</div></details><details class="drawer-section"><summary>Raw authorization event</summary><pre class="event-json">${esc(JSON.stringify(stepUp.event, null, 2))}</pre></details></aside></div>`;
+  drawerRoot.querySelector(".drawer").focus();
 }
 
 function expiredNote(count) {
   return count ? `<div class="toast is-success" role="status">${count} previous request${count === 1 ? " was" : "s were"} resolved and removed from your list.</div>` : "";
 }
 
-async function loadApprovals({ initial = false } = {}) {
+async function loadApprovals() {
   const container = document.querySelector("#approvals-list");
   const errorContainer = document.querySelector("#approvals-error");
   if (!container) return;
@@ -306,14 +415,19 @@ async function loadApprovals({ initial = false } = {}) {
       requireString(item.decision.customer_message, `step-ups[${index}].decision.customer_message`);
       if (!Number.isFinite(new Date(item.expires_at).getTime())) throw new Error(`step-ups[${index}].expires_at is invalid.`);
     });
+    if (!container.isConnected) return;
     const ids = new Set(requests.map((item) => item.authorization_id));
-    const removed = initial ? [] : [...pendingIds].filter((id) => !ids.has(id));
+    const removed = [...pendingIds].filter((id) => !ids.has(id));
     pendingIds = ids;
+    pendingStepUps = new Map(requests.map((item) => [item.authorization_id, item]));
     document.querySelector("#approval-count").textContent = requests.length ? String(requests.length) : "0";
-    container.innerHTML = requests.length ? `<div class="list-stack">${requests.map(stepUpCard).join("")}</div>` : `<section class="card empty-state"><div><div class="empty-mark" aria-hidden="true">✓</div><h3>You’re all caught up</h3><p>When a purchase needs your decision, it will appear here with the reason and its deadline.</p></div></section>`;
+    container.innerHTML = requests.length ? `<div class="list-stack">${requests.map(stepUpCard).join("")}</div>` : `<section class="wallet-empty"><h2>No approvals waiting</h2><p>Purchases that need your decision will appear here.</p></section>`;
     if (errorContainer) errorContainer.innerHTML = removed.length ? expiredNote(removed.length) : "";
   } catch (error) {
-    pendingIds = new Set();
+    if (!container.isConnected) {
+      showToast(`A previous approval refresh failed: ${error.message}`, "error");
+      return;
+    }
     document.querySelector("#approval-count").textContent = "—";
     container.replaceChildren();
     if (errorContainer) errorContainer.innerHTML = dataError("Pending approvals could not be refreshed.", error);
@@ -322,14 +436,16 @@ async function loadApprovals({ initial = false } = {}) {
 }
 
 async function renderApprovals() {
-  setScreen(`${heading("PURCHASE CHECKS", "A pause is a chance to choose.", "Review a specific purchase and the reason it needs your attention.")}
-    <div class="main-column"><div id="approvals-error"></div><div id="approvals-list"><div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Checking for pending approvals…</span></div></div></div>`);
-  await loadApprovals({ initial: true });
-  approvalTimer = window.setInterval(() => loadApprovals(), 2000);
+  setScreen(`${heading("PURCHASE CHECKS", "Approvals", "Review each purchase before it expires.")}
+    <div class="approvals-layout"><div id="approvals-error"></div><div id="approvals-list"><div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Checking for pending purchases…</span></div></div></div>`);
+  const container = document.querySelector("#approvals-list");
+  await loadApprovals();
+  if (container.isConnected && currentRoute === "approvals") approvalTimer = window.setInterval(() => loadApprovals(), 2000);
 }
 
 function noMandate() {
-  return `<section class="card empty-state"><div><div class="empty-mark" aria-hidden="true">◇</div><h3>Confirm a policy to continue</h3><p>Your active mandate will appear here after you review and confirm a policy request.</p><button class="button button-primary button-small" type="button" data-route="review" style="margin-top:14px">Review request <span class="button-arrow" aria-hidden="true">→</span></button></div></section>`;
+  const hasDraft = new URLSearchParams(window.location.search).has("draft_id");
+  return `<section class="wallet-empty"><h2>No agent wallet yet</h2><p>Your shopping agent can send a policy draft for you to review. Only your confirmation activates it.</p>${hasDraft ? `<button class="button button-primary" type="button" data-route="review">Review policy</button>` : ""}</section>`;
 }
 
 function formatRuleValue(rule) {
@@ -342,14 +458,16 @@ function ruleViews(rules = []) {
 }
 
 function getPayloadParts(payload) {
-  if (!payload || !payload.mandate || !payload.draft || !payload.state) throw new Error("GET /mandates/{mandate_id} must return { mandate, draft, state }.");
+  if (!payload || !payload.mandate || !payload.draft || !payload.effective_policy || !payload.state) throw new Error("GET /mandates/{mandate_id} must return { mandate, draft, effective_policy, state }.");
   requireString(payload.mandate.mandate_id, "Mandate.mandate_id");
   requireString(payload.mandate.status, "Mandate.status");
-  if (!["active", "revoked", "expired"].includes(payload.mandate.status)) throw new Error(`Mandate.status ${payload.mandate.status} is not supported.`);
+  if (!["active", "revoked", "expired", "superseded"].includes(payload.mandate.status)) throw new Error(`Mandate.status ${payload.mandate.status} is not supported.`);
   requireString(payload.mandate.confirmed_at, "Mandate.confirmed_at");
   if (!Number.isFinite(new Date(payload.mandate.confirmed_at).getTime())) throw new Error("Mandate.confirmed_at is not a valid timestamp.");
   if (!Number.isInteger(payload.mandate.version)) throw new Error("Mandate.version must be an integer.");
   validateDraft(payload.draft);
+  validateRules(payload.effective_policy.rules, "effective_policy.rules");
+  if (!["ask", "decline", "approve"].includes(payload.effective_policy.uncertainty_policy)) throw new Error("effective_policy.uncertainty_policy is unsupported.");
   if (payload.state.mandate_id !== payload.mandate.mandate_id) throw new Error("MandateState.mandate_id does not match Mandate.mandate_id.");
   if (!Array.isArray(payload.state.approvals)) throw new Error("MandateState.approvals must be a list.");
   payload.state.approvals.forEach((approval, index) => {
@@ -358,7 +476,7 @@ function getPayloadParts(payload) {
     if (!Number.isFinite(new Date(approval.timestamp).getTime())) throw new Error(`state.approvals[${index}].timestamp is invalid.`);
     if (typeof approval.amount_chf !== "number" || !Number.isFinite(approval.amount_chf)) throw new Error(`state.approvals[${index}].amount_chf is invalid.`);
   });
-  return { mandate: payload.mandate, draft: payload.draft, state: payload.state };
+  return { mandate: payload.mandate, draft: payload.draft, effective_policy: payload.effective_policy, state: payload.state };
 }
 
 function periodSpendRules(rules = []) {
@@ -382,7 +500,62 @@ function spendMetrics(approvals, rules) {
   }).join("")}</div>`;
 }
 
+async function renderHome() {
+  const serial = ++screenSerial;
+  const id = mandateId();
+  if (!id) {
+    if (new URLSearchParams(window.location.search).has("draft_id")) {
+      setActiveRoute("review");
+      return;
+    }
+    setScreen(`${heading("YOUR WALLET", "Agent wallet", "Your agent needs a policy you have confirmed.")}${noMandate()}`);
+    return;
+  }
+  setScreen(`${heading("YOUR WALLET", "Agent wallet", "Your current permissions and recent purchases.")}<div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Loading wallet…</span></div>`);
+  try {
+    const [payload, entries] = await Promise.all([
+      api(`/mandates/${encodeURIComponent(id)}`),
+      api(`/mandates/${encodeURIComponent(id)}/decisions`),
+    ]);
+    const { mandate, draft, effective_policy, state } = getPayloadParts(payload);
+    if (!Array.isArray(entries)) throw new Error("GET /mandates/{mandate_id}/decisions must return a list.");
+    if (serial !== screenSerial || currentRoute !== "home") return;
+    const caps = effective_policy.rules.filter((rule) => rule.field === "authorization.billing_amount_chf" && rule.scope === "purchase" && ["<", "<="].includes(rule.operator) && typeof rule.value === "number");
+    const limit = caps.length ? Math.min(...caps.map((rule) => rule.value)) : null;
+    const product = effective_policy.rules.find((rule) => rule.field === "facts.product_type");
+    const size = effective_policy.rules.find((rule) => rule.field === "facts.size");
+    const merchant = effective_policy.rules.find((rule) => rule.field === "authorization.merchant.merchant_category");
+    const returns = effective_policy.rules.find((rule) => rule.field === "facts.return_days");
+    const description = product ? String(product.value).replaceAll("_", " ") : draft.instruction;
+    const details = [size ? `Size ${size.value}` : null, merchant ? String(merchant.value).replaceAll("_", " ") : null, returns ? `Returns ${returns.operator} ${returns.value} days` : null].filter((value) => value !== null);
+    const spend = state.approvals.reduce((sum, approval) => sum + approval.amount_chf, 0);
+    const recent = [...entries].reverse().slice(0, 3);
+    recent.forEach((entry, index) => {
+      if (!entry || !entry.decision || !entry.state_after) throw new Error(`History entry ${index} must include decision and state_after.`);
+      requireString(entry.decision.customer_message, `Decision ${index}.customer_message`);
+      requireString(entry.decision.authorization_id, `Decision ${index}.authorization_id`);
+      outcomePill(entry.decision.decision);
+    });
+    const active = mandate.status === "active";
+    setScreen(`${heading("YOUR WALLET", "Agent wallet", "Your agent's current purchase limits.")}
+      <div class="wallet-layout">
+        <section class="wallet-surface" aria-label="Agent wallet permissions"><div class="wallet-surface-top"><span>Maximum purchase</span><span class="wallet-status ${active ? "is-active" : ""}"><i aria-hidden="true"></i>${esc(pretty(mandate.status))}</span></div>
+          <strong class="wallet-limit ${limit === null ? "is-unset" : ""}">${limit === null ? "No purchase cap" : esc(money(limit, "CHF"))}</strong>
+          <div class="wallet-permissions"><strong>${esc(description)}</strong>${details.length ? `<p>${details.map(esc).join(" · ")}</p>` : ""}</div>
+          <div class="wallet-spend"><span>Approved spend</span><strong>${esc(money(spend, "CHF"))}</strong><span>Approved purchases</span><strong>${state.approvals.length}</strong></div>
+        </section>
+        <section class="wallet-activity"><div class="section-head"><h2>Recent activity</h2><button class="section-link" type="button" data-route="activity">View all</button></div>
+          ${recent.length ? `<div class="activity-rows">${recent.map((entry) => `<button class="activity-row" type="button" data-action="open-decision" data-id="${esc(entry.decision.authorization_id)}"><span class="activity-outcome" aria-label="${esc(pretty(entry.decision.decision))}">${entry.decision.decision === "approve" ? "✓" : entry.decision.decision === "decline" ? "×" : "?"}</span><span><strong>${esc(pretty(entry.decision.decision))}</strong><small>${esc(entry.decision.customer_message)}</small></span><span aria-hidden="true">›</span></button>`).join("")}</div>` : `<p class="wallet-empty-inline">No purchases yet. Decisions will appear here when your agent tries to buy something.</p>`}
+        </section>
+      </div>`);
+  } catch (error) {
+    if (serial === screenSerial && currentRoute === "home") setScreen(`${heading("YOUR WALLET", "Agent wallet", "Your current permissions and recent purchases.")}${dataError("Your wallet could not be loaded.", error)}`);
+    else showToast(`A previous wallet load failed: ${error.message}`, "error");
+  }
+}
+
 async function renderPolicy() {
+  const serial = ++screenSerial;
   const id = mandateId();
   if (!id) {
     setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.")}${noMandate()}`);
@@ -390,17 +563,21 @@ async function renderPolicy() {
   }
   setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.")}<div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Loading your mandate…</span></div>`);
   try {
-    const { mandate, draft, state } = getPayloadParts(await api(`/mandates/${encodeURIComponent(id)}`));
-    currentPolicy = { mandate, draft, state };
+    const { mandate, draft, effective_policy, state } = getPayloadParts(await api(`/mandates/${encodeURIComponent(id)}`));
+    if (serial !== screenSerial || currentRoute !== "policy") return;
+    currentPolicy = { mandate, draft, effective_policy, state };
     const approvals = state.approvals;
     const isActive = mandate.status === "active";
-    setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.", `<span class="outcome-pill ${isActive ? "approve" : "decline"}"><i class="outcome-dot"></i>${esc(pretty(mandate.status))}</span>`)}
-      <div class="content-grid"><div class="main-column">
-        <section class="card card-pad"><div class="section-head"><div><h2 class="section-title">Spend and purchase activity</h2><div class="section-subtitle">Counts include accepted approvals only.</div></div></div>${spendMetrics(approvals, draft.rules)}</section>
-        <section class="card card-pad"><div class="section-head"><div><h2 class="section-title">Your rules</h2><div class="section-subtitle">The agent follows every one of these limits while the mandate is active.</div></div></div><div class="rule-view">${ruleViews(draft.rules)}</div><div class="policy-actions"><button class="button button-secondary button-small" type="button" data-action="open-tighten" ${isActive ? "" : "disabled"}>Tighten a rule</button><button class="button button-danger button-small" type="button" data-action="revoke-mandate" ${isActive ? "" : "disabled"}>Revoke mandate</button></div></section>
-      </div><aside class="side-column"><section class="card side-summary"><div class="summary-top"><span class="eyebrow"><i class="eyebrow-mark"></i>MANDATE</span><h3>${esc(mandate.status === "active" ? "Active and protected" : pretty(mandate.status))}</h3><p>Confirmed ${esc(new Date(mandate.confirmed_at).toLocaleDateString())} · version ${esc(mandate.version)}</p></div><div class="summary-body"><div class="summary-row"><span>Mandate ID</span><strong>${esc(mandate.mandate_id)}</strong></div><div class="summary-row"><span>Policy version</span><strong>${esc(mandate.version)}</strong></div><div class="summary-row"><span>Uncertainty</span><strong>${esc(pretty(draft.uncertainty_policy))}</strong></div></div></section><section class="learn-card"><span class="learn-icon" aria-hidden="true">↗</span><strong>Keep your policy current</strong><p>You can always add a stricter limit or stop the mandate. The shopping agent cannot loosen these rules.</p></section></aside></div>`);
+    const approvedSpend = approvals.reduce((sum, approval) => sum + approval.amount_chf, 0);
+    setScreen(`${heading("YOUR WALLET", "Agent permissions", "Confirmed ${esc(new Date(mandate.confirmed_at).toLocaleDateString())} · version ${esc(mandate.version)}", `<span class="wallet-status ${isActive ? "is-active" : ""}"><i aria-hidden="true"></i>${esc(pretty(mandate.status))}</span>`)}
+      <div class="policy-layout">
+        <section class="policy-surface"><div class="permission-list">${ruleRows(effective_policy.rules)}<div class="permission-row"><span>Uncertainty</span><strong>${esc(pretty(effective_policy.uncertainty_policy))}</strong></div></div><button class="section-link" type="button" data-action="show-rule-details">Rule details</button></section>
+        <div class="policy-summary"><span>Approved spend</span><strong>${esc(money(approvedSpend, "CHF"))}</strong><span>Purchases approved</span><strong>${approvals.length}</strong></div>
+        <section class="policy-controls"><h2>Change permissions</h2><button class="button button-secondary" type="button" data-action="open-tighten" ${isActive && effective_policy.uncertainty_policy !== "decline" ? "" : "disabled"}>Decline uncertain purchases</button><button class="policy-revoke" type="button" data-action="revoke-mandate" ${isActive ? "" : "disabled"}>Revoke access</button><p>New rule limits are unavailable while the simulator rejects rule additions.</p></section>
+      </div>`);
   } catch (error) {
-    setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.")}${dataError("Your mandate could not be loaded.", error)}`);
+    if (serial === screenSerial && currentRoute === "policy") setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.")}${dataError("Your mandate could not be loaded.", error)}`);
+    else showToast(`A previous mandate load failed: ${error.message}`, "error");
   }
 }
 
@@ -417,17 +594,19 @@ function timeLabel(value) {
 }
 
 async function renderActivity() {
+  const serial = ++screenSerial;
   const id = mandateId();
   if (!id) {
-    setScreen(`${heading("YOUR ACTIVITY", "Every decision, clearly explained.", "See what happened and open the evidence behind any decision.")}${noMandate()}`);
+    setScreen(`${heading("PURCHASE HISTORY", "Activity", "Your agent's purchase decisions.")}${noMandate()}`);
     return;
   }
-  setScreen(`${heading("YOUR ACTIVITY", "Every decision, clearly explained.", "See what happened and open the evidence behind any decision.")}<div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Loading recent decisions…</span></div>`);
+  setScreen(`${heading("PURCHASE HISTORY", "Activity", "Your agent's purchase decisions.")}<div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Loading recent decisions…</span></div>`);
   try {
     const decisions = await api(`/mandates/${encodeURIComponent(id)}/decisions`);
+    if (serial !== screenSerial || currentRoute !== "activity") return;
     if (!Array.isArray(decisions)) throw new Error("GET /mandates/{mandate_id}/decisions must return a list.");
     if (!decisions.length) {
-      setScreen(`${heading("YOUR ACTIVITY", "Every decision, clearly explained.", "See what happened and open the evidence behind any decision.")}<section class="card empty-state"><div><div class="empty-mark" aria-hidden="true">◷</div><h3>No purchases yet</h3><p>When the agent submits a purchase, its decision and evidence will appear here.</p></div></section>`);
+      setScreen(`${heading("PURCHASE HISTORY", "Activity", "Your agent's purchase decisions.")}<section class="wallet-empty"><h2>No purchases yet</h2><p>Your agent's purchase decisions will appear here.</p></section>`);
       return;
     }
     decisions.forEach((entry, index) => {
@@ -441,20 +620,66 @@ async function renderActivity() {
       requireString(decision.decided_at, `Decision ${decision.authorization_id}.decided_at`);
       if (!Array.isArray(decision.reason_codes) || !Array.isArray(decision.evidence)) throw new Error(`Decision ${decision.authorization_id} must include reason_codes and evidence lists.`);
     });
-    setScreen(`${heading("YOUR ACTIVITY", "Every decision, clearly explained.", "Open any purchase to see the checks, evidence, and state that shaped the result." )}
-      <section class="card card-pad"><div class="section-head"><div><h2 class="section-title">Purchase history</h2><div class="section-subtitle">${decisions.length} decision${decisions.length === 1 ? "" : "s"} for this mandate</div></div></div><div class="list-stack">${[...decisions].reverse().map((entry) => {
+    setScreen(`${heading("PURCHASE HISTORY", "Activity", "Select a purchase to see its decision.")}
+      <section class="history-list"><div class="section-head"><h2>${decisions.length} decision${decisions.length === 1 ? "" : "s"}</h2></div><div class="activity-rows">${[...decisions].reverse().map((entry) => {
       const decision = entry.decision;
-      return `<button class="list-row" type="button" data-action="open-decision" data-id="${esc(decision.authorization_id)}"><span class="list-row-main"><span class="list-row-title">${esc(decision.authorization_id)} ${outcomePill(decision.decision)}</span><span class="list-row-sub">${esc(decision.customer_message)}</span></span><span class="list-row-end">${esc(timeLabel(decision.decided_at))}<br /><span aria-hidden="true">↗</span></span></button>`;
+      const label = decision.decision === "approve" ? "Approved" : decision.decision === "decline" ? "Blocked" : "Needs you";
+      const symbol = decision.decision === "approve" ? "✓" : decision.decision === "decline" ? "×" : "?";
+      return `<button class="activity-row history-row" type="button" data-action="open-decision" data-id="${esc(decision.authorization_id)}"><span class="activity-outcome" aria-hidden="true">${symbol}</span><span><strong>${label}</strong><small>${esc(decision.customer_message)}</small></span><time class="activity-time" datetime="${esc(decision.decided_at)}">${esc(timeLabel(decision.decided_at))}</time></button>`;
       }).join("")}</div></section>`);
   } catch (error) {
-    setScreen(`${heading("YOUR ACTIVITY", "Every decision, clearly explained.", "See what happened and open the evidence behind any decision.")}${dataError("Purchase history could not be loaded.", error)}`);
+    if (serial === screenSerial && currentRoute === "activity") setScreen(`${heading("PURCHASE HISTORY", "Activity", "Your agent's purchase decisions.")}${dataError("Purchase history could not be loaded.", error)}`);
+    else showToast(`A previous history load failed: ${error.message}`, "error");
   }
 }
 
+function renderCustomerDecision(payload) {
+  const { decision, event } = payload;
+  const auth = event.authorization;
+  const merchant = requireString(auth.merchant.merchant_name, "Decision merchant");
+  const item = requireString(auth.items[0].item_name, "Decision item name");
+  const outcome = decision.decision === "approve" ? "Approved" : decision.decision === "decline" ? "Blocked" : "Needs you";
+  const alerts = decision.evidence.filter((check) => check.result !== "pass").slice(0, 3);
+  drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer decision-drawer" role="dialog" aria-modal="true" aria-label="Purchase decision" tabindex="-1">
+    <div class="drawer-header"><div><span class="eyebrow">PURCHASE DECISION</span><h2>${outcome}</h2></div><button class="close-button" type="button" aria-label="Close decision" data-action="close-drawer">×</button></div>
+    <div class="decision-purchase"><strong>${esc(money(auth.billing_amount_chf, "CHF"))}</strong><p>${esc(merchant)} · ${esc(item)}</p></div>
+    <p class="decision-message">${esc(decision.customer_message)}</p>
+    ${alerts.length ? `<div class="decision-alerts">${alerts.map((check) => `<div><span aria-hidden="true">${check.result === "fail" ? "×" : "?"}</span><span>${esc(pretty(check.name))}</span></div>`).join("")}</div>` : ""}
+    <button class="button button-secondary" type="button" data-action="inspect-decision">Inspect decision</button>
+  </aside></div>`;
+  drawerRoot.querySelector(".drawer").focus();
+}
+
+function renderDebugger(payload, tab = "decision") {
+  const tabs = ["decision", "policy", "evidence", "state", "security", "raw"];
+  if (!tabs.includes(tab)) throw new Error(`Unknown debugger tab: ${tab}`);
+  const { decision, event, state_before, state_after } = payload;
+  const auth = event.authorization;
+  const securityReasons = new Set(["injected_instructions", "unrequested_item", "protection_plan", "gift_card", "subscription", "duplicate_order", "velocity", "new_device", "unfamiliar_merchant", "lookalike_merchant", "country_blocked"]);
+  const securityCodes = decision.reason_codes.filter((code) => securityReasons.has(code));
+  const checkRows = decision.evidence.map((check) => `<div class="debug-row"><span><strong>${esc(pretty(check.name))}</strong><small>${esc(check.note)}</small></span><span class="debug-result ${esc(check.result)}">${esc(check.result)}</span></div>`).join("");
+  const sections = {
+    decision: `<div class="debug-metadata"><span>Outcome</span><strong>${esc(pretty(decision.decision))}</strong><span>Latency</span><strong>${esc(decision.elapsed_ms)} ms</strong><span>Policy</span><strong>v${esc(decision.mandate_version)}</strong><span>Receipt</span><strong>${esc(decision.authorization_id)}</strong></div><h3>Rule evaluation</h3>${checkRows}`,
+    policy: `<p class="debug-copy">${esc(event.mandate.instruction)}</p><h3>Confirmed rules</h3>${event.mandate.hard_rules.map((rule) => `<div class="debug-row"><span>${esc(rule.field)}</span><strong>${esc(rule.operator)} ${esc(Array.isArray(rule.value) ? rule.value.join(", ") : rule.value)}</strong></div>`).join("")}`,
+    evidence: `<h3>Evidence and provenance</h3>${decision.evidence.map((check) => `<div class="debug-row"><span><strong>${esc(pretty(check.name))}</strong><small>${esc(check.note)}</small><small>Value: ${check.value === null ? "unknown" : esc(check.value)}</small></span><strong>${esc(check.source)}</strong></div>`).join("")}`,
+    state: `<h3>State before</h3><pre class="event-json">${esc(JSON.stringify(state_before, null, 2))}</pre><h3>State after</h3><pre class="event-json">${esc(JSON.stringify(state_after, null, 2))}</pre>`,
+    security: `<h3>Authorized intent</h3><p class="debug-copy">${esc(event.mandate.instruction)}</p><h3>Proposed purchase</h3><p class="debug-copy">${esc(auth.items.map((item) => item.item_name).join(" + "))} · ${esc(money(auth.billing_amount_chf, "CHF"))}</p><h3>Security signals</h3><p class="debug-copy">${esc(securityCodes.length ? securityCodes.map(pretty).join(", ") : "No security-specific reason code recorded")}</p><details><summary>Merchant-supplied text · untrusted</summary>${auth.items.filter((item) => item.item_details).map((item) => `<p class="event-copy">${esc(item.item_details.slice(0, 120))}${item.item_details.length > 120 ? "…" : ""}</p>`).join("")}</details>`,
+    raw: `<h3>Raw records</h3><details><summary>Authorization Event</summary><pre class="event-json">${esc(JSON.stringify(event, null, 2))}</pre></details><details><summary>Decision</summary><pre class="event-json">${esc(JSON.stringify(decision, null, 2))}</pre></details><details><summary>State</summary><pre class="event-json">${esc(JSON.stringify({ before: state_before, after: state_after }, null, 2))}</pre></details>`,
+  };
+  drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer debugger-drawer" role="dialog" aria-modal="true" aria-label="Decision inspector" tabindex="-1">
+    <div class="drawer-header"><div><span class="eyebrow">INSPECTOR</span><h2>Decision inspector</h2><p>${esc(auth.merchant.merchant_name)} · ${esc(money(auth.billing_amount_chf, "CHF"))}</p></div><button class="close-button" type="button" aria-label="Close inspector" data-action="close-drawer">×</button></div>
+    <nav class="debug-tabs" aria-label="Inspector sections">${tabs.map((name) => `<button type="button" data-action="debug-tab" data-tab="${name}" ${name === tab ? 'aria-current="page"' : ""}>${esc(pretty(name))}</button>`).join("")}</nav>
+    <div class="debug-content">${sections[tab]}</div>
+  </aside></div>`;
+  drawerRoot.querySelector(".drawer").focus();
+}
+
 async function openDecision(id) {
+  const serial = ++drawerSerial;
   drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Decision evidence"><div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Loading decision evidence…</span></div></aside></div>`;
   try {
     const payload = await api(`/decisions/${encodeURIComponent(id)}`);
+    if (serial !== drawerSerial) return;
     if (!payload || !payload.decision || !payload.event || !("state_before" in payload) || !("state_after" in payload)) throw new Error("GET /decisions/{authorization_id} must return decision, event, state_before and state_after.");
     const decision = payload.decision;
     const event = payload.event;
@@ -466,30 +691,24 @@ async function openDecision(id) {
     requireString(decision.decided_at, "Decision.decided_at");
     if (!Array.isArray(decision.reason_codes) || !Array.isArray(decision.evidence)) throw new Error("Decision.reason_codes and Decision.evidence must be arrays.");
     if (!event.authorization || !Array.isArray(event.authorization.items)) throw new Error("Event.authorization.items must be a list.");
-    const itemDetails = event.authorization.items.map((item, index) => requireString(item.item_details, `Event.authorization.items[${index}].item_details`));
-    const checks = decision.evidence.map((check, index) => {
+    event.authorization.items.forEach((item, index) => {
+      if (typeof item.item_details !== "string") throw new Error(`Event.authorization.items[${index}].item_details must be a string.`);
+    });
+    decision.evidence.forEach((check, index) => {
       requireString(check.name, `Decision.evidence[${index}].name`);
-      requireString(check.result, `Decision.evidence[${index}].result`);
       requireString(check.source, `Decision.evidence[${index}].source`);
-      requireString(check.note, `Decision.evidence[${index}].note`);
-      if (!["pass", "fail", "uncertain"].includes(check.result)) throw new Error(`Decision.evidence[${index}].result is unsupported.`);
-      return `<div class="check-row"><span class="check-copy"><strong>${esc(pretty(check.name))}</strong><small>${esc(check.note)} · ${esc(pretty(check.source))}${check.value !== null && check.value !== undefined ? ` · value ${esc(check.value)}` : ""}</small></span><span class="check-result ${esc(check.result)}">${esc(check.result)}</span></div>`;
-    }).join("");
-    drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Decision evidence" tabindex="-1">
-      <div class="drawer-header"><div><span class="eyebrow"><i class="eyebrow-mark"></i>DECISION RECORD</span><h2>${esc(decision.authorization_id)}</h2><p>${esc(timeLabel(decision.decided_at))} · ${esc(decision.elapsed_ms)} ms</p></div><button class="close-button" type="button" aria-label="Close evidence" data-action="close-drawer">×</button></div>
-      <section class="drawer-section"><h3>Outcome ${outcomePill(decision.decision)}</h3><p class="section-subtitle">${esc(decision.customer_message)}</p><div class="summary-row"><span>Reason codes</span><strong>${esc(decision.reason_codes.map(pretty).join(", "))}</strong></div><div class="summary-row"><span>Engine version</span><strong>${esc(decision.engine_version)}</strong></div><div class="summary-row"><span>Mandate version</span><strong>${esc(decision.mandate_version)}</strong></div></section>
-      <section class="drawer-section"><h3>Evidence and checks</h3>${checks}</section>
-      ${itemDetails.length ? `<section class="drawer-section"><h3>Merchant supplied item details</h3><div class="untrusted-banner"><strong>Untrusted content</strong><span>This text is shown as received. It cannot change your policy.</span></div>${itemDetails.map((text) => `<div class="event-copy">${esc(text)}</div>`).join("")}</section>` : ""}
-      <section class="drawer-section"><h3>State before and after</h3><div class="state-columns"><div class="state-box"><strong>Before</strong><p>${esc(JSON.stringify(payload.state_before, null, 2))}</p></div><div class="state-box"><strong>After</strong><p>${esc(JSON.stringify(payload.state_after, null, 2))}</p></div></div></section>
-      <section class="drawer-section"><h3>Decision explanation</h3><p class="section-subtitle">${esc(decision.explanation)}</p></section>
-    </aside></div>`;
-    drawerRoot.querySelector(".drawer").focus();
+      if (typeof check.note !== "string" || !["pass", "fail", "uncertain"].includes(check.result) || !("value" in check)) throw new Error(`Decision.evidence[${index}] is invalid.`);
+    });
+    currentDecisionPayload = payload;
+    renderCustomerDecision(payload);
   } catch (error) {
-    drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Decision evidence"><div class="drawer-header"><div><span class="eyebrow"><i class="eyebrow-mark"></i>DECISION RECORD</span><h2>Evidence unavailable</h2></div><button class="close-button" type="button" aria-label="Close evidence" data-action="close-drawer">×</button></div>${dataError("The decision record could not be loaded.", error)}</aside></div>`;
+    if (serial === drawerSerial) drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Decision evidence"><div class="drawer-header"><div><span class="eyebrow"><i class="eyebrow-mark"></i>DECISION RECORD</span><h2>Evidence unavailable</h2></div><button class="close-button" type="button" aria-label="Close evidence" data-action="close-drawer">×</button></div>${dataError("The decision record could not be loaded.", error)}</aside></div>`;
+    else showToast(`A previous decision load failed: ${error.message}`, "error");
   }
 }
 
 async function renderRoute(route) {
+  if (route === "home") return renderHome();
   if (route === "review") return renderReview();
   if (route === "approvals") return renderApprovals();
   if (route === "policy") return renderPolicy();
@@ -498,15 +717,15 @@ async function renderRoute(route) {
 }
 
 function modal(title, body, primaryLabel, action, danger = false) {
+  drawerSerial += 1;
   drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><section class="drawer" role="dialog" aria-modal="true" aria-label="${esc(title)}" style="height:auto;max-height:min(90vh,700px);align-self:center;margin:auto 18px;overflow:auto;border-radius:17px"><div class="drawer-header"><div><span class="eyebrow"><i class="eyebrow-mark"></i>YOUR WALLET</span><h2>${esc(title)}</h2></div><button class="close-button" type="button" aria-label="Close" data-action="close-drawer">×</button></div><div>${body}</div><div class="button-row" style="justify-content:flex-end;margin-top:18px"><button class="button button-secondary" type="button" data-action="close-drawer">Cancel</button><button class="button ${danger ? "button-danger" : "button-primary"}" type="button" data-action="${esc(action)}">${esc(primaryLabel)}</button></div></section></div>`;
   drawerRoot.querySelector("[role=dialog]").focus();
 }
 
 function openTighten() {
   if (!currentPolicy || currentPolicy.mandate.status !== "active") throw new Error("Only an active mandate can be tightened.");
-  modal("Make this policy stricter", `<p class="section-subtitle">Add one restriction to the policy you confirmed. You can set another one after this change is saved.</p>
-    <label class="field-label" style="margin-top:16px">New per-purchase limit in CHF<input id="tighten-cap" inputmode="decimal" type="number" min="1" step="1" placeholder="e.g. 150" /><small class="helper-text">This limit will be added to your existing rules.</small></label>
-    <div class="toggle-row"><span class="toggle-copy"><strong>Decline when details are uncertain</strong><small>Replace “ask me” with a stricter default.</small></span><button class="toggle-switch" type="button" role="switch" aria-checked="false" data-action="toggle-uncertainty" aria-label="Decline when details are uncertain"></button></div>`, "Apply tightening", "submit-tighten");
+  if (currentPolicy.effective_policy.uncertainty_policy === "decline") throw new Error("This mandate already declines uncertain purchases.");
+  modal("Decline uncertain purchases?", `<p class="section-subtitle">Purchases with missing information will be declined instead of sent to you for approval. This affects future purchases.</p>`, "Decline uncertainty", "submit-tighten");
 }
 
 function openRevoke() {
@@ -517,6 +736,8 @@ async function confirmDraft() {
   if (!activeDraft) throw new Error("There is no loaded draft to confirm.");
   const missing = activeDraft.open_questions.filter((question) => !(answers[question.question] ?? question.answer));
   if (missing.length) throw new Error("Answer every open question before confirming this draft.");
+  const needsRevision = activeDraft.open_questions.some((question) => !question.confirming_answers.includes(answers[question.question] ?? question.answer));
+  if (needsRevision) throw new Error("A selected answer needs a revised policy. Ask your shopping agent to update the draft before confirming.");
   const body = {
     version: activeDraft.version,
     hash: activeDraft.hash,
@@ -527,7 +748,7 @@ async function confirmDraft() {
     requireString(mandate && mandate.mandate_id, "Policy confirmation response mandate_id");
     window.sessionStorage.setItem(MANDATE_SESSION_KEY, mandate.mandate_id);
     showToast("Your policy is confirmed. The mandate is now active.", "success");
-    setActiveRoute("policy");
+    setActiveRoute("home");
   } catch (error) {
     if (error.status === 409) {
       showToast("The draft changed. Reloading the latest version for you.", "error");
@@ -546,7 +767,8 @@ async function rejectDraft() {
 }
 
 async function answerStepUp(id, decision) {
-  const label = decision === "approve" ? "approve" : "reject";
+  const pending = pendingStepUps.get(id);
+  if (!pending) throw new Error(`Purchase ${id} is no longer pending.`);
   const answer = {
     authorization_id: id,
     decision,
@@ -554,44 +776,18 @@ async function answerStepUp(id, decision) {
     answered_at: new Date().toISOString(),
   };
   await api(`/step-ups/${encodeURIComponent(id)}/answer`, { method: "POST", body: JSON.stringify(answer) });
-  showToast(`Purchase ${label}d. The runner has received your answer.`, "success");
-  await loadApprovals({ initial: false });
-}
-
-function switchForUncertainty() {
-  const switchEl = drawerRoot.querySelector("[data-action=toggle-uncertainty]");
-  switchEl.setAttribute("aria-checked", switchEl.getAttribute("aria-checked") === "true" ? "false" : "true");
+  const merchant = requireString(pending.event.authorization.merchant.merchant_name, "Pending purchase merchant");
+  showToast(`${decision === "approve" ? "Approved" : "Declined"} for this purchase: ${money(pending.event.authorization.billing_amount_chf, "CHF")} at ${merchant}.`, "success");
+  await loadApprovals();
 }
 
 async function submitTighten() {
   if (!currentPolicy) throw new Error("The current mandate has not been loaded.");
   if (currentPolicy.mandate.status !== "active") throw new Error("Only an active mandate can be tightened.");
-  const switchEl = drawerRoot.querySelector("[data-action=toggle-uncertainty]");
-  const capText = drawerRoot.querySelector("#tighten-cap").value.trim();
-  if (switchEl.getAttribute("aria-checked") === "true" && capText) throw new Error("Choose either the purchase cap or the stricter uncertainty setting. Save one change at a time.");
-  if (switchEl.getAttribute("aria-checked") === "true") {
-    if (currentPolicy.draft.uncertainty_policy === "decline") throw new Error("This mandate already declines uncertain purchases.");
-    await api(`/mandates/${encodeURIComponent(currentPolicy.mandate.mandate_id)}/tighten`, { method: "POST", body: JSON.stringify({ uncertainty_policy: "decline" }) });
-  } else {
-    const input = drawerRoot.querySelector("#tighten-cap");
-    const cap = Number(input.value);
-    if (!Number.isFinite(cap) || cap <= 0) throw new Error("Enter a positive CHF purchase limit or turn on the stricter uncertainty setting.");
-    const existingCaps = currentPolicy.draft.rules.filter((rule) => rule.field === "authorization.billing_amount_chf" && rule.scope === "purchase" && rule.operator === "<=").map((rule) => Number(rule.value));
-    if (existingCaps.some((value) => !Number.isFinite(value))) throw new Error("The current purchase limit is invalid.");
-    if (existingCaps.length && cap >= Math.min(...existingCaps)) throw new Error(`Enter a limit below the current CHF ${Math.min(...existingCaps)} cap.`);
-    const rule = {
-      field: "authorization.billing_amount_chf",
-      operator: "<=",
-      value: cap,
-      currency: "CHF",
-      scope: "purchase",
-      source_text: `customer added a CHF ${cap} purchase limit`,
-      plain_english: `The total charged amount must be CHF ${cap} or less.`,
-    };
-    await api(`/mandates/${encodeURIComponent(currentPolicy.mandate.mandate_id)}/tighten`, { method: "POST", body: JSON.stringify({ rules: [rule] }) });
-  }
+  if (currentPolicy.effective_policy.uncertainty_policy === "decline") throw new Error("This mandate already declines uncertain purchases.");
+  await api(`/mandates/${encodeURIComponent(currentPolicy.mandate.mandate_id)}/tighten`, { method: "POST", body: JSON.stringify({ uncertainty_policy: "decline" }) });
   drawerRoot.replaceChildren();
-  showToast("Your policy was tightened.", "success");
+  showToast("Uncertain purchases will now be declined.", "success");
   await renderPolicy();
 }
 
@@ -614,7 +810,13 @@ document.addEventListener("click", async (event) => {
   if (!button) return;
   const action = button.dataset.action;
   try {
-    if (action === "answer") {
+    if (action === "login") {
+      button.disabled = true;
+      await login();
+    } else if (action === "logout") {
+      button.disabled = true;
+      await logout();
+    } else if (action === "answer") {
       answers[button.dataset.question] = button.dataset.value;
       await renderReview();
     } else if (action === "confirm-draft") {
@@ -623,10 +825,22 @@ document.addEventListener("click", async (event) => {
     } else if (action === "reject-draft") {
       await rejectDraft();
     } else if (action === "confirm-reject") {
-      await api(`/drafts/${encodeURIComponent(activeDraft.draft_id)}/reject`, { method: "POST", body: JSON.stringify({ reason: "Rejected in the customer app." }) });
-      drawerRoot.replaceChildren();
-      showToast("The policy request was rejected.", "success");
-      await renderReview();
+      if (!activeDraft) throw new Error("There is no loaded draft to reject.");
+      try {
+        await api(`/drafts/${encodeURIComponent(activeDraft.draft_id)}/reject`, { method: "POST", body: JSON.stringify({ version: activeDraft.version, hash: activeDraft.hash, reason: "Rejected in the customer app." }) });
+        drawerRoot.replaceChildren();
+        showToast("The policy request was rejected.", "success");
+        await renderReview();
+      } catch (error) {
+        if (error.status !== 409) throw error;
+        drawerRoot.replaceChildren();
+        activeDraft = null;
+        answers = {};
+        showToast("The draft changed. Reloading the latest version for you.", "error");
+        await renderReview();
+      }
+    } else if (action === "show-step-up-details") {
+      showStepUpDetails(button.dataset.id);
     } else if (action === "answer-step-up") {
       button.disabled = true;
       submittingStepUps.add(button.dataset.id);
@@ -637,22 +851,32 @@ document.addEventListener("click", async (event) => {
       }
     } else if (action === "open-decision") {
       await openDecision(button.dataset.id);
+    } else if (action === "inspect-decision") {
+      if (!currentDecisionPayload) throw new Error("The decision record is not loaded.");
+      renderDebugger(currentDecisionPayload);
+    } else if (action === "debug-tab") {
+      if (!currentDecisionPayload) throw new Error("The decision record is not loaded.");
+      renderDebugger(currentDecisionPayload, button.dataset.tab);
     } else if (action === "close-drawer") {
-      if (event.target === button || button === event.target.closest(".close-button") || event.target.classList.contains("drawer-backdrop")) drawerRoot.replaceChildren();
+      if (event.target === button || button === event.target.closest(".close-button") || event.target.classList.contains("drawer-backdrop")) {
+        drawerSerial += 1;
+        currentDecisionPayload = null;
+        drawerRoot.replaceChildren();
+      }
     } else if (action === "open-tighten") {
       openTighten();
     } else if (action === "revoke-mandate") {
       openRevoke();
-    } else if (action === "toggle-uncertainty") {
-      switchForUncertainty();
     } else if (action === "submit-tighten") {
       button.disabled = true;
       await submitTighten();
     } else if (action === "confirm-revoke") {
       button.disabled = true;
       await revokeMandate();
-    } else if (action === "show-policy-note") {
-      showToast("The policy comes from the backend’s saved draft. The shopping agent cannot confirm or change it here.");
+    } else if (action === "show-rule-details") {
+      showRuleDetails();
+    } else if (action === "show-examples") {
+      showExamples();
     }
   } catch (error) {
     showToast(error.message, "error");
@@ -662,8 +886,15 @@ document.addEventListener("click", async (event) => {
 
 window.addEventListener("hashchange", () => setActiveRoute(window.location.hash.slice(1)));
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && drawerRoot.childElementCount) drawerRoot.replaceChildren();
+  if (event.key === "Enter" && event.target.id === "demo-username") {
+    event.preventDefault();
+    document.querySelector('[data-action="login"]').click();
+  }
+  if (event.key === "Escape" && drawerRoot.childElementCount) {
+    drawerSerial += 1;
+    currentDecisionPayload = null;
+    drawerRoot.replaceChildren();
+  }
 });
 
-const initialRoute = window.location.hash.slice(1) || "review";
-setActiveRoute(initialRoute);
+initialize();
