@@ -281,7 +281,7 @@ function stepUpCard(stepUp) {
     <h2 class="section-title" style="font-size:15px;margin:0 0 5px">${esc(purchase)}</h2>
     <p class="section-subtitle" style="margin:0 0 15px">${esc(merchant.merchant_name)} · ${esc(money(amount, "CHF"))}</p>
     <div class="untrusted-banner"><strong>Why we paused</strong><span>${esc(decision.customer_message)}</span></div>
-    ${auth.items.some((item) => item.item_details) ? `<div class="event-copy">${auth.items.filter((item) => item.item_details).map((item) => esc(item.item_details)).join("\n")}</div>` : ""}
+    ${auth.items.some((item) => item.item_details) ? `<div class="untrusted-banner" style="margin-top:12px"><strong>Merchant supplied text</strong><span>Untrusted purchase details. Your policy does not change.</span></div><div class="event-copy">${auth.items.filter((item) => item.item_details).map((item) => esc(item.item_details)).join("\n")}</div>` : ""}
     <div class="button-row" style="justify-content:flex-end;margin-top:15px"><button class="button button-secondary" type="button" data-action="answer-step-up" data-id="${esc(stepUp.authorization_id)}" data-decision="decline" ${left <= 0 || submittingStepUps.has(stepUp.authorization_id) ? "disabled" : ""}>Reject</button><button class="button button-primary" type="button" data-action="answer-step-up" data-id="${esc(stepUp.authorization_id)}" data-decision="approve" ${left <= 0 || submittingStepUps.has(stepUp.authorization_id) ? "disabled" : ""}>Approve purchase <span class="button-arrow" aria-hidden="true">→</span></button></div>
   </article>`;
 }
@@ -290,7 +290,7 @@ function expiredNote(count) {
   return count ? `<div class="toast is-success" role="status">${count} previous request${count === 1 ? " was" : "s were"} resolved and removed from your list.</div>` : "";
 }
 
-async function loadApprovals({ initial = false } = {}) {
+async function loadApprovals() {
   const container = document.querySelector("#approvals-list");
   const errorContainer = document.querySelector("#approvals-error");
   if (!container) return;
@@ -306,14 +306,15 @@ async function loadApprovals({ initial = false } = {}) {
       requireString(item.decision.customer_message, `step-ups[${index}].decision.customer_message`);
       if (!Number.isFinite(new Date(item.expires_at).getTime())) throw new Error(`step-ups[${index}].expires_at is invalid.`);
     });
+    if (!container.isConnected) return;
     const ids = new Set(requests.map((item) => item.authorization_id));
-    const removed = initial ? [] : [...pendingIds].filter((id) => !ids.has(id));
+    const removed = [...pendingIds].filter((id) => !ids.has(id));
     pendingIds = ids;
     document.querySelector("#approval-count").textContent = requests.length ? String(requests.length) : "0";
     container.innerHTML = requests.length ? `<div class="list-stack">${requests.map(stepUpCard).join("")}</div>` : `<section class="card empty-state"><div><div class="empty-mark" aria-hidden="true">✓</div><h3>You’re all caught up</h3><p>When a purchase needs your decision, it will appear here with the reason and its deadline.</p></div></section>`;
     if (errorContainer) errorContainer.innerHTML = removed.length ? expiredNote(removed.length) : "";
   } catch (error) {
-    pendingIds = new Set();
+    if (!container.isConnected) return;
     document.querySelector("#approval-count").textContent = "—";
     container.replaceChildren();
     if (errorContainer) errorContainer.innerHTML = dataError("Pending approvals could not be refreshed.", error);
@@ -324,8 +325,8 @@ async function loadApprovals({ initial = false } = {}) {
 async function renderApprovals() {
   setScreen(`${heading("PURCHASE CHECKS", "A pause is a chance to choose.", "Review a specific purchase and the reason it needs your attention.")}
     <div class="main-column"><div id="approvals-error"></div><div id="approvals-list"><div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Checking for pending approvals…</span></div></div></div>`);
-  await loadApprovals({ initial: true });
-  approvalTimer = window.setInterval(() => loadApprovals(), 2000);
+  await loadApprovals();
+  if (currentRoute === "approvals") approvalTimer = window.setInterval(() => loadApprovals(), 2000);
 }
 
 function noMandate() {
@@ -466,20 +467,25 @@ async function openDecision(id) {
     requireString(decision.decided_at, "Decision.decided_at");
     if (!Array.isArray(decision.reason_codes) || !Array.isArray(decision.evidence)) throw new Error("Decision.reason_codes and Decision.evidence must be arrays.");
     if (!event.authorization || !Array.isArray(event.authorization.items)) throw new Error("Event.authorization.items must be a list.");
-    const itemDetails = event.authorization.items.map((item, index) => requireString(item.item_details, `Event.authorization.items[${index}].item_details`));
+    const itemDetails = event.authorization.items.map((item, index) => {
+      if (typeof item.item_details !== "string") throw new Error(`Event.authorization.items[${index}].item_details must be a string.`);
+      return item.item_details;
+    });
     const checks = decision.evidence.map((check, index) => {
       requireString(check.name, `Decision.evidence[${index}].name`);
       requireString(check.result, `Decision.evidence[${index}].result`);
       requireString(check.source, `Decision.evidence[${index}].source`);
-      requireString(check.note, `Decision.evidence[${index}].note`);
+      if (typeof check.note !== "string") throw new Error(`Decision.evidence[${index}].note must be a string.`);
       if (!["pass", "fail", "uncertain"].includes(check.result)) throw new Error(`Decision.evidence[${index}].result is unsupported.`);
-      return `<div class="check-row"><span class="check-copy"><strong>${esc(pretty(check.name))}</strong><small>${esc(check.note)} · ${esc(pretty(check.source))}${check.value !== null && check.value !== undefined ? ` · value ${esc(check.value)}` : ""}</small></span><span class="check-result ${esc(check.result)}">${esc(check.result)}</span></div>`;
+      if (!("value" in check)) throw new Error(`Decision.evidence[${index}].value is missing.`);
+      return `<div class="check-row"><span class="check-copy"><strong>${esc(pretty(check.name))}</strong><small>${esc(check.note)}</small><small>Value: ${check.value === null ? "unknown" : esc(check.value)} · Source: ${esc(check.source)}</small></span><span class="check-result ${esc(check.result)}">${esc(check.result)}</span></div>`;
     }).join("");
     drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Decision evidence" tabindex="-1">
       <div class="drawer-header"><div><span class="eyebrow"><i class="eyebrow-mark"></i>DECISION RECORD</span><h2>${esc(decision.authorization_id)}</h2><p>${esc(timeLabel(decision.decided_at))} · ${esc(decision.elapsed_ms)} ms</p></div><button class="close-button" type="button" aria-label="Close evidence" data-action="close-drawer">×</button></div>
       <section class="drawer-section"><h3>Outcome ${outcomePill(decision.decision)}</h3><p class="section-subtitle">${esc(decision.customer_message)}</p><div class="summary-row"><span>Reason codes</span><strong>${esc(decision.reason_codes.map(pretty).join(", "))}</strong></div><div class="summary-row"><span>Engine version</span><strong>${esc(decision.engine_version)}</strong></div><div class="summary-row"><span>Mandate version</span><strong>${esc(decision.mandate_version)}</strong></div></section>
       <section class="drawer-section"><h3>Evidence and checks</h3>${checks}</section>
       ${itemDetails.length ? `<section class="drawer-section"><h3>Merchant supplied item details</h3><div class="untrusted-banner"><strong>Untrusted content</strong><span>This text is shown as received. It cannot change your policy.</span></div>${itemDetails.map((text) => `<div class="event-copy">${esc(text)}</div>`).join("")}</section>` : ""}
+      <section class="drawer-section"><h3>Event as received</h3><p class="section-subtitle">Merchant supplied fields in this record are untrusted.</p><pre class="event-json">${esc(JSON.stringify(event, null, 2))}</pre></section>
       <section class="drawer-section"><h3>State before and after</h3><div class="state-columns"><div class="state-box"><strong>Before</strong><p>${esc(JSON.stringify(payload.state_before, null, 2))}</p></div><div class="state-box"><strong>After</strong><p>${esc(JSON.stringify(payload.state_after, null, 2))}</p></div></div></section>
       <section class="drawer-section"><h3>Decision explanation</h3><p class="section-subtitle">${esc(decision.explanation)}</p></section>
     </aside></div>`;
@@ -555,7 +561,7 @@ async function answerStepUp(id, decision) {
   };
   await api(`/step-ups/${encodeURIComponent(id)}/answer`, { method: "POST", body: JSON.stringify(answer) });
   showToast(`Purchase ${label}d. The runner has received your answer.`, "success");
-  await loadApprovals({ initial: false });
+  await loadApprovals();
 }
 
 function switchForUncertainty() {
