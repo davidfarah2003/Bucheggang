@@ -1,0 +1,13 @@
+scenario_id,authorization_id,decision,reason_codes,card_merchant_approved_count,customer_merchant_approved_count,card_approved_purchase_count,customer_approved_purchase_count,missing_feature_count,history_schema,elapsed_ms
+SCEN0002,AU0012,approve,within_policy,22.0,34.0,104.0,212.0,0,hist-1,3.451
+SCEN0002,AU0013,decline,item_mismatch|purchase_count_exceeded,22.0,34.0,104.0,212.0,0,hist-1,0.642
+SCEN0002,AU0014,decline,return_terms_short|purchase_count_exceeded,22.0,34.0,104.0,212.0,0,hist-1,0.556
+SCEN0002,AU0015,decline,return_terms_short|purchase_count_exceeded,22.0,34.0,104.0,212.0,0,hist-1,0.726
+SCEN0002,AU0016,decline,purchase_count_exceeded,22.0,34.0,104.0,212.0,0,hist-1,0.655
+SCEN0002,AU0017,decline,item_mismatch|purchase_count_exceeded,22.0,34.0,104.0,212.0,0,hist-1,0.576
+SCEN0002,AU0018,decline,item_mismatch|purchase_count_exceeded|unrequested_item|subscription|protection_plan,22.0,34.0,104.0,212.0,0,hist-1,0.597
+SCEN0002,AU0019,decline,purchase_count_exceeded,22.0,34.0,104.0,212.0,0,hist-1,0.489
+SCEN0002,AU0020,decline,item_mismatch|purchase_count_exceeded,22.0,34.0,104.0,212.0,0,hist-1,0.484
+SCEN0002,AU0021,decline,amount_over_limit|purchase_count_exceeded,22.0,34.0,104.0,212.0,0,hist-1,0.511
+SCEN0002,AU0022,decline,merchant_type_mismatch|purchase_count_exceeded,0.0,0.0,104.0,212.0,8,hist-1,0.490
+SCEN0002,AU0023,decline,purchase_count_exceeded,0.0,0.0,104.0,212.0,2,hist-1,0.493
