@@ -1,0 +1,37 @@
+{
+  "draft_id": "e4a330f6-8b9f-4684-841f-2e74953c6e2f",
+  "version": 1,
+  "hash": "f1f5e8741d6cf05cf1058092c87da12c82ba97d8144df32ba1ae761a0e5ea1be",
+  "instruction": "Allow small electronics and accessories purchases up to CHF 300 each at retailers I already use. If the session looks unusual — a new device, a burst of orders, unfamiliar shops abroad — stop and ask me.",
+  "rules": [
+    {
+      "currency": "CHF",
+      "field": "authorization.billing_amount_chf",
+      "operator": "<=",
+      "plain_english": "The total must be CHF 300 or less.",
+      "scope": "purchase",
+      "source_text": "up to CHF 300 each",
+      "value": 300
+    },
+    {
+      "field": "items.category",
+      "operator": "=",
+      "plain_english": "Use the electronics catalogue category for this evaluation.",
+      "scope": "purchase",
+      "source_text": "small electronics and accessories",
+      "value": "electronics"
+    },
+    {
+      "field": "history.merchant_seen_on_card",
+      "operator": "=",
+      "plain_english": "Require a prior approved purchase on this card.",
+      "scope": "purchase",
+      "source_text": "retailers I already use",
+      "value": "true"
+    }
+  ],
+  "examples": [],
+  "open_questions": [],
+  "uncertainty_policy": "ask",
+  "created_at": "2026-09-24T20:57:11.851437Z"
+}
