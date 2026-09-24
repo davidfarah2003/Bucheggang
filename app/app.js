@@ -125,6 +125,7 @@ function validateDecision(payload) {
   text(decision.authorization_id, "Authorization ID");
   text(decision.customer_message, "Decision explanation");
   text(decision.decided_at, "Decision time");
+  if (!Number.isFinite(new Date(decision.decided_at).getTime())) throw new Error("The decision time is invalid.");
   if (!["approve", "decline", "step_up"].includes(decision.decision) || !Array.isArray(decision.evidence) || !Array.isArray(decision.reason_codes)) throw new Error("The transaction has an unsupported outcome.");
   if (!event.authorization || !event.authorization.merchant || !Array.isArray(event.authorization.items)) throw new Error("The transaction has no purchase details.");
   text(event.authorization.merchant.merchant_name, "Merchant name");
@@ -145,7 +146,10 @@ function normalRoute(route) {
 
 function navigate(route, { keepScroll = false } = {}) {
   route = normalRoute(route);
-  if (!["shop", "wallet", "activity", "review"].includes(route)) throw new Error(`Unknown page: ${route}`);
+  if (!["shop", "wallet", "activity", "review"].includes(route)) {
+    setScreen(errorPanel("This page is unavailable", new Error(`Unknown page: ${route}`)));
+    return;
+  }
   state.route = route;
   state.serial += 1;
   window.clearInterval(state.timer);
@@ -176,6 +180,9 @@ async function render() {
     if (serial !== state.serial) return;
     if (error.status === 401) {
       state.user = null;
+      state.mandate = null;
+      state.pending = [];
+      window.sessionStorage.removeItem(MANDATE_KEY);
       renderLogin();
       toast(error.message);
       return;
@@ -256,7 +263,7 @@ async function renderShop(serial) {
   if (serial !== state.serial) return;
   const cap = plan && purchaseCap(plan.rules);
   setScreen(`<section class="shop-view"><div class="shop-intro"><h1>What can I<br />get for you?</h1><div class="orbit" aria-hidden="true"><span class="orbit-ring one"></span><span class="orbit-ring two"></span><span class="orbit-core">✓</span><span class="orbit-dot"></span></div></div>
-    <div class="composer"><label for="shop-prompt" class="sr-only">Your shopping request</label><textarea id="shop-prompt" rows="2" placeholder="Ask Viseca to buy something…">${esc(state.prompt)}</textarea><div class="prompt-example"><span>FOR EXAMPLE</span><button type="button" data-action="use-example" id="animated-example">${esc(examples[0])}</button></div><button class="send-button" type="button" data-action="copy-prompt" aria-label="Copy request for your shopping agent" ${state.prompt.trim() ? "" : "disabled"}>↑</button></div>
+    <div class="composer"><label for="shop-prompt" class="sr-only">Your shopping request</label><textarea id="shop-prompt" rows="2" placeholder="Ask Viseca to buy something…">${esc(state.prompt)}</textarea><div class="prompt-example" ${state.prompt.trim() ? "hidden" : ""}><span>FOR EXAMPLE</span><button type="button" data-action="use-example" id="animated-example">${esc(examples[0])}</button></div><button class="send-button" type="button" data-action="copy-prompt" aria-label="Copy request for your shopping agent" ${state.prompt.trim() ? "" : "disabled"}>Copy</button></div>
     <button type="button" class="filter-trigger" data-action="open-filters">Refine request with product filters <span aria-hidden="true">⌄</span></button>
     <p class="agent-state">Shopping agent <span>· connect an external agent</span></p><p class="external-agent">No shopping model is connected inside this demo. Copy your request to an MCP-compatible agent. The agent can send you a Wallet review link.</p>
     ${plan ? `<section class="shop-plan"><span class="section-kicker">PLAN SAVED BY YOUR AGENT</span><h2>${esc(productName(plan))}</h2><p>${cap ? `${cap.strict ? "Below" : "Up to"} ${esc(money(cap.amount))}` : "Review the saved limits"}</p><button type="button" class="text-button" data-route="review">Review in Wallet <span aria-hidden="true">→</span></button></section>` : ""}
@@ -356,7 +363,7 @@ function ruleGroups(rules) {
     if (!groups.has(name)) groups.set(name, []);
     groups.get(name).push(rule);
   });
-  return [...groups].map(([name, items]) => `<section class="rule-group"><h3>${esc(name)}</h3>${items.map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("")}</section>`).join("");
+  return ["Spending", "Products and extras", "Merchants", "Other checks"].filter((name) => groups.has(name)).map((name) => `<section class="rule-group"><h3>${esc(name)}</h3>${groups.get(name).map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("")}</section>`).join("");
 }
 
 async function activeContent(serial) {
@@ -602,7 +609,9 @@ document.addEventListener("click", async (event) => {
     else if (action === "revoke") await performRevoke();
     else if (action === "copy-prompt") {
       const prompt = text(document.querySelector("#shop-prompt").value.trim(), "Shopping request");
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard access requires a secure browser connection. Select the request and copy it manually.");
       await navigator.clipboard.writeText(prompt);
+      button.disabled = false;
       toast("Request copied. Paste it into your connected shopping agent.", "success");
     }
   } catch (error) {
@@ -624,7 +633,7 @@ document.addEventListener("input", (event) => {
   const send = document.querySelector(".send-button");
   if (send) send.disabled = !state.prompt.trim();
   if (state.exampleTimer) window.clearTimeout(state.exampleTimer);
-  const example = document.querySelector("#animated-example");
+  const example = document.querySelector(".prompt-example");
   if (example) example.hidden = Boolean(state.prompt);
 });
 
@@ -683,5 +692,5 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
-window.addEventListener("hashchange", () => navigate(window.location.hash.slice(1)));
+window.addEventListener("hashchange", () => navigate(window.location.hash.slice(1) || (linkedDraftId() ? "review" : "shop")));
 initialize();
