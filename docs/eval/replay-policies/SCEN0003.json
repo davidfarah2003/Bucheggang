@@ -1,0 +1,50 @@
+{
+  "draft_id": "072dc5ff-db27-4df2-b45f-bf3a39c201f4",
+  "version": 1,
+  "hash": "a55b832fc4ccec0125b15949fa4cc3f2610ea9f71ff8ad7ed74a4af2244da454",
+  "instruction": "The agent may buy clothing for me, up to CHF 250 per order, from shops I have used before. Pause anything that looks like someone other than me is driving the session. Ask me when uncertain.",
+  "rules": [
+    {
+      "currency": "CHF",
+      "field": "authorization.billing_amount_chf",
+      "operator": "<=",
+      "plain_english": "Each purchase must cost CHF 250 or less.",
+      "scope": "purchase",
+      "source_text": "up to CHF 250 per order",
+      "value": 250
+    },
+    {
+      "field": "items.category",
+      "operator": "=",
+      "plain_english": "Every cart line must be clothing.",
+      "scope": "purchase",
+      "source_text": "buy clothing for me",
+      "value": "clothing"
+    },
+    {
+      "field": "history.merchant_seen_on_card",
+      "operator": "=",
+      "plain_english": "The card must have an earlier approved purchase at the shop.",
+      "scope": "purchase",
+      "source_text": "shops I have used before",
+      "value": "true"
+    }
+  ],
+  "examples": [],
+  "open_questions": [
+    {
+      "answer": null,
+      "confirming_answers": [
+        "this card",
+        "all cards"
+      ],
+      "options": [
+        "this card",
+        "all cards"
+      ],
+      "question": "Should prior use be checked on this card or across all of your cards?"
+    }
+  ],
+  "uncertainty_policy": "ask",
+  "created_at": "2026-09-24T20:00:04.638251Z"
+}

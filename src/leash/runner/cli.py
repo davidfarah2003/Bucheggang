@@ -1,14 +1,14 @@
 """Command line for one live scenario run.
 
     uv run python -m leash.runner.cli --scenario SCEN0101 --mandate-id TM... \
-        --draft path/to/confirmed_draft.json --evaluate decline_everything_smoke
+        --draft path/to/confirmed_draft.json --evaluate engine
 
 --draft is the confirmed PolicyDraft (JSON) that the mandate was created from.
 
-The evaluate callable is chosen by name from EVALUATORS. The only entry today is
-decline_everything_smoke, a smoke-test evaluator that declines every purchase so
-the loop can be tried live before leash.engine.evaluate exists. The demo never
-uses it; the engine's evaluate is added here when engine task 5 lands.
+The evaluate callable is chosen by name from EVALUATORS. "engine" is
+leash.engine.evaluate.evaluate, the one the demo uses. The two smoke evaluators
+decline or step up every purchase; they exercise the run loop and step-up
+handling and the demo never uses them.
 """
 
 import argparse
@@ -19,6 +19,7 @@ from pathlib import Path
 from leash.contracts import Decision, Event, MandateState, PolicyDraft, PurchaseFacts
 
 from leash.engine import state as state_store
+from leash.engine.evaluate import evaluate as engine_evaluate
 
 from . import loop, records, routes, stepups
 
@@ -79,6 +80,7 @@ def step_up_everything_smoke(
 
 
 EVALUATORS = {
+    "engine": engine_evaluate,
     "decline_everything_smoke": decline_everything_smoke,
     "step_up_everything_smoke": step_up_everything_smoke,
 }
@@ -107,7 +109,7 @@ def main() -> None:
                                         "pending_step_ups": start_state.pending_step_ups}))
     window_s = stepups.human_window_s()
     book = stepups.StepUpBook()
-    book.start(args.mandate_id)
+    book.start(args.mandate_id, run["run_id"])
     if args.serve_port:
         serve(book, args.serve_port)
     state = loop.run_loop(run["run_id"], EVALUATORS[args.evaluate], policy, args.mandate_id, book, window_s)

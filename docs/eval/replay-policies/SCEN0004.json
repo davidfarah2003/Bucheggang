@@ -1,0 +1,82 @@
+{
+  "draft_id": "0a2066a5-d362-46a8-a3de-441e647a1d52",
+  "version": 1,
+  "hash": "743b2c4ada5e80acdd0eb1248bcfc6f96a0bb011cc3173cb187058158552a7ce",
+  "instruction": "Buy the 27-inch monitor I chose, from a seller I have bought from before, for CHF 400 or less. Do not add anything I did not ask for. Ask me when uncertain.",
+  "rules": [
+    {
+      "currency": "CHF",
+      "field": "authorization.billing_amount_chf",
+      "operator": "<=",
+      "plain_english": "The whole purchase must cost CHF 400 or less.",
+      "scope": "purchase",
+      "source_text": "CHF 400 or less",
+      "value": 400
+    },
+    {
+      "field": "facts.product_type",
+      "operator": "=",
+      "plain_english": "The extracted product type must equal the instruction wording, pending identification of the chosen model.",
+      "scope": "purchase",
+      "source_text": "27-inch monitor",
+      "value": "27-inch monitor"
+    },
+    {
+      "field": "items.category",
+      "operator": "=",
+      "plain_english": "Every cart line must be electronics.",
+      "scope": "purchase",
+      "source_text": "27-inch monitor",
+      "value": "electronics"
+    },
+    {
+      "field": "items.count",
+      "operator": "=",
+      "plain_english": "Buy one unit.",
+      "scope": "purchase",
+      "source_text": "Buy the 27-inch monitor",
+      "value": 1
+    },
+    {
+      "field": "history.merchant_seen_on_card",
+      "operator": "=",
+      "plain_english": "The card must have an earlier approved purchase at the seller.",
+      "scope": "purchase",
+      "source_text": "a seller I have bought from before",
+      "value": "true"
+    },
+    {
+      "field": "facts.is_addon",
+      "operator": "=",
+      "plain_english": "Do not include an add-on.",
+      "scope": "purchase",
+      "source_text": "Do not add anything I did not ask for",
+      "value": "false"
+    },
+    {
+      "field": "state.approvals_count",
+      "operator": "<",
+      "plain_english": "Allow one successful purchase for this request.",
+      "scope": "purchase",
+      "source_text": "Buy the 27-inch monitor",
+      "value": 1
+    }
+  ],
+  "examples": [],
+  "open_questions": [
+    {
+      "answer": null,
+      "confirming_answers": [
+        "27-inch computer monitor",
+        "a different model"
+      ],
+      "options": [
+        "27-inch computer monitor",
+        "a different model"
+      ],
+      "question": "What exact catalogue model did you choose?"
+    }
+  ],
+  "uncertainty_policy": "ask",
+  "created_at": "2026-09-24T20:00:04.638515Z"
+}

@@ -35,6 +35,15 @@ Out:
 4. Polling: the step-up list refreshes every 2 s; a pending step-up that the runner has already resolved (timeout) disappears with a note.
 5. Capture screenshots of the Wallet screens in `docs/screens/` for the pitch deck.
 
+## Customer UI revision
+
+- Color: `#f7f7f5` canvas, `#ffffff` surface, `#1c2422` text, `#66716d` secondary text, `#d83c32` action, `#287352` success, `#a46b2c` uncertainty. Red is limited to the primary action and small status marks.
+- Type: the existing Inter and system sans stack. Page title 30 px, purchase amount 46 px, section heading 18 px, body 14 px, metadata 12 px. Labels use sentence case.
+- Layout: a narrow desktop navigation rail with one main column up to 1120 px. Home leads with the current wallet limit and recent purchases. Mobile keeps the bottom navigation and puts approval actions within thumb reach.
+- Review maps `renderReview`, `questionCards` and `exampleCards` to a compact draft summary with unanswered choices. Examples move into a details sheet. `confirmDraft` and `rejectDraft` keep their exact hash/version checks.
+- Home reads the existing mandate and history routes. Approvals uses the existing `stepUpCard`, `loadApprovals` and answer route once the runner publishes both routes. Policy keeps `renderPolicy`, `submitTighten` and `revokeMandate`; a pause control needs a backend contract before it can be offered. Activity keeps `renderActivity` and `openDecision`; the full Event, checks and state move into a separate technical view reached from the decision drawer.
+- No new backend endpoint, response shape or synthetic transaction data. A missing route renders its actual error or an explicit unavailable state while its owner implements it.
+
 ## How we check it works
 
 - Confirm with a stale hash shows the 409 message and reloads the draft.
@@ -50,6 +59,10 @@ Out:
 - Show the saved policy draft as the authoritative view, with a sentence explaining that the shopping agent proposed it. There is no second policy display.
 - Use the local `/session` cookie contract for the demo. The app loads saved drafts through `GET /drafts/{id}` and uses the runner's live step-up routes.
 - Deliver the mobile-first Wallet demo first. It works directly from `/app/?draft=<id>` without a Shopping Harness.
+- Mount the customer UI in the FastAPI shell with `leash.api.static.mount_customer_app(api)`. The static mount does not expose a sample draft.
+- Disable Confirm for answers outside `open_questions[].confirming_answers`.
+- Read current permissions from `effective_policy`, separate from the immutable confirmed draft.
+- `docs/screens/` has a 400 px review capture and preview captures for approvals, policy, activity and the judge panel. The previews use the organizer's example Event and temporary browser data, not a live decision. Replace the judge preview with AU0016 after the decision detail route is live.
 
 ## Later
 
@@ -65,4 +78,9 @@ Out:
 (one line per finished task: date time, who, what, how it was tried, sha)
 2026-09-24 18:38 rb_turbo_charged: built responsive review, step-up, policy, activity and evidence screens; `node --check app/app.js` exited 0, local HTTP returned 200 for page, CSS, JS and draft, Chrome at 400 px rendered the review with `scrollWidth: 400`; @6ebf233.
 2026-09-24 18:41 rb_turbo_charged: constrained tightening controls to active mandates and strictly lower purchase caps; `node --check app/app.js` exited 0; mutation routes are not implemented yet, so the behavior was not run against the backend; @7e24ed0.
+2026-09-24 18:55 rb_turbo_charged: showed the full Event and explicit unknown Check values in the judge panel, retained resolved-step-up notices across navigation, and captured four phone previews in `docs/screens/`; `node --check app/app.js` exited 0 and Chrome rendered approvals, policy, activity and the judge panel at 400 px with `scrollWidth: 400` using temporary organizer-example data; live route checks remain open; @d6c2f5b.
+2026-09-24 18:58 rb_turbo_charged: added `leash.api.static.mount_customer_app` for the UI and temporary sample path; `PYTHONPATH=src uv run --no-project --with fastapi --with httpx python3 -c '...'` returned `app 200`, `draft 200`, `other-sample 404`; the first call without `PYTHONPATH=src` failed with `ModuleNotFoundError: leash`; shell inclusion remains open.
+2026-09-24 19:08 rb_turbo_charged: prevented delayed page loads from repainting a newer route and delayed decision loads from reopening a closed drawer; a local Chrome run with delayed temporary responses ended on Activity with heading `Every decision, clearly explained.` and drawer child count `0`; live API timing remains unchecked.
+2026-09-24 19:18 rb_turbo_charged: followed the merged confirming answer, reject version/hash and effective policy contracts in the review and policy screens; `node --check app/app.js` and `git diff --check` exited 0. A local HTTP run returned 200 for the app assets and sample. Chrome did not finish its DOM dump within 20 seconds, so this update has no new browser render result; live route checks remain open.
+2026-09-24 19:55 rishabh_agent: switched the app to local /session and query-driven GET /drafts/{id}, removed the sample mount, and disabled step-up controls until runner routes exist; `node --check app/app.js` and `git diff --check` exited 0, FastAPI TestClient returned `/app/` 200, JS 200, CSS 200 and sample URL 404; browser login, confirmation and step-up remain untried against the shared shell; @602b321.
 2026-09-24 20:32 oskar1: aligned demo scope with the owner ruling: standalone mobile-first Wallet first; Harness, sliders, draft inbox, mandate list and global policies are Later.
