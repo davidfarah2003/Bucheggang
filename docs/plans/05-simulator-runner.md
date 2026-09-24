@@ -49,7 +49,7 @@ Out:
 ## Decisions
 
 - After mandate DELETE, decline any purchase still queued for that mandate with `mandate_revoked` and resolve pending step-ups with `decline`. Verify this behavior against the live API on Friday morning before the demo.
-- Call `POST /v1/team/reset` before each demo run, then create a fresh mandate. Never reuse mandate IDs.
+- Reset is disabled on the live API; each demo run creates a fresh mandate and never reuses IDs.
 
 ## Log
 

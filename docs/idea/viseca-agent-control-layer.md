@@ -6,12 +6,14 @@ Build an agent-independent payment control layer that allows AI shopping agents 
 
 The shopping flow applies to any product or service category. Shoes in the examples are one scenario, not a product restriction. The agent derives a task policy from the customer's actual request and surfaces any detail that the available policy fields cannot enforce.
 
-Customers can use either:
+The first-party experience has two distinct mobile-first interfaces that may share one web app shell with swipe or tab navigation:
 
-- an external shopping agent such as Claude, Codex, or another MCP-compatible agent; or
-- a Viseca shopping app that acts as an agent harness and lets the customer choose the model or shopping agent. AG-UI could provide the interaction layer for this application.
+- The **Shopping Harness** is the customer-facing shopping agent. The customer selects a configured agent or model provider, enters a request, and sees the proposed task policy in a friendly editable view. The harness connects the selected agent to the existing MCP control tools. It cannot confirm a policy or approve a purchase exception.
+- The **Viseca Wallet** is the trusted customer control interface. It lets the customer review and confirm pending task policies, set account-wide global policies, inspect active confirmed mandates, answer purchase step-ups, and review history. Customers can open and use this interface directly without entering the Shopping Harness.
 
-Both options use the same MCP backend, policy system, decision engine, and Viseca authentication flow.
+The Shopping Harness offers configured integrations for Apertus, ChatGPT/OpenAI, Claude/Anthropic, Grok/xAI, Gemini/Google, DeepSeek, and other supported agents. An unavailable provider is shown as unavailable; a failed provider call is surfaced to the customer rather than switched silently to another provider. External MCP-compatible agents may also use the same backend.
+
+Both interfaces use the same policy store, MCP backend, decision engine, and authentication boundary. The Wallet remains usable on its own; an external MCP-compatible agent can replace the built-in harness.
 
 ## Core responsibilities
 
@@ -27,6 +29,12 @@ The shopping agent:
 - displays the result and explanation.
 
 The shopping agent cannot confirm policies, approve its own exceptions, access payment credentials, modify global policies, or bypass the control layer.
+
+### Shopping Harness
+
+The Shopping Harness provides the model or agent selector and the shopping conversation. It presents proposed limits with clear units and editable controls such as sliders. Where supported by the policy contract, it can show a separate uncertainty or step-up band around a limit. A visual adjustment must map to an explicit structured rule; if the backend cannot express it, the harness shows it as an unresolved question instead of approximating it. Every proposal and edit remains unconfirmed until the customer reviews the backend's saved draft in the Viseca Wallet.
+
+The selected agent receives the existing policy-authoring MCP tools. It may propose policies and request policy data, but it cannot confirm, reject, tighten, or revoke policies. The MCP backend makes no model call.
 
 ### MCP backend
 
@@ -53,18 +61,19 @@ Suggested MCP tools:
 
 Policy confirmation, global-policy administration, and customer resolution of a `step_up` must not be exposed as ordinary agent-callable tools.
 
-### Viseca authentication app
+### Viseca Wallet
 
-The authenticated Viseca app is the trusted human approval surface. It manages:
+The authenticated Viseca Wallet is the trusted human approval surface. It manages:
 
 - persistent global policies;
 - task-policy review and confirmation;
+- an inbox of task-policy drafts awaiting confirmation and a list of active confirmed mandates;
 - policy tightening and revocation;
 - transaction step-up approval or rejection;
 - policy and purchase history;
 - evidence and decision explanations.
 
-The app must load the policy directly from the trusted backend. It must never display a policy copy supplied by the shopping agent as if it were authoritative.
+The Wallet must load policies directly from the trusted backend. It must never display a policy copy supplied by the shopping agent as if it were authoritative. Both interfaces are designed for mobile screens first.
 
 ## Policy model
 
@@ -102,6 +111,8 @@ issuer limits
 ```
 
 A task policy may tighten a global policy but may never weaken it.
+
+At task confirmation, compose the current global rules with the task rules into one effective `PolicyDraft` and hash the exact rules sent to the simulator. The current challenge simulator supports one active mandate per team; confirming a new mandate supersedes the previous one. A global policy edit therefore applies to the next confirmed mandate in the demo, and the Wallet must say clearly when an existing active mandate still carries the previous version.
 
 ## Secure policy confirmation
 

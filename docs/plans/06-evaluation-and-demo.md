@@ -29,14 +29,14 @@ Numbers come from files in `docs/eval/`; the report links to them. No number app
 
 ## Demo script (four minutes of content, cut to the slot)
 
-1. Confirmation: the `SCEN0002` sentence becomes rules and four example purchases; the customer answers the return-terms question; Confirm. Show the `mandate_id` the agent receives and nothing else.
+1. The external shopping agent proposes a `SCEN0002` draft through MCP and opens the Wallet at `/app/?draft=<id>`. Review the saved draft and examples, answer the return-terms question, and confirm. Show the `mandate_id` the agent receives. The Wallet also works directly without any built-in Harness.
 2. Ordinary purchase approved with no question (an early `SCEN0002` attempt). Show the judge panel: every check passed, 6 ms.
 3. A manipulated purchase from `SCEN0004`: injected merchant text is shown verbatim on the panel, flagged, and the decision is driven by the rule it tried to override.
 4. A `step_up` on the phone: AU0016, return terms not stated; the customer rejects; the next attempt at the same merchant is declined as a re-quote.
 5. Revoke on the policy page; the following purchase is declined with `mandate_revoked`.
 6. Close on the report's two numbers per scenario.
 
-Assets: `docs/screens/` screenshots, the agent-side terminal transcript from plan 01 step 7, a 6-slide deck in `docs/pitch/`.
+Assets: `docs/screens/` screenshots of the mobile-first Wallet demo, the agent-side terminal transcript from plan 01 step 7, a 6-slide deck in `docs/pitch/`. Harness screenshots are later product work.
 
 ## Steps
 
@@ -59,3 +59,5 @@ Assets: `docs/screens/` screenshots, the agent-side terminal transcript from pla
 ## Log
 
 (one line per finished task: date time, who, what, how it was tried, sha)
+
+2026-09-24 20:32 oskar1: clarified that the current demo uses an external shopping agent through MCP and opens the standalone Wallet with the saved draft ID; a built-in Harness is later work.

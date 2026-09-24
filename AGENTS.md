@@ -13,7 +13,7 @@ A wallet control layer that decides whether an AI shopping agent's purchase goes
 | policy | instruction, draft policy, confirmation, `mandate_id` | `docs/plans/01-policy-confirmation.md` | `team.zurichbuchegg.policy` | `lane/policy`, `.worktrees/policy` |
 | engine | purchase in, `approve` / `decline` / `step_up` out | `docs/plans/02-decision-engine.md` | `team.zurichbuchegg.engine` | `lane/engine`, `.worktrees/engine` |
 | extract | merchant text in, typed facts out | `docs/plans/03-merchant-text-extraction.md` | `team.zurichbuchegg.extract` | `lane/extract`, `.worktrees/extract` |
-| app | confirmation screen, step-up, history, judge panel | `docs/plans/04-customer-app.md` | `team.zurichbuchegg.app` | `lane/app`, `.worktrees/app` |
+| app | Viseca Wallet demo screens; Shopping Harness and global policies are later product work | `docs/plans/04-customer-app.md` | `team.zurichbuchegg.app` | `lane/app`, `.worktrees/app` |
 | runner | simulator polling, deadlines, `/resolve`, offline replay | `docs/plans/05-simulator-runner.md` | `team.zurichbuchegg.runner` | `lane/runner`, `.worktrees/runner` |
 | (all) | labels, report, demo, pitch | `docs/plans/06-evaluation-and-demo.md` | `team.zurichbuchegg` (spine) | `main` |
 
