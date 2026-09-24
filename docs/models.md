@@ -1,0 +1,51 @@
+# Models and seats
+
+David's machine runs a `jcode` harness with one provider that exposes many model families. Seats spawned from David's manager can use any of them; Oskar and the third teammate spawn `claude` seats from their own machines with their own subscriptions, and can ask David's main session to spawn a jcode seat for them into their lane (the seat joins the same channels either way).
+
+## Catalog (jcode, provider `cliproxy`, ids are bare)
+
+Declared in `~/.jcode/config.toml` on David's machine; `cotal models --agent jcode` prints it when a local manager runs. Effort tiers are declared, not provider-verified; a rejected tier fails the spawn loudly.
+
+| Family | Ids worth using | Efforts |
+| --- | --- | --- |
+| Anthropic | `claude-opus-5-5`, `claude-fable-5-1`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001` | low, medium, high, xhigh, max (haiku: none) |
+| OpenAI | `gpt-6-sol`, `gpt-5.6-sol`, `gpt-5.5`, `gpt-5.4-mini` | per model |
+| Google | `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.5-flash-lite` | low, medium, high |
+| xAI | `grok-4.7`, `grok-4.6`, `grok-4.20-0309-reasoning` | per model |
+| Zhipu | `glm-5.3`, `glm-5.3-flash`, `glm-5.2` | per model |
+| DeepSeek | `deepseek-v4-pro`, `deepseek-v4-flash` | low, high, max |
+| Moonshot | `kimi-k3`, `kimi-k2.7-code` | per model |
+
+The full list is in `~/.jcode/config.toml` (`grep '^id = '`).
+
+## Assignment by role
+
+| Persona | Default | Why | Swap to |
+| --- | --- | --- | --- |
+| `builder` | `claude-opus-5-5` high | strongest on multi-file Python with tests | `gpt-6-sol` for a second builder in the same lane, so the two seats do not share blind spots |
+| `reviewer` | `gemini-3.8-flash` high | a different family from the builder; fast enough for one PR per spawn | `grok-4.7` for the security-shaped PRs (engine combine step, runner deadline guard) |
+| `librarian` | `gemini-3.8-flash` medium | long context, cheap, stays up all event | `glm-5.3` if Gemini quota runs out |
+| `labeler` | `grok-4.7` high | independent from the builder family | the second labeler is `gpt-5.6-sol`; the two files are reconciled by a human |
+| extraction model inside the product (plan 03) | `claude-haiku-4-5-20251001` via the Anthropic API | latency; this is product code, not a seat | Apertus 70B from the event's Swisscom credits, if measured better |
+
+Pair a builder with a reviewer from a different family.
+
+## Seat budget
+
+20 to 30 seats are available on David's machine. Planned occupancy at peak:
+
+- 5 lane builders (one per lane), plus at most 3 topic builders in engine, runner and app: 8
+- reviewers: spawned per PR, at most 3 alive at once: 3
+- librarian: 1
+- labelers: 2 tonight, then 0
+- humans' main sessions: 3
+
+That is 17. The rest is headroom for a second reviewer on a contested PR or a respawn. Do not spawn a seat without a task and a stopping condition in its prompt.
+
+## Spawning on David's manager for someone else's lane
+
+```
+scripts/spawn.sh builder policy "Do task 2 of docs/plans/01-policy-confirmation.md ..." --model gpt-6-sol --variant high
+```
+
+The seat is named `policy_builder`, joins `team.zurichbuchegg.policy`, and reports there. The lane owner (Oskar) reads that channel from their own main session and re-briefs by posting on it with an `@policy_builder` mention. Only the spawner's manager can stop it (`cotal stop --name policy_builder` on David's machine), so the owner asks on the spine when they want it down.
