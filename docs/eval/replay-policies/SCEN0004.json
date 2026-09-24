@@ -1,7 +1,7 @@
 {
   "draft_id": "0a2066a5-d362-46a8-a3de-441e647a1d52",
   "version": 1,
-  "hash": "743b2c4ada5e80acdd0eb1248bcfc6f96a0bb011cc3173cb187058158552a7ce",
+  "hash": "3a83840408674d175a5ace5a629983fd0f08e9162bdba814d6d17e36fc603870",
   "instruction": "Buy the 27-inch monitor I chose, from a seller I have bought from before, for CHF 400 or less. Do not add anything I did not ask for. Ask me when uncertain.",
   "rules": [
     {
@@ -44,14 +44,6 @@
       "scope": "purchase",
       "source_text": "a seller I have bought from before",
       "value": "true"
-    },
-    {
-      "field": "facts.is_addon",
-      "operator": "=",
-      "plain_english": "Do not include an add-on.",
-      "scope": "purchase",
-      "source_text": "Do not add anything I did not ask for",
-      "value": "false"
     },
     {
       "field": "state.approvals_count",

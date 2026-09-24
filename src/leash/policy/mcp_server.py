@@ -64,6 +64,7 @@ def authoring_guide() -> dict[str, Any]:
             "Surface missing facts and semantic gaps as open_questions with answer null.",
             "For each open question, list confirming_answers as the subset of options that confirms the rules exactly as displayed. Use an empty list if every answer needs a revised draft.",
             "A broad merchant category does not prove a specialist retailer. A screen size does not identify a chosen model.",
+            "When the instruction forbids add-ons, do not write a rule facts.is_addon = false. Extraction is three-valued and reports is_addon unknown on a line with no add-on marker, so that rule turns every clean purchase into a step_up. Do not author facts.is_addon rules for now: the engine blocks every detected add-on line globally, and unknown must remain unknown.",
             "Ask for an enforceable merchant or product identifier, or explicit customer consent to broader permissions, when the instruction requires more detail than the available fields prove.",
             "Any expansion of allowed purchases needs a new reviewed draft and explicit customer confirmation.",
             "Do not use scenario IDs, authorization IDs, or replay order as policy conditions.",
