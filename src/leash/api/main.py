@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict
 from leash.policy.confirmation import MandateClient
 from leash.policy.routes import policy_router
 from leash.policy.store import DraftStore
+from leash.runner.routes import step_up_router
+from leash.runner.stepups import StepUpBook
 
 
 COOKIE_NAME = "leash_session"
@@ -22,8 +24,12 @@ class LoginBody(BaseModel):
     username: str
 
 
-def create_app(store: DraftStore, mandates: MandateClient) -> FastAPI:
-    """Assemble customer routes with one local session store per app process."""
+def create_app(store: DraftStore, mandates: MandateClient, step_up_book: StepUpBook) -> FastAPI:
+    """Mount all customer routes and the static Wallet in one same-origin app."""
+    from leash.engine.state import load
+    from leash.runner.routes import history_router
+
+    from .mandates import mandate_router
     from .static import mount_customer_app
 
     app = FastAPI(title="Agent on a Leash")
@@ -72,5 +78,8 @@ def create_app(store: DraftStore, mandates: MandateClient) -> FastAPI:
         response.delete_cookie(COOKIE_NAME, path="/")
 
     app.include_router(policy_router(store, mandates, authenticated_customer))
+    app.include_router(mandate_router(store, authenticated_customer, load))
+    app.include_router(step_up_router(step_up_book, authenticated_customer))
+    app.include_router(history_router(authenticated_customer))
     mount_customer_app(app)
     return app
