@@ -27,7 +27,11 @@ _INSTRUCTIONS = re.compile(
     re.I,
 )
 _GIFT = re.compile(r"\b(?:gift\s*(?:card|voucher)|store credit voucher)\b", re.I)
-_PLAN = re.compile(r"\b(?:protection plan|extended (?:cover|warranty)|warranty extension)\b", re.I)
+_PLAN = re.compile(
+    r"\b(?:protection plan|extended (?:cover|warranty)|warranty extension|"
+    r"(?:extending|extended|extra) cover beyond|coverage (?:extending |lasting )?beyond)\b",
+    re.I,
+)
 _SUBSCRIPTION = re.compile(r"\b(?:subscription|billed (?:monthly|annually)|monthly fee)\b", re.I)
 _ADDON = re.compile(r"\b(?:add[ -]?on|optional (?:service|cover|plan))\b", re.I)
 
