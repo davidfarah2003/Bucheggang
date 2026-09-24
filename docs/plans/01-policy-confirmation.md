@@ -13,6 +13,8 @@
 
 Turn a cardholder instruction into a policy the customer can read, check against example purchases, and confirm. The shopping agent only ever receives the `mandate_id`.
 
+The authoring flow works for any shopping category. The shoe scenario below is a sample for review, not a template or an allowed-category list. Unsupported product details remain visible as open questions until the customer reviews an enforceable draft.
+
 Running example, from `SCEN0002`:
 
 > Replace my worn road-running shoes in size 43. Buy only from a specialist sports retailer, only if the order can be returned within 14 days or more, and pay no more than CHF 200. Ask me when uncertain.
@@ -22,11 +24,11 @@ Running example, from `SCEN0002`:
 In:
 
 - User-side policy recommendation: the customer's agent gets the field vocabulary, rule format, examples, and known gaps from the MCP tool, then proposes rules from the cardholder instruction. The MCP backend validates and stores that proposal; it makes no LLM call.
-- `propose_task_policy`: instruction and an explicit compiler mode in, canonical `PolicyDraft` out (rules with the source phrase for each, example purchases, open questions). A failed model-supplied proposal raises; it never switches to deterministic mode.
+- `propose_task_policy`: the user-side agent supplies the instruction and an explicit proposal. The backend validates its rule fields, source phrases, examples and open questions, then stores a canonical `PolicyDraft`. An invalid proposal raises.
 - Progent's monotonic confinement rule applies to later policy edits: an expanded set of allowed purchases requires a fresh customer confirmation. Automatic tightening may only remove purchases from that set, and still needs an auditable version and hash.
 - Draft store with version and hash. The app reads a draft from the backend by `draft_id`; it never gets one from the agent.
 - The confirm route: hash and version check, answers to open questions folded into rules or `uncertainty_policy`, then the runner's mandate create and confirm calls, then `Mandate` stored and returned.
-- The MCP tools the shopping agent sees: `propose_task_policy`, `get_policy_status`, `request_policy_confirmation` (creates the pending item the app shows), `buy` (delegates to the runner), `get_purchase_status`. No confirm, resolve, tighten or revoke tool.
+- The policy MCP tools supply authoring instructions and store proposed drafts. Status, purchase and runner tools can be added around the same confirmed mandate contract. No confirm, resolve, tighten or revoke tool is exposed to the shopping agent.
 
 Out:
 
@@ -76,3 +78,4 @@ Out:
 2026-09-24 18:39 policy_confirm: customer confirmation service and app routes; called `GET /drafts/{id}` and `POST /drafts/{id}/confirm` with FastAPI TestClient, observed 200 and mandate `mandate-1`, then 409 for stale confirmation; SCEN0002 merchant ambiguity raised `UnresolvedQuestion` before simulator call, @ae6380d.
 2026-09-24 18:51 policy_confirm: reserved draft confirmation before simulator calls; one-off FastAPI call observed concurrent reject blocked, confirm 200 and stale repeat 409; simulated confirm failure raised and left pending simulator draft ID `sim-2` while revise was blocked, @7267153.
 2026-09-24 18:46 policy_confirm: MCP authoring guide resource and two agent tools; called `list_tools`, `read_resource`, `get_policy_authoring_instructions`, and `propose_task_policy` through an in-memory MCP client, observed two tools, JSON guide and stored draft version 1; installed the source package with pip, @39b8e6e.
+2026-09-24 19:39 oskar1: removed the unused server-side deterministic compiler and made the authoring guide category agnostic; stored a kitchen mixer proposal with one rule and observed two MCP tools through `list_tools`.
