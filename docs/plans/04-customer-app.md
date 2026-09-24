@@ -48,11 +48,18 @@ Out:
 
 - Use plain HTML, CSS and JavaScript in `app/`, served by FastAPI. This keeps the app readable and removes a build step before the deadline.
 - Show the saved policy draft as the authoritative view, with a sentence explaining that the shopping agent proposed it. There is no second policy display.
+<<<<<<< HEAD
 - Use the local `/session` cookie contract for the demo. The app loads saved drafts through `GET /drafts/{id}` and uses the runner's live step-up routes.
 - Deliver the mobile-first Wallet demo first. It works directly from `/app/?draft=<id>` without a Shopping Harness.
 - Mount the customer UI in the FastAPI shell with `leash.api.static.mount_customer_app(api)`.
 - Disable Confirm for answers outside `open_questions[].confirming_answers`.
 - Read current permissions from `effective_policy`, separate from the immutable confirmed draft.
+=======
+- Integration still needed: the FastAPI shell must call `leash.api.static.mount_customer_app(api)`, and the policy draft route must replace the temporary direct JSON read. The app will take `draft_id` from its URL query because the contract has no draft list route.
+- The runner routes must expose pending step-ups and answers before the approve and reject flow can be checked against the simulator.
+- The SCEN0002 sample carries `open_questions[].confirming_answers`. The app disables Confirm for answers outside that set and requires a revised policy. Live confirmation depends on the policy route merging.
+- The current mandate read returns `effective_policy` separately from its immutable draft. The policy page and tightening controls use `effective_policy` after each mutation. Live readback depends on the mandate route.
+>>>>>>> de8ea30 (app: follow confirmation and effective policy contracts)
 - `docs/screens/` has a 400 px review capture and preview captures for approvals, policy, activity and the judge panel. The previews use the organizer's example Event and temporary browser data, not a live decision. Replace the judge preview with AU0016 after the decision detail route is live.
 
 ## Later
@@ -72,4 +79,5 @@ Out:
 2026-09-24 18:55 rb_turbo_charged: showed the full Event and explicit unknown Check values in the judge panel, retained resolved-step-up notices across navigation, and captured four phone previews in `docs/screens/`; `node --check app/app.js` exited 0 and Chrome rendered approvals, policy, activity and the judge panel at 400 px with `scrollWidth: 400` using temporary organizer-example data; live route checks remain open; @d6c2f5b.
 2026-09-24 18:58 rb_turbo_charged: added `leash.api.static.mount_customer_app` for the UI and temporary sample path; `PYTHONPATH=src uv run --no-project --with fastapi --with httpx python3 -c '...'` returned `app 200`, `draft 200`, `other-sample 404`; the first call without `PYTHONPATH=src` failed with `ModuleNotFoundError: leash`; shell inclusion remains open.
 2026-09-24 19:08 rb_turbo_charged: prevented delayed page loads from repainting a newer route and delayed decision loads from reopening a closed drawer; a local Chrome run with delayed temporary responses ended on Activity with heading `Every decision, clearly explained.` and drawer child count `0`; live API timing remains unchecked.
+2026-09-24 19:18 rb_turbo_charged: followed the merged confirming answer, reject version/hash and effective policy contracts in the review and policy screens; `node --check app/app.js` and `git diff --check` exited 0. A local HTTP run returned 200 for the app assets and sample. Chrome did not finish its DOM dump within 20 seconds, so this update has no new browser render result; live route checks remain open.
 2026-09-24 20:32 oskar1: aligned demo scope with the owner ruling: standalone mobile-first Wallet first; Harness, sliders, draft inbox, mandate list and global policies are Later.

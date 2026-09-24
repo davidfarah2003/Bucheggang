@@ -65,6 +65,19 @@ function requireString(value, field) {
   return value;
 }
 
+function validateRules(rules, field) {
+  if (!Array.isArray(rules)) throw new Error(`${field} must be a list.`);
+  rules.forEach((rule, index) => {
+    if (!rule || typeof rule !== "object") throw new Error(`${field}[${index}] must be an object.`);
+    requireString(rule.field, `${field}[${index}].field`);
+    requireString(rule.operator, `${field}[${index}].operator`);
+    requireString(rule.source_text, `${field}[${index}].source_text`);
+    requireString(rule.plain_english, `${field}[${index}].plain_english`);
+    if (!(typeof rule.value === "number" || typeof rule.value === "string" || (Array.isArray(rule.value) && rule.value.every((item) => typeof item === "string")))) throw new Error(`${field}[${index}].value has an unsupported type.`);
+    if (rule.scope === "period" && (!Number.isInteger(rule.period_days) || rule.period_days < 1)) throw new Error(`${field}[${index}].period_days must be a positive integer for a period rule.`);
+  });
+}
+
 function validateDraft(draft) {
   if (!draft || typeof draft !== "object") throw new Error("SCEN0002 draft must be a JSON object.");
   requireString(draft.draft_id, "draft_id");
@@ -74,15 +87,8 @@ function validateDraft(draft) {
   requireString(draft.created_at, "created_at");
   if (!["ask", "decline", "approve"].includes(draft.uncertainty_policy)) throw new Error(`uncertainty_policy ${draft.uncertainty_policy} is not supported.`);
   if (!Number.isInteger(draft.version)) throw new Error("version must be an integer.");
-  if (!Array.isArray(draft.rules) || !Array.isArray(draft.examples) || !Array.isArray(draft.open_questions)) throw new Error("rules, examples and open_questions must be arrays.");
-  draft.rules.forEach((rule, index) => {
-    requireString(rule.field, `rules[${index}].field`);
-    requireString(rule.operator, `rules[${index}].operator`);
-    requireString(rule.source_text, `rules[${index}].source_text`);
-    requireString(rule.plain_english, `rules[${index}].plain_english`);
-    if (!(typeof rule.value === "number" || typeof rule.value === "string" || (Array.isArray(rule.value) && rule.value.every((item) => typeof item === "string")))) throw new Error(`rules[${index}].value has an unsupported type.`);
-    if (rule.scope === "period" && (!Number.isInteger(rule.period_days) || rule.period_days < 1)) throw new Error(`rules[${index}].period_days must be a positive integer for a period rule.`);
-  });
+  validateRules(draft.rules, "rules");
+  if (!Array.isArray(draft.examples) || !Array.isArray(draft.open_questions)) throw new Error("examples and open_questions must be arrays.");
   draft.examples.forEach((example, index) => {
     requireString(example.description, `examples[${index}].description`);
     requireString(example.why, `examples[${index}].why`);
@@ -91,7 +97,9 @@ function validateDraft(draft) {
   draft.open_questions.forEach((question, index) => {
     requireString(question.question, `open_questions[${index}].question`);
     if (!Array.isArray(question.options) || !question.options.length || !question.options.every((option) => typeof option === "string" && option.length)) throw new Error(`open_questions[${index}].options must be a non-empty string list.`);
+    if (!Array.isArray(question.confirming_answers) || !question.confirming_answers.every((answer) => typeof answer === "string" && question.options.includes(answer))) throw new Error(`open_questions[${index}].confirming_answers must be a subset of options.`);
     if (question.answer !== null && typeof question.answer !== "string") throw new Error(`open_questions[${index}].answer must be a string or null.`);
+    if (question.answer !== null && !question.options.includes(question.answer)) throw new Error(`open_questions[${index}].answer must be one of the listed options.`);
   });
   return draft;
 }
@@ -198,10 +206,12 @@ function answerLabel(value) {
 function questionCards(questions = []) {
   return questions.map((question, index) => {
     const selected = answers[question.question] === undefined ? question.answer : answers[question.question];
+    const needsRevision = selected && !question.confirming_answers.includes(selected);
     return `<div class="question-item"><div class="question-text"><span class="question-number">${index + 1}</span><span>${esc(question.question)}</span></div>
       <div class="choice-row" role="group" aria-label="${esc(question.question)}">
         ${question.options.map((option) => `<button class="choice-button ${selected === option ? "is-selected" : ""}" type="button" data-action="answer" data-question="${esc(question.question)}" data-value="${esc(option)}" aria-pressed="${selected === option}">${esc(answerLabel(option))}</button>`).join("")}
       </div>
+      ${needsRevision ? `<p class="revision-note">This choice needs a revised policy before you can confirm.</p>` : ""}
     </div>`;
   }).join("");
 }
@@ -238,7 +248,8 @@ async function renderReview() {
       if (draft.open_questions.some((item) => item.question === question)) answers[question] = selectedAnswers[question];
     });
     const unanswered = draft.open_questions.filter((question) => !answers[question.question]).length;
-    document.querySelector("#review-count").textContent = unanswered ? String(unanswered) : "✓";
+    const needsRevision = draft.open_questions.filter((question) => answers[question.question] && !question.confirming_answers.includes(answers[question.question])).length;
+    document.querySelector("#review-count").textContent = unanswered ? String(unanswered) : needsRevision ? "!" : "✓";
     const request = draft.instruction;
     setScreen(`${heading("POLICY REQUEST", "Make sure it feels right.", "Review what your shopping agent plans to follow. Every limit below comes from your request.")}
       <div class="content-grid">
@@ -256,8 +267,8 @@ async function renderReview() {
             <div class="section-head"><div><h2 class="section-title">Try a few examples</h2><div class="section-subtitle">See what these rules would allow.</div></div><span class="small-meta">From your policy draft</span></div>
             <div class="example-grid">${exampleCards(draft.examples)}</div>
           </section>
-          ${draft.open_questions.length ? `<section class="card card-pad"><div class="section-head"><div><h2 class="section-title">A couple of choices need you</h2><div class="section-subtitle">Your answers become part of this policy.</div></div><span class="status-chip"><i class="chip-dot"></i>${unanswered ? `${unanswered} unanswered` : "Complete"}</span></div><div class="question-list">${questionCards(draft.open_questions)}</div></section>` : ""}
-          <div class="confirm-actions"><span class="actions-note"><i class="mini-lock" aria-hidden="true"></i>Confirmation applies to version ${esc(draft.version)} only.</span><div class="button-row"><button type="button" class="button button-secondary" data-action="reject-draft">Reject</button><button type="button" class="button button-primary" data-action="confirm-draft" ${unanswered ? "disabled" : ""}>Confirm policy <span class="button-arrow" aria-hidden="true">→</span></button></div></div>
+          ${draft.open_questions.length ? `<section class="card card-pad"><div class="section-head"><div><h2 class="section-title">A couple of choices need you</h2><div class="section-subtitle">Your answers become part of this policy.</div></div><span class="status-chip"><i class="chip-dot"></i>${unanswered ? `${unanswered} unanswered` : needsRevision ? "Needs revision" : "Complete"}</span></div><div class="question-list">${questionCards(draft.open_questions)}</div></section>` : ""}
+          <div class="confirm-actions"><span class="actions-note"><i class="mini-lock" aria-hidden="true"></i>${needsRevision ? "Ask your shopping agent for a revised policy before confirming." : `Confirmation applies to version ${esc(draft.version)} only.`}</span><div class="button-row"><button type="button" class="button button-secondary" data-action="reject-draft">Reject</button><button type="button" class="button button-primary" data-action="confirm-draft" ${unanswered || needsRevision ? "disabled" : ""}>Confirm policy <span class="button-arrow" aria-hidden="true">→</span></button></div></div>
         </div>
         <aside class="side-column">${summaryCard(draft.rules.length, unanswered)}</aside>
       </div>`);
@@ -354,7 +365,7 @@ function ruleViews(rules = []) {
 }
 
 function getPayloadParts(payload) {
-  if (!payload || !payload.mandate || !payload.draft || !payload.state) throw new Error("GET /mandates/{mandate_id} must return { mandate, draft, state }.");
+  if (!payload || !payload.mandate || !payload.draft || !payload.effective_policy || !payload.state) throw new Error("GET /mandates/{mandate_id} must return { mandate, draft, effective_policy, state }.");
   requireString(payload.mandate.mandate_id, "Mandate.mandate_id");
   requireString(payload.mandate.status, "Mandate.status");
   if (!["active", "revoked", "expired"].includes(payload.mandate.status)) throw new Error(`Mandate.status ${payload.mandate.status} is not supported.`);
@@ -362,6 +373,8 @@ function getPayloadParts(payload) {
   if (!Number.isFinite(new Date(payload.mandate.confirmed_at).getTime())) throw new Error("Mandate.confirmed_at is not a valid timestamp.");
   if (!Number.isInteger(payload.mandate.version)) throw new Error("Mandate.version must be an integer.");
   validateDraft(payload.draft);
+  validateRules(payload.effective_policy.rules, "effective_policy.rules");
+  if (!["ask", "decline", "approve"].includes(payload.effective_policy.uncertainty_policy)) throw new Error("effective_policy.uncertainty_policy is unsupported.");
   if (payload.state.mandate_id !== payload.mandate.mandate_id) throw new Error("MandateState.mandate_id does not match Mandate.mandate_id.");
   if (!Array.isArray(payload.state.approvals)) throw new Error("MandateState.approvals must be a list.");
   payload.state.approvals.forEach((approval, index) => {
@@ -370,7 +383,7 @@ function getPayloadParts(payload) {
     if (!Number.isFinite(new Date(approval.timestamp).getTime())) throw new Error(`state.approvals[${index}].timestamp is invalid.`);
     if (typeof approval.amount_chf !== "number" || !Number.isFinite(approval.amount_chf)) throw new Error(`state.approvals[${index}].amount_chf is invalid.`);
   });
-  return { mandate: payload.mandate, draft: payload.draft, state: payload.state };
+  return { mandate: payload.mandate, draft: payload.draft, effective_policy: payload.effective_policy, state: payload.state };
 }
 
 function periodSpendRules(rules = []) {
@@ -403,16 +416,16 @@ async function renderPolicy() {
   }
   setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.")}<div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Loading your mandate…</span></div>`);
   try {
-    const { mandate, draft, state } = getPayloadParts(await api(`/mandates/${encodeURIComponent(id)}`));
+    const { mandate, draft, effective_policy, state } = getPayloadParts(await api(`/mandates/${encodeURIComponent(id)}`));
     if (serial !== screenSerial || currentRoute !== "policy") return;
-    currentPolicy = { mandate, draft, state };
+    currentPolicy = { mandate, draft, effective_policy, state };
     const approvals = state.approvals;
     const isActive = mandate.status === "active";
     setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.", `<span class="outcome-pill ${isActive ? "approve" : "decline"}"><i class="outcome-dot"></i>${esc(pretty(mandate.status))}</span>`)}
       <div class="content-grid"><div class="main-column">
-        <section class="card card-pad"><div class="section-head"><div><h2 class="section-title">Spend and purchase activity</h2><div class="section-subtitle">Counts include accepted approvals only.</div></div></div>${spendMetrics(approvals, draft.rules)}</section>
-        <section class="card card-pad"><div class="section-head"><div><h2 class="section-title">Your rules</h2><div class="section-subtitle">The agent follows every one of these limits while the mandate is active.</div></div></div><div class="rule-view">${ruleViews(draft.rules)}</div><div class="policy-actions"><button class="button button-secondary button-small" type="button" data-action="open-tighten" ${isActive ? "" : "disabled"}>Tighten a rule</button><button class="button button-danger button-small" type="button" data-action="revoke-mandate" ${isActive ? "" : "disabled"}>Revoke mandate</button></div></section>
-      </div><aside class="side-column"><section class="card side-summary"><div class="summary-top"><span class="eyebrow"><i class="eyebrow-mark"></i>MANDATE</span><h3>${esc(mandate.status === "active" ? "Active and protected" : pretty(mandate.status))}</h3><p>Confirmed ${esc(new Date(mandate.confirmed_at).toLocaleDateString())} · version ${esc(mandate.version)}</p></div><div class="summary-body"><div class="summary-row"><span>Mandate ID</span><strong>${esc(mandate.mandate_id)}</strong></div><div class="summary-row"><span>Policy version</span><strong>${esc(mandate.version)}</strong></div><div class="summary-row"><span>Uncertainty</span><strong>${esc(pretty(draft.uncertainty_policy))}</strong></div></div></section><section class="learn-card"><span class="learn-icon" aria-hidden="true">↗</span><strong>Keep your policy current</strong><p>You can always add a stricter limit or stop the mandate. The shopping agent cannot loosen these rules.</p></section></aside></div>`);
+        <section class="card card-pad"><div class="section-head"><div><h2 class="section-title">Spend and purchase activity</h2><div class="section-subtitle">Counts include accepted approvals only.</div></div></div>${spendMetrics(approvals, effective_policy.rules)}</section>
+        <section class="card card-pad"><div class="section-head"><div><h2 class="section-title">Your rules</h2><div class="section-subtitle">The agent follows every one of these limits while the mandate is active.</div></div></div><div class="rule-view">${ruleViews(effective_policy.rules)}</div><div class="policy-actions"><button class="button button-secondary button-small" type="button" data-action="open-tighten" ${isActive ? "" : "disabled"}>Tighten a rule</button><button class="button button-danger button-small" type="button" data-action="revoke-mandate" ${isActive ? "" : "disabled"}>Revoke mandate</button></div></section>
+      </div><aside class="side-column"><section class="card side-summary"><div class="summary-top"><span class="eyebrow"><i class="eyebrow-mark"></i>MANDATE</span><h3>${esc(mandate.status === "active" ? "Active and protected" : pretty(mandate.status))}</h3><p>Confirmed ${esc(new Date(mandate.confirmed_at).toLocaleDateString())} · version ${esc(mandate.version)}</p></div><div class="summary-body"><div class="summary-row"><span>Mandate ID</span><strong>${esc(mandate.mandate_id)}</strong></div><div class="summary-row"><span>Policy version</span><strong>${esc(mandate.version)}</strong></div><div class="summary-row"><span>Uncertainty</span><strong>${esc(pretty(effective_policy.uncertainty_policy))}</strong></div></div></section><section class="learn-card"><span class="learn-icon" aria-hidden="true">↗</span><strong>Keep your policy current</strong><p>You can always add a stricter limit or stop the mandate. The shopping agent cannot loosen these rules.</p></section></aside></div>`);
   } catch (error) {
     if (serial === screenSerial && currentRoute === "policy") setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.")}${dataError("Your mandate could not be loaded.", error)}`);
     else showToast(`A previous mandate load failed: ${error.message}`, "error");
@@ -544,6 +557,8 @@ async function confirmDraft() {
   if (!activeDraft) throw new Error("There is no loaded draft to confirm.");
   const missing = activeDraft.open_questions.filter((question) => !(answers[question.question] ?? question.answer));
   if (missing.length) throw new Error("Answer every open question before confirming this draft.");
+  const needsRevision = activeDraft.open_questions.some((question) => !question.confirming_answers.includes(answers[question.question] ?? question.answer));
+  if (needsRevision) throw new Error("A selected answer needs a revised policy. Ask your shopping agent to update the draft before confirming.");
   const body = {
     version: activeDraft.version,
     hash: activeDraft.hash,
@@ -597,13 +612,13 @@ async function submitTighten() {
   const capText = drawerRoot.querySelector("#tighten-cap").value.trim();
   if (switchEl.getAttribute("aria-checked") === "true" && capText) throw new Error("Choose either the purchase cap or the stricter uncertainty setting. Save one change at a time.");
   if (switchEl.getAttribute("aria-checked") === "true") {
-    if (currentPolicy.draft.uncertainty_policy === "decline") throw new Error("This mandate already declines uncertain purchases.");
+    if (currentPolicy.effective_policy.uncertainty_policy === "decline") throw new Error("This mandate already declines uncertain purchases.");
     await api(`/mandates/${encodeURIComponent(currentPolicy.mandate.mandate_id)}/tighten`, { method: "POST", body: JSON.stringify({ uncertainty_policy: "decline" }) });
   } else {
     const input = drawerRoot.querySelector("#tighten-cap");
     const cap = Number(input.value);
     if (!Number.isFinite(cap) || cap <= 0) throw new Error("Enter a positive CHF purchase limit or turn on the stricter uncertainty setting.");
-    const existingCaps = currentPolicy.draft.rules.filter((rule) => rule.field === "authorization.billing_amount_chf" && rule.scope === "purchase" && rule.operator === "<=").map((rule) => Number(rule.value));
+    const existingCaps = currentPolicy.effective_policy.rules.filter((rule) => rule.field === "authorization.billing_amount_chf" && rule.scope === "purchase" && rule.operator === "<=").map((rule) => Number(rule.value));
     if (existingCaps.some((value) => !Number.isFinite(value))) throw new Error("The current purchase limit is invalid.");
     if (existingCaps.length && cap >= Math.min(...existingCaps)) throw new Error(`Enter a limit below the current CHF ${Math.min(...existingCaps)} cap.`);
     const rule = {
@@ -650,10 +665,20 @@ document.addEventListener("click", async (event) => {
     } else if (action === "reject-draft") {
       await rejectDraft();
     } else if (action === "confirm-reject") {
-      await api(`/drafts/${encodeURIComponent(activeDraft.draft_id)}/reject`, { method: "POST", body: JSON.stringify({ reason: "Rejected in the customer app." }) });
-      drawerRoot.replaceChildren();
-      showToast("The policy request was rejected.", "success");
-      await renderReview();
+      if (!activeDraft) throw new Error("There is no loaded draft to reject.");
+      try {
+        await api(`/drafts/${encodeURIComponent(activeDraft.draft_id)}/reject`, { method: "POST", body: JSON.stringify({ version: activeDraft.version, hash: activeDraft.hash, reason: "Rejected in the customer app." }) });
+        drawerRoot.replaceChildren();
+        showToast("The policy request was rejected.", "success");
+        await renderReview();
+      } catch (error) {
+        if (error.status !== 409) throw error;
+        drawerRoot.replaceChildren();
+        activeDraft = null;
+        answers = {};
+        showToast("The draft changed. Reloading the latest version for you.", "error");
+        await renderReview();
+      }
     } else if (action === "answer-step-up") {
       button.disabled = true;
       submittingStepUps.add(button.dataset.id);

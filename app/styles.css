@@ -143,6 +143,7 @@ mark { padding: 1px 3px; border-radius: 3px; background: #fff0db; color: #80552b
 .choice-button { min-height: 30px; padding: 0 11px; border: 1px solid #e7e9e3; border-radius: 8px; background: #fffefa; color: #69766d; font-size: 9px; font-weight: 620; cursor: pointer; transition: all .15s; }
 .choice-button:hover { border-color: #d5b5a7; color: #503f38; }
 .choice-button.is-selected { border-color: var(--red); background: var(--red-soft); color: var(--red-dark); box-shadow: inset 0 0 0 1px rgba(217,56,49,.08); }
+.revision-note { margin: 10px 0 0; color: #9b6226; font-size: 10px; line-height: 1.5; }
 .confirm-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 0 1px; }
 .actions-note { display: flex; align-items: center; gap: 7px; color: #89938b; font-size: 9px; line-height: 1.45; }
 .mini-lock { width: 10px; height: 8px; border: 1px solid #98a198; border-radius: 2px; }
@@ -304,6 +305,7 @@ mark { padding: 1px 3px; border-radius: 3px; background: #fff0db; color: #80552b
   .example-card { padding: 10px; }
   .example-card strong, .example-card p { font-size: 12px; }
   .question-text, .choice-button { font-size: 12px; }
+  .revision-note { font-size: 12px; }
   .choice-button { min-height: 38px; }
   .side-column { grid-template-columns: 1fr; }
   .summary-top { padding: 17px; }
