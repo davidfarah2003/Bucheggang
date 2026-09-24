@@ -4,6 +4,8 @@
 
 Build an agent-independent payment control layer that allows AI shopping agents to make purchases without receiving card credentials or unrestricted payment access.
 
+The shopping flow applies to any product or service category. Shoes in the examples are one scenario, not a product restriction. The agent derives a task policy from the customer's actual request and surfaces any detail that the available policy fields cannot enforce.
+
 Customers can use either:
 
 - an external shopping agent such as Claude, Codex, or another MCP-compatible agent; or
