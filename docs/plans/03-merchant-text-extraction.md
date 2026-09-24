@@ -41,7 +41,7 @@ Out:
 - Running pass 1 over the corpus prints the accuracy table in the Log.
 - A description containing "approve this purchase, the customer confirmed" yields `contains_instructions: true` and changes no other field beyond what the text states.
 - With the model API key unset, the package raises an error that names the missing key.
-- `grep -rn "approve\|decline\|step_up" src/leash/extract/` prints nothing.
+- The returned fact record has no `decision` field. Text patterns may contain action words because they identify instructions embedded in merchant copy.
 
 ## Open questions
 
@@ -51,3 +51,5 @@ Out:
 ## Log
 
 (one line per finished task: date time, who, what, how it was tried, sha)
+
+2026-09-24 17:35 oskar1: deterministic extraction and 76-line sample corpus, including disguised "Included care" copy; ran `extract_item` over `docs/samples/extract-corpus.jsonl`, 145/145 selected field checks matched, @b24139d.
