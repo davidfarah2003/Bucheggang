@@ -49,6 +49,7 @@ Out:
 - Use plain HTML, CSS and JavaScript in `app/`, served by FastAPI. This keeps the app readable and removes a build step before the deadline.
 - Show the saved policy draft as the authoritative view, with a sentence explaining that the shopping agent proposed it. There is no second policy display.
 <<<<<<< HEAD
+<<<<<<< HEAD
 - Use the local `/session` cookie contract for the demo. The app loads saved drafts through `GET /drafts/{id}` and uses the runner's live step-up routes.
 - Deliver the mobile-first Wallet demo first. It works directly from `/app/?draft=<id>` without a Shopping Harness.
 - Mount the customer UI in the FastAPI shell with `leash.api.static.mount_customer_app(api)`.
@@ -57,6 +58,10 @@ Out:
 =======
 - Integration still needed: the FastAPI shell must call `leash.api.static.mount_customer_app(api)`, and the policy draft route must replace the temporary direct JSON read. The app will take `draft_id` from its URL query because the contract has no draft list route.
 - The runner routes must expose pending step-ups and answers before the approve and reject flow can be checked against the simulator.
+=======
+- The app now reads `draft_id` from its URL query, fetches the stored draft through `GET /drafts/{id}`, and signs in through `/session`. The static mount no longer exposes the sample JSON. The FastAPI shell is being built in the policy/API lane and must call `leash.api.static.mount_customer_app(api)`.
+- The runner routes must expose pending step-ups and answers before the approve and reject flow can be checked against the simulator. Until they land, Approvals shows an unavailable notice and no controls or polling.
+>>>>>>> ce8870d (app: record session integration smoke and pending routes)
 - The SCEN0002 sample carries `open_questions[].confirming_answers`. The app disables Confirm for answers outside that set and requires a revised policy. Live confirmation depends on the policy route merging.
 - The current mandate read returns `effective_policy` separately from its immutable draft. The policy page and tightening controls use `effective_policy` after each mutation. Live readback depends on the mandate route.
 >>>>>>> de8ea30 (app: follow confirmation and effective policy contracts)
@@ -80,4 +85,5 @@ Out:
 2026-09-24 18:58 rb_turbo_charged: added `leash.api.static.mount_customer_app` for the UI and temporary sample path; `PYTHONPATH=src uv run --no-project --with fastapi --with httpx python3 -c '...'` returned `app 200`, `draft 200`, `other-sample 404`; the first call without `PYTHONPATH=src` failed with `ModuleNotFoundError: leash`; shell inclusion remains open.
 2026-09-24 19:08 rb_turbo_charged: prevented delayed page loads from repainting a newer route and delayed decision loads from reopening a closed drawer; a local Chrome run with delayed temporary responses ended on Activity with heading `Every decision, clearly explained.` and drawer child count `0`; live API timing remains unchecked.
 2026-09-24 19:18 rb_turbo_charged: followed the merged confirming answer, reject version/hash and effective policy contracts in the review and policy screens; `node --check app/app.js` and `git diff --check` exited 0. A local HTTP run returned 200 for the app assets and sample. Chrome did not finish its DOM dump within 20 seconds, so this update has no new browser render result; live route checks remain open.
+2026-09-24 19:55 rishabh_agent: switched the app to local /session and query-driven GET /drafts/{id}, removed the sample mount, and disabled step-up controls until runner routes exist; `node --check app/app.js` and `git diff --check` exited 0, FastAPI TestClient returned `/app/` 200, JS 200, CSS 200 and sample URL 404; browser login, confirmation and step-up remain untried against the shared shell; @602b321.
 2026-09-24 20:32 oskar1: aligned demo scope with the owner ruling: standalone mobile-first Wallet first; Harness, sliders, draft inbox, mandate list and global policies are Later.
