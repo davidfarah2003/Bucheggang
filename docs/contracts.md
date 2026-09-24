@@ -173,6 +173,20 @@ leash.engine.state.record(mandate_id, authorization_id, accepted: Decision) -> N
 
 `facts=None` means the extract lane did not answer in time; every `facts.*` field is then unknown.
 
+## Runner mandate client
+
+Owned by the runner lane. Called by the policy lane's confirm route and the app's tighten and revoke routes. Every method calls the simulator once and raises `leash.runner.api.ApiError(status, body)` on any non-2xx; there is no retry inside these methods and no fallback.
+
+```
+leash.runner.mandates.create(draft: PolicyDraft) -> str                       # POST /v1/mandates, returns the simulator draft_id
+leash.runner.mandates.confirm(simulator_draft_id: str) -> str                 # POST /v1/mandates/{draft_id}/confirm with {"confirmed": true}, returns mandate_id
+leash.runner.mandates.get(mandate_id: str) -> dict                            # GET /v1/mandates/{mandate_id}, the raw stored mandate
+leash.runner.mandates.tighten(mandate_id: str, patch: dict) -> dict           # PATCH /v1/mandates/{mandate_id}
+leash.runner.mandates.revoke(mandate_id: str) -> None                         # DELETE /v1/mandates/{mandate_id}
+```
+
+`create` builds the simulator payload from the draft as described under PolicyDraft above (no `source_text`, no `plain_english`). The policy lane's confirm route calls `create` then `confirm`, and stores the returned `mandate_id` on our `Mandate`. Our `draft_id` and the simulator's `draft_id` are different values; the store keeps both.
+
 ## Backend HTTP for the app
 
 Served by `leash.api`. Paths and shapes are what the app lane codes against.
