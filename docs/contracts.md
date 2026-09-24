@@ -196,10 +196,10 @@ Served by `leash.api`. Paths and shapes are what the app lane codes against.
 | `GET /drafts/{draft_id}` | `PolicyDraft` |
 | `POST /drafts/{draft_id}/confirm` | `{ version, hash, answers: { question: answer } }` → `Mandate`, or 409 on hash or version mismatch |
 | `POST /drafts/{draft_id}/reject` | `{ reason }` → 204 |
-| `GET /mandates/{mandate_id}` | `Mandate` + `PolicyDraft` |
-| `POST /mandates/{mandate_id}/tighten` | `{ rules: [Rule] }` or `{ uncertainty_policy }` → `Mandate` (PATCH on the simulator) |
+| `GET /mandates/{mandate_id}` | `{ mandate: Mandate, draft: PolicyDraft, state: MandateState }` |
+| `POST /mandates/{mandate_id}/tighten` | `{ rules: [Rule] }` appends to the rule list, or `{ uncertainty_policy: "decline" }`; existing rules are never removed or replaced (the simulator's PATCH rules) → `Mandate` |
 | `POST /mandates/{mandate_id}/revoke` | → `Mandate` (DELETE on the simulator) |
-| `GET /mandates/{mandate_id}/decisions` | `[Decision]` with the state after each |
+| `GET /mandates/{mandate_id}/decisions` | `[{ decision: Decision, state_after: MandateState }]`, oldest first |
 | `GET /step-ups/pending` | `[StepUp]` |
 | `POST /step-ups/{authorization_id}/answer` | `StepUpAnswer` → accepted result |
 | `GET /decisions/{authorization_id}` | `Decision` + `Event` + state before and after |
