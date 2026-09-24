@@ -88,7 +88,11 @@
         "ask",
         "decline"
       ],
-      "answer": null
+      "answer": null,
+      "confirming_answers": [
+        "ask",
+        "decline"
+      ]
     },
     {
       "question": "Should a retailer classified as sporting goods count as a specialist sports retailer?",
@@ -97,7 +101,10 @@
         "ask me",
         "decline"
       ],
-      "answer": null
+      "answer": null,
+      "confirming_answers": [
+        "yes"
+      ]
     }
   ],
   "uncertainty_policy": "ask",

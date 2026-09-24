@@ -22,7 +22,10 @@ hash                str, sha256 of the canonical JSON of instruction + rules + u
 instruction         str, the cardholder sentence, verbatim
 rules[]             Rule
 examples[]          { description: str, expected: approve|decline|step_up, why: str }
-open_questions[]    { question: str, options: [str], answer: str|null }
+open_questions[]    { question: str, options: [str], confirming_answers: [str], answer: str|null }
+                    confirming_answers is the subset of options that confirms the rule as displayed; any other
+                    answer leaves the draft unconfirmable and needs a revised draft. Stays in our store, never sent
+                    to the simulator.
 uncertainty_policy  ask | decline | approve
 created_at          datetime
 ```
@@ -195,8 +198,8 @@ Served by `leash.api`. Paths and shapes are what the app lane codes against.
 | --- | --- |
 | `GET /drafts/{draft_id}` | `PolicyDraft` |
 | `POST /drafts/{draft_id}/confirm` | `{ version, hash, answers: { question: answer } }` → `Mandate`, or 409 on hash or version mismatch |
-| `POST /drafts/{draft_id}/reject` | `{ reason }` → 204 |
-| `GET /mandates/{mandate_id}` | `{ mandate: Mandate, draft: PolicyDraft, state: MandateState }` |
+| `POST /drafts/{draft_id}/reject` | `{ version, hash, reason }` → 204, or 409 on hash or version mismatch |
+| `GET /mandates/{mandate_id}` | `{ mandate: Mandate, draft: PolicyDraft, effective_policy: { rules: [Rule], uncertainty_policy }, state: MandateState }`. `draft` is the confirmed draft and never changes; `effective_policy` is what the simulator holds now, read back after a tighten |
 | `POST /mandates/{mandate_id}/tighten` | `{ rules: [Rule] }` appends to the rule list, or `{ uncertainty_policy: "decline" }`; existing rules are never removed or replaced (the simulator's PATCH rules) → `Mandate` |
 | `POST /mandates/{mandate_id}/revoke` | → `Mandate` (DELETE on the simulator) |
 | `GET /mandates/{mandate_id}/decisions` | `[{ decision: Decision, state_after: MandateState }]`, oldest first |
