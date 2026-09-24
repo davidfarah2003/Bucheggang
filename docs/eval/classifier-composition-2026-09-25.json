@@ -222,5 +222,95 @@
     "all_four_match": true,
     "provider_requests_repeated": false,
     "code_hashes_describe_recomposition": true
+  },
+  "history_pack_recomposition": {
+    "base": "0b7c2c1",
+    "provider_requests_repeated": false,
+    "outcomes": [
+      {
+        "authorization_id": "AU0001",
+        "baseline": "approve",
+        "baseline_reasons": [
+          "within_policy"
+        ],
+        "with_assessments": "approve",
+        "reason_codes": [
+          "within_policy"
+        ],
+        "model_checks": [
+          [
+            "model.jev.activity_pattern",
+            "pass"
+          ],
+          [
+            "model.jev.spend_pattern",
+            "pass"
+          ]
+        ]
+      },
+      {
+        "authorization_id": "AU0037",
+        "baseline": "decline",
+        "baseline_reasons": [
+          "amount_over_limit"
+        ],
+        "with_assessments": "decline",
+        "reason_codes": [
+          "amount_over_limit"
+        ],
+        "model_checks": [
+          [
+            "model.jev.activity_pattern",
+            "pass"
+          ],
+          [
+            "model.jev.spend_pattern",
+            "pass"
+          ]
+        ]
+      },
+      {
+        "authorization_id": "AU10319-414975d9",
+        "baseline": "decline",
+        "baseline_reasons": [
+          "merchant_type_mismatch"
+        ],
+        "with_assessments": "decline",
+        "reason_codes": [
+          "merchant_type_mismatch"
+        ],
+        "model_checks": [
+          [
+            "model.jev.activity_pattern",
+            "uncertain"
+          ],
+          [
+            "model.jev.spend_pattern",
+            "uncertain"
+          ]
+        ]
+      },
+      {
+        "authorization_id": "AU10234-fb2858da",
+        "baseline": "step_up",
+        "baseline_reasons": [
+          "unrequested_item"
+        ],
+        "with_assessments": "step_up",
+        "reason_codes": [
+          "unrequested_item"
+        ],
+        "model_checks": [
+          [
+            "model.jev.activity_pattern",
+            "pass"
+          ],
+          [
+            "model.jev.spend_pattern",
+            "pass"
+          ]
+        ]
+      }
+    ]
   }
 }

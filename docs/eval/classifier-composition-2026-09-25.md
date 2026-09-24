@@ -51,7 +51,9 @@ The real adapter also rejected an expired absolute budget with `Jev has no time 
 
 An independent check at frozen classifier revision `96cce47` derived features for all 49 unique locally handled events in the four completed live runs. No identity or account-limit lookup failed. All 49 had prior approved card purchases; merchant familiarity was supported on 38, device familiarity on 43 and country familiarity on 47.
 
-At measurement base `9bb1ebc`, the legacy deterministic engine still read its base-pack history. Passing the richer profile as a model assessment does not replace that reference source or clear `no_card_history`. Engine PR #45 separately addresses deterministic use of the additional history pack; its changed live familiarity outcomes require a fresh integration comparison.
+At measurement base `9bb1ebc`, the legacy deterministic engine still read its base-pack history. Passing the richer profile as a model assessment does not replace that reference source or clear `no_card_history`. Engine PR #45 separately addresses deterministic use of the additional history pack.
+
+After rebasing onto its merge at `0b7c2c1`, all four captured real responses were composed again without new provider requests. Their outcomes stayed approve, decline, decline and step_up. AU10234's reasons changed from `no_card_history, unrequested_item` to `unrequested_item`, both with and without assessments. The extra history source removed the first uncertainty; the model pass still did not clear the remaining one. The JSON evidence includes this second comparison.
 
 ## Release limits
 
