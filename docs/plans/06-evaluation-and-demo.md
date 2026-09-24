@@ -52,9 +52,9 @@ Assets: `docs/screens/` screenshots, the agent-side terminal transcript from pla
 - The report's numbers match the replay CSV it links.
 - Nobody in the room can find a scenario ID in `src/`.
 
-## Open questions
+## Decisions
 
-- The 1-minute expert pitch may be too short for a live run. If so, it shows screenshots of a real run and says so; it is never presented as live.
+- Keep the expert pitch within its 1-minute slot and show a concise live flow. Screenshots from a real run may support the pitch deck, but do not replace the live demo.
 
 ## Log
 

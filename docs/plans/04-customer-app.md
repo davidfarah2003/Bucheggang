@@ -46,10 +46,11 @@ Out:
 - Every screen renders at 400 px with no horizontal scroll.
 - The judge panel for AU0016 shows `return_days: unknown` with source `merchant_text` and the resulting `step_up`.
 
-## Open questions
+## Decisions
 
-- Frontend choice: plain HTML, CSS and JavaScript, served by FastAPI. This keeps the app readable and removes a build step before the deadline.
+- Use plain HTML, CSS and JavaScript in `app/`, served by FastAPI. This keeps the app readable and removes a build step before the deadline.
 - Show the saved policy draft as the authoritative view, with a sentence explaining that the shopping agent proposed it. There is no second policy display.
+- Use the local `/session` cookie contract for the demo. The app loads saved drafts through `GET /drafts/{id}`. Keep step-up controls disabled with an explanation until the runner routes are available.
 
 ## Log
 

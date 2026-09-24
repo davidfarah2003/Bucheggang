@@ -58,10 +58,10 @@ Out:
 - Changing a rule after the app has loaded the draft makes confirmation fail with a 409.
 - `grep -r "confirm\|resolve\|revoke" src/leash/policy/mcp*` shows no agent-callable tool with those names.
 
-## Open questions
+## Decisions
 
-- Who answers open questions in the demo: the customer on the confirmation screen (proposed), or a default we pick and show?
-- Do we keep the simulator's `guidance` and `open_questions` fields empty, given live events omit them? Proposed: yes; our store keeps the real answers.
+- The customer answers open questions on the confirmation screen. The app never chooses a default on the customer's behalf.
+- Keep the simulator's `guidance` and `open_questions` fields empty because live events omit them. Store the customer's answers in the confirmed policy and audit record.
 
 ## Log
 

@@ -46,10 +46,10 @@ Out:
 - `grep -rn "TEAM_API_KEY\|Bearer" src/` matches only `leash/runner/settings.py` and the client.
 - A worker killed mid-run and restarted counts spend once.
 
-## Open questions
+## Decisions
 
-- Revocation while a purchase is queued or in step-up: the spec says the platform's behaviour is unspecified. Proposed: after DELETE, the worker declines anything still queued for that mandate with `mandate_revoked`, and resolves pending step-ups with `decline`. Check against the live API on Friday morning and record here.
-- `POST /v1/team/reset` before each demo run? Proposed: yes, then create a fresh mandate; old IDs are never reused.
+- After mandate DELETE, decline any purchase still queued for that mandate with `mandate_revoked` and resolve pending step-ups with `decline`. Verify this behavior against the live API on Friday morning before the demo.
+- Call `POST /v1/team/reset` before each demo run, then create a fresh mandate. Never reuse mandate IDs.
 
 ## Log
 

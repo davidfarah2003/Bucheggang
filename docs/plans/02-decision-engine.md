@@ -47,11 +47,11 @@ Out:
 - Rolling spend: two approvals then a third over a 7-day limit is declined; a declined purchase in between does not count (try it once in the replay).
 - `grep -rn "SCEN00\|AU00\|replay_order" src/leash/engine/` prints nothing.
 
-## Open questions
+## Decisions
 
-- "A shop I use regularly" (SCEN0000, SCEN0001 wording): is an unseen merchant a `fail` or `uncertain`? Proposed: `fail` when the instruction names prior use explicitly, `uncertain` otherwise. Decide with the policy lane; record the answer here.
-- AU0016 (CHF 175, return terms not stated): `uncertain`, so `ask`, unless the confirmed draft answered the open question in plan 01. Confirm.
-- Split orders in SCEN0001 (two purchases minutes apart at one merchant): treat as one order for the per-order limit, or two? The data does not say. Proposed: two purchases, each against the per-order limit, both against the period limit; note it on the judge panel.
+- For "a shop I use regularly", an unseen merchant fails when the confirmed instruction explicitly requires prior use. If it does not, merchant familiarity is uncertain.
+- AU0016 has unknown return terms, so it is uncertain and follows the confirmed draft's uncertainty policy. If the customer answered the return-terms question during confirmation, evaluate against the rule created from that answer.
+- Treat the two SCEN0001 purchases minutes apart as separate orders for the per-order limit. Count both against the period limit and explain this interpretation on the judge panel.
 
 ## Log
 
