@@ -24,10 +24,12 @@ const state = {
   details: new Map(),
   detail: null,
   prompt: "",
+  filters: { category: "monitor", budget: 400, brand: "Any", color: "Any", size: "", usbC: true },
   serial: 0,
   timer: null,
   exampleTimer: null,
   overlayTrigger: null,
+  pendingTabFocus: null,
 };
 
 function text(value, label) {
@@ -215,6 +217,26 @@ function startExamples() {
   tick();
 }
 
+function filterRequest() {
+  const { category, budget, brand, color, size, usbC } = state.filters;
+  if (!Number.isInteger(budget) || budget < 100 || budget > 1000) throw new Error("Choose a budget from CHF 100 to CHF 1,000.");
+  const base = category === "monitor" ? `Find me a 27-inch monitor below CHF ${budget}` : `Find me running shoes below CHF ${budget}`;
+  const details = category === "monitor"
+    ? [usbC ? "with USB-C" : null, brand !== "Any" ? `from ${brand}` : null]
+    : [brand !== "Any" ? `from ${brand}` : null, color !== "Any" ? `in ${color.toLowerCase()}` : null, size ? `in EU size ${size}` : null];
+  return `${base}${details.filter(Boolean).length ? `, ${details.filter(Boolean).join(", ")}` : ""}.`;
+}
+
+function openFilters() {
+  const f = state.filters;
+  openOverlay(`<div class="filter-sheet"><span class="section-kicker">SHOPPING REQUEST</span><h2>Refine your search</h2><p class="calm-copy">These controls create a request for your shopping agent. The Wallet will separately show any enforceable spending rules before you authorize them.</p>
+    <div class="filter-category" role="group" aria-label="Product example"><button type="button" data-action="filter-category" data-category="monitor" class="${f.category === "monitor" ? "selected" : ""}" aria-pressed="${f.category === "monitor"}">Monitor</button><button type="button" data-action="filter-category" data-category="shoes" class="${f.category === "shoes" ? "selected" : ""}" aria-pressed="${f.category === "shoes"}">Running shoes</button></div>
+    <label class="filter-field" for="filter-budget"><span>Spend below</span><strong id="budget-value">CHF ${f.budget}</strong></label><input type="range" class="budget-slider" id="filter-budget" min="100" max="1000" step="10" value="${f.budget}" /><div class="budget-ends"><span>CHF 100</span><span>CHF 1,000</span></div>
+    <label class="filter-field" for="filter-brand">Brand <select id="filter-brand"><option>Any</option>${(f.category === "monitor" ? ["Dell", "LG", "BenQ"] : ["On", "Nike", "Adidas"]).map((brand) => `<option ${f.brand === brand ? "selected" : ""}>${brand}</option>`).join("")}</select></label>
+    ${f.category === "monitor" ? `<div class="filter-field"><span>Screen size</span><strong>27 inch</strong></div><label class="filter-field" for="filter-usbc"><span>USB-C connection</span><input type="checkbox" id="filter-usbc" ${f.usbC ? "checked" : ""} /></label>` : `<label class="filter-field" for="filter-color">Colour <select id="filter-color">${["Any", "Black", "White", "Blue", "Green"].map((color) => `<option ${f.color === color ? "selected" : ""}>${color}</option>`).join("")}</select></label><label class="filter-field" for="filter-size">EU size <select id="filter-size"><option value="">Choose size</option>${[41, 42, 43, 44].map((size) => `<option ${f.size === String(size) ? "selected" : ""}>${size}</option>`).join("")}</select></label>`}
+    <div class="filter-preview"><span class="section-kicker">REQUEST TO COPY</span><p id="filter-preview-text">${esc(filterRequest())}</p></div><p class="calm-copy">Using this request replaces the current composer text. You can edit it before copying.</p><button type="button" class="primary-button filter-apply" data-action="apply-filters">Use this request</button></div>`, "Refine your search");
+}
+
 function purchaseCap(rules) {
   const caps = rules.filter((rule) => rule.field === "authorization.billing_amount_chf" && rule.scope === "purchase" && ["<", "<="].includes(rule.operator) && typeof rule.value === "number");
   if (!caps.length) return null;
@@ -235,6 +257,7 @@ async function renderShop(serial) {
   const cap = plan && purchaseCap(plan.rules);
   setScreen(`<section class="shop-view"><div class="shop-intro"><h1>What can I<br />get for you?</h1><div class="orbit" aria-hidden="true"><span class="orbit-ring one"></span><span class="orbit-ring two"></span><span class="orbit-core">✓</span><span class="orbit-dot"></span></div></div>
     <div class="composer"><label for="shop-prompt" class="sr-only">Your shopping request</label><textarea id="shop-prompt" rows="2" placeholder="Ask Viseca to buy something…">${esc(state.prompt)}</textarea><div class="prompt-example"><span>FOR EXAMPLE</span><button type="button" data-action="use-example" id="animated-example">${esc(examples[0])}</button></div><button class="send-button" type="button" data-action="copy-prompt" aria-label="Copy request for your shopping agent" ${state.prompt.trim() ? "" : "disabled"}>↑</button></div>
+    <button type="button" class="filter-trigger" data-action="open-filters">Refine request with product filters <span aria-hidden="true">⌄</span></button>
     <p class="agent-state">Shopping agent <span>· connect an external agent</span></p><p class="external-agent">No shopping model is connected inside this demo. Copy your request to an MCP-compatible agent. The agent can send you a Wallet review link.</p>
     ${plan ? `<section class="shop-plan"><span class="section-kicker">PLAN SAVED BY YOUR AGENT</span><h2>${esc(productName(plan))}</h2><p>${cap ? `${cap.strict ? "Below" : "Up to"} ${esc(money(cap.amount))}` : "Review the saved limits"}</p><button type="button" class="text-button" data-route="review">Review in Wallet <span aria-hidden="true">→</span></button></section>` : ""}
   </section>`);
@@ -255,6 +278,10 @@ async function renderWallet(serial) {
   else markup = await rulesContent(serial);
   if (serial !== state.serial) return;
   setScreen(`<section class="wallet-view"><div class="page-title"><h1>Wallet</h1></div>${walletTabs()}${markup}</section>`);
+  if (state.pendingTabFocus === "wallet") {
+    screen.querySelector('.wallet-tabs [aria-selected="true"]').focus();
+    state.pendingTabFocus = null;
+  }
   if (state.walletTab === "needs" && mandateId()) state.timer = window.setInterval(() => { void refreshPending(); }, 2000);
 }
 
@@ -270,7 +297,7 @@ async function needsContent(serial) {
   state.pending = pending;
   state.draft = draft;
   document.querySelector("#wallet-indicator").hidden = !(draft || pending.length);
-  return `<div class="wallet-section"><h2 id="needs-heading">${draft || pending.length ? `${(draft ? 1 : 0) + pending.length} thing${(draft ? 1 : 0) + pending.length === 1 ? "" : "s"} need you` : "You're all caught up"}</h2>
+  return `<div class="wallet-section"><h2 id="needs-heading">${draft || pending.length ? `${(draft ? 1 : 0) + pending.length} thing${(draft ? 1 : 0) + pending.length === 1 ? " needs" : "s need"} you` : "You're all caught up"}</h2>
     ${draft ? `<button type="button" class="need-card" data-route="review"><span class="section-kicker">SPENDING REQUEST</span><strong>Review shopping plan</strong><span>${esc(productName(draft))}${purchaseCap(draft.rules) ? ` · ${esc(money(purchaseCap(draft.rules).amount))}` : ""}</span><b aria-hidden="true">›</b></button>` : ""}
     <div id="pending-list">${pending.map(pendingCard).join("")}</div>
     ${draft || pending.length ? "" : `<p class="calm-copy">Spending requests and purchases that need a decision will appear here.</p>`}</div>`;
@@ -298,8 +325,17 @@ async function refreshPending() {
     if (!container.isConnected) return;
     state.pending = pending;
     container.innerHTML = pending.map(pendingCard).join("");
+    const openAnswer = overlayRoot.querySelector('[data-action="resolve"]');
+    if (openAnswer) {
+      const current = pending.find((item) => item.authorization_id === openAnswer.dataset.id);
+      if (!current || new Date(current.expires_at).getTime() <= Date.now()) {
+        overlayRoot.querySelectorAll('[data-action="resolve"]').forEach((button) => { button.disabled = true; });
+        const deadline = overlayRoot.querySelector("#pending-deadline");
+        if (deadline) deadline.textContent = "This decision window has closed. Refresh Wallet for the final outcome.";
+      }
+    }
     const count = pending.length + (state.draft ? 1 : 0);
-    document.querySelector("#needs-heading").textContent = count ? `${count} thing${count === 1 ? "" : "s"} need you` : "You're all caught up";
+    document.querySelector("#needs-heading").textContent = count ? `${count} thing${count === 1 ? " needs" : "s need"} you` : "You're all caught up";
     document.querySelector("#wallet-indicator").hidden = !count;
   } catch (error) {
     if (container.isConnected) container.innerHTML = errorPanel("Pending purchases could not be refreshed", error);
@@ -420,7 +456,7 @@ function openPending(id) {
   const auth = item.event.authorization;
   const issue = item.decision.evidence.filter((check) => check.result !== "pass");
   const remaining = new Date(item.expires_at).getTime() - Date.now();
-  openOverlay(`<span class="section-kicker amber-text">VISECA NEEDS YOU</span><h2>One detail needs a decision</h2><p class="overlay-intro">${esc(item.decision.customer_message)}</p><div class="purchase-highlight"><span>${esc(auth.merchant.merchant_name)}</span><strong>${esc(money(auth.billing_amount_chf, auth.currency))}</strong><p>${esc(auth.items.map((entry) => text(entry.item_name, "Item")).join(" + "))}</p></div><h3>Why you're seeing this</h3><div class="evidence-list">${issue.map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(check.name.replaceAll("_", " "))}</strong><p>${esc(check.note)}</p><small>Source: ${esc(check.source)}</small></div></div>`).join("")}</div><p class="calm-copy">This answer applies only to this purchase. It does not change your confirmed limits.</p><div class="overlay-actions"><button class="outline-button" type="button" data-action="resolve" data-id="${esc(id)}" data-decision="decline" ${remaining <= 0 ? "disabled" : ""}>Don't buy</button><button class="primary-button" type="button" data-action="resolve" data-id="${esc(id)}" data-decision="approve" ${remaining <= 0 ? "disabled" : ""}>Buy anyway</button></div>${remaining <= 0 ? `<p class="uncertainty-note">The decision window has closed. Refresh Wallet for the final result.</p>` : ""}`, "Purchase review");
+  openOverlay(`<span class="section-kicker amber-text">VISECA NEEDS YOU</span><h2>One detail needs a decision</h2><p class="overlay-intro">${esc(item.decision.customer_message)}</p><div class="purchase-highlight"><span>${esc(auth.merchant.merchant_name)}</span><strong>${esc(money(auth.billing_amount_chf, auth.currency))}</strong><p>${esc(auth.items.map((entry) => text(entry.item_name, "Item")).join(" + "))}</p></div><h3>Why you're seeing this</h3><div class="evidence-list">${issue.map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(check.name.replaceAll("_", " "))}</strong><p>${esc(check.note)}</p><small>Source: ${esc(check.source)}</small></div></div>`).join("")}</div><p class="calm-copy">This answer applies only to this purchase. It does not change your confirmed limits.</p><p id="pending-deadline" class="calm-copy">${remaining > 0 ? `Decision window: ${Math.floor(remaining / 60000)}m ${String(Math.floor(remaining / 1000) % 60).padStart(2, "0")}s left` : "The decision window has closed."}</p><div class="overlay-actions"><button class="outline-button" type="button" data-action="resolve" data-id="${esc(id)}" data-decision="decline" ${remaining <= 0 ? "disabled" : ""}>Don't buy</button><button class="primary-button" type="button" data-action="resolve" data-id="${esc(id)}" data-decision="approve" ${remaining <= 0 ? "disabled" : ""}>Buy anyway</button></div>${remaining <= 0 ? `<p class="uncertainty-note">The decision window has closed. Refresh Wallet for the final result.</p>` : ""}`, "Purchase review");
 }
 
 function openDetail(payload) {
@@ -478,7 +514,9 @@ async function performReject() {
 
 async function performResolution(button) {
   const id = text(button.dataset.id, "Pending purchase ID");
-  if (!state.pending.some((item) => item.authorization_id === id)) throw new Error("This purchase is no longer pending.");
+  const pending = state.pending.find((item) => item.authorization_id === id);
+  if (!pending) throw new Error("This purchase is no longer pending.");
+  if (new Date(pending.expires_at).getTime() <= Date.now()) throw new Error("The decision window has closed. Refresh Wallet for the final outcome.");
   const decision = button.dataset.decision;
   if (!["approve", "decline"].includes(decision)) throw new Error("Choose whether to buy or decline.");
   await walletApi.answer(id, decision);
@@ -519,6 +557,17 @@ document.addEventListener("click", async (event) => {
     if (action === "wallet-tab") { state.walletTab = button.dataset.tab; navigate("wallet", { keepScroll: true }); return; }
     if (action === "activity-filter") { state.activityFilter = button.dataset.filter; document.querySelector("#activity-list").innerHTML = activityRows(); document.querySelectorAll(".activity-tabs [role=tab]").forEach((tab) => { const active = tab === button; tab.classList.toggle("selected", active); tab.setAttribute("aria-selected", String(active)); tab.tabIndex = active ? 0 : -1; }); return; }
     if (action === "use-example") { const composer = document.querySelector("#shop-prompt"); composer.value = button.textContent; state.prompt = composer.value; composer.focus(); composer.dispatchEvent(new Event("input", { bubbles: true })); return; }
+    if (action === "open-filters") { openFilters(); return; }
+    if (action === "filter-category") {
+      state.filters.category = button.dataset.category;
+      state.filters.budget = button.dataset.category === "monitor" ? 400 : 200;
+      state.filters.brand = "Any";
+      state.filters.color = "Any";
+      state.filters.size = "";
+      openFilters();
+      return;
+    }
+    if (action === "apply-filters") { state.prompt = filterRequest(); closeOverlay(); navigate("shop"); return; }
     if (action === "account") { openOverlay(`<span class="section-kicker">LOCAL DEMO ACCOUNT</span><h2>${esc(state.user || "Sign in")}</h2><p class="calm-copy">This demo uses a local username and session cookie. It is not a Viseca banking login.</p>${state.user ? `<button type="button" class="outline-button" data-action="logout">Sign out</button>` : `<button type="button" class="outline-button" data-action="close-overlay">Close</button>`}`, "Account"); return; }
     if (action === "open-pending") { openPending(button.dataset.id); return; }
     if (action === "inspector") { inspector(button.dataset.tab); return; }
@@ -564,6 +613,12 @@ document.addEventListener("click", async (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.id === "filter-budget") {
+    state.filters.budget = Number(event.target.value);
+    document.querySelector("#budget-value").textContent = `CHF ${state.filters.budget}`;
+    document.querySelector("#filter-preview-text").textContent = filterRequest();
+    return;
+  }
   if (event.target.id !== "shop-prompt") return;
   state.prompt = event.target.value;
   const send = document.querySelector(".send-button");
@@ -571,6 +626,14 @@ document.addEventListener("input", (event) => {
   if (state.exampleTimer) window.clearTimeout(state.exampleTimer);
   const example = document.querySelector("#animated-example");
   if (example) example.hidden = Boolean(state.prompt);
+});
+
+document.addEventListener("change", (event) => {
+  const fields = { "filter-brand": "brand", "filter-color": "color", "filter-size": "size", "filter-usbc": "usbC" };
+  const field = fields[event.target.id];
+  if (!field) return;
+  state.filters[field] = field === "usbC" ? event.target.checked : event.target.value;
+  document.querySelector("#filter-preview-text").textContent = filterRequest();
 });
 
 document.addEventListener("focusin", (event) => {
@@ -607,8 +670,12 @@ window.addEventListener("keydown", (event) => {
     const tabs = [...event.target.closest('[role="tablist"]').querySelectorAll('[role="tab"]')];
     const index = tabs.indexOf(event.target);
     const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    const group = event.target.closest('[role="tablist"]');
+    if (group.classList.contains("wallet-tabs")) state.pendingTabFocus = "wallet";
     tabs[next].click();
-    tabs[next].focus();
+    if (!group.classList.contains("wallet-tabs")) {
+      window.queueMicrotask(() => document.querySelector('.inspector-tabs [aria-selected="true"], .activity-tabs [aria-selected="true"]')?.focus());
+    }
   }
   if (event.key === "Enter" && event.target.id === "username") {
     event.preventDefault();
