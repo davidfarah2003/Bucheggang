@@ -1,0 +1,66 @@
+{
+  "draft_id": "9cf434ea-cb25-4c48-acb8-4b07145996db",
+  "version": 1,
+  "hash": "f13303019d3166997b7382f07debaf3ba18a9e15465e7bc7cd0b28ce31ab58fe",
+  "instruction": "Buy one ordinary grocery item for CHF 20 or less from a shop I use regularly. Ask me when uncertain.",
+  "rules": [
+    {
+      "currency": "CHF",
+      "field": "authorization.billing_amount_chf",
+      "operator": "<=",
+      "plain_english": "The whole purchase must cost CHF 20 or less.",
+      "scope": "purchase",
+      "source_text": "CHF 20 or less",
+      "value": 20
+    },
+    {
+      "field": "items.category",
+      "operator": "=",
+      "plain_english": "Every cart line must be groceries.",
+      "scope": "purchase",
+      "source_text": "ordinary grocery item",
+      "value": "groceries"
+    },
+    {
+      "field": "items.count",
+      "operator": "=",
+      "plain_english": "Buy one unit.",
+      "scope": "purchase",
+      "source_text": "one ordinary grocery item",
+      "value": 1
+    },
+    {
+      "field": "history.merchant_seen_on_card",
+      "operator": "=",
+      "plain_english": "The card must have an earlier approved purchase at the shop.",
+      "scope": "purchase",
+      "source_text": "a shop I use regularly",
+      "value": "true"
+    },
+    {
+      "field": "state.approvals_count",
+      "operator": "<",
+      "plain_english": "Allow one successful purchase for this request.",
+      "scope": "purchase",
+      "source_text": "Buy one ordinary grocery item",
+      "value": 1
+    }
+  ],
+  "examples": [],
+  "open_questions": [
+    {
+      "answer": null,
+      "confirming_answers": [
+        "yes",
+        "need a stricter frequency rule"
+      ],
+      "options": [
+        "yes",
+        "need a stricter frequency rule"
+      ],
+      "question": "Does one earlier approved purchase establish that a shop is used regularly?"
+    }
+  ],
+  "uncertainty_policy": "ask",
+  "created_at": "2026-09-24T20:00:04.637425Z"
+}

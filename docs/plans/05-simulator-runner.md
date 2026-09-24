@@ -34,7 +34,7 @@ Out:
 
 1. Settings and API client with a 30 s request timeout, matching the organizer's curl helper. No retry on 5xx or anywhere else: a non-2xx raises `ApiError(status, body)` (AGENTS.md section 6). Call `/healthz` and `/v1/bootstrap` once to see them answer.
 2. Mandate client. Try it on the `SCEN0000` instruction (the quickstart's rule) once the key arrives; before that, against a recorded response.
-3. `scripts/replay.py` with the `SCEN0002` fixture draft. This lets the engine lane replay today, before the key.
+3. `scripts/replay.py` with the `SCEN0002` fixture draft, then explicit evaluation drafts for all 45 public attempts. Implemented on `lane/runner-replay`; commands and assumptions are in [run-replay.md](../run-replay.md). Independent review and merge are still pending.
 4. Run loop and deadline guard. Try it against the live API as soon as the key arrives.
 5. Step-up handling and timeout resolution.
 6. Persistence, so a restarted worker does not count spend twice. Try it once by killing the worker mid-run.
