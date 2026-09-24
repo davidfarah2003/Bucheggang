@@ -134,19 +134,29 @@ def _read(path: Path) -> dict[str, Any]:
 
 
 def mandate_history(mandate_id: str) -> list[dict[str, Any]]:
-    """[{decision, state_after}] oldest first. KeyError when the mandate has no decisions."""
-    folder = DECISIONS_DIR / _safe(mandate_id, "mandate_id")
-    if not folder.is_dir():
-        raise KeyError(mandate_id)
-    records = [_read(p) for p in folder.glob("*.json")]
-    records.sort(key=lambda r: datetime.fromisoformat(r["accepted_at"]))
-    return [
-        {
-            "decision": Decision.model_validate(r["decision"]),
-            "state_after": MandateState.model_validate(r["state_after"]),
-        }
-        for r in records
-    ]
+    """One latest accepted outcome per authorization, oldest first. Caller checks ownership."""
+    with mandate_lock(mandate_id):
+        folder = DECISIONS_DIR / _safe(mandate_id, "mandate_id")
+        if folder.exists() and not folder.is_dir():
+            raise RecordError(f"{folder} is not a decision directory")
+        paths = list(folder.glob("*.json"))
+        if not paths:
+            state = engine_state.load(mandate_id)
+            if state.handled or state.approvals or state.pending_step_ups or state.declined:
+                raise RecordError(f"{mandate_id} has recorded state but no decision history")
+            return []
+        latest = {}
+        for path in paths:
+            record = _read(path)
+            decision = Decision.model_validate(record["decision"])
+            state = MandateState.model_validate(record["state_after"])
+            auth_id = decision.authorization_id
+            if path.name not in (f"{auth_id}.json", f"{auth_id}{RESOLVE_SUFFIX}") or state.mandate_id != mandate_id:
+                raise RecordError(f"{path} has an authorization or mandate identity mismatch")
+            accepted_at = datetime.fromisoformat(record["accepted_at"])
+            if auth_id not in latest or path.name.endswith(RESOLVE_SUFFIX):
+                latest[auth_id] = (accepted_at, {"decision": decision, "state_after": state})
+        return [entry for _, entry in sorted(latest.values(), key=lambda item: item[0])]
 
 
 def decision_detail(authorization_id: str) -> dict[str, Any]:
