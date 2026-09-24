@@ -5,7 +5,6 @@ description: Answers questions about the challenge API, the data pack, the desig
 tags: [research, docs]
 agent: jcode
 model: gemini-3.8-flash
-variant: high
 subscribe: ["team.zurichbuchegg.progress"]
 allowSubscribe: ["team.zurichbuchegg.progress"]
 quiet: ["team.zurichbuchegg.progress"]

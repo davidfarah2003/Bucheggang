@@ -5,7 +5,6 @@ description: Grades one PR at an exact SHA in a detached worktree of its own. Ne
 tags: [review]
 agent: jcode
 model: gemini-3.8-flash
-variant: high
 subscribe: ["team.zurichbuchegg.review"]
 allowSubscribe: ["team.zurichbuchegg.>"]
 allowPublish: ["team.zurichbuchegg.review"]
