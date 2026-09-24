@@ -90,9 +90,14 @@ How work moves between them:
 - **An owner redirects a builder.** They post on the lane channel with an `@mention` of the builder.
 - **A question about the spec, the data or the papers** goes to the librarian by DM. It never goes on a channel.
 
+Setting up channels. On this mesh every seat boots on `#announce` and the spine, and the persona's `subscribe` list is not applied. Tested on 2026-09-24, with and without `--subscribe`. Each persona therefore fixes its own channels on its first turn: it leaves `announce` and the spine, joins the channels in the table, and sets the quiet ones with `cotal_channel_mode`. A main session that spawns a seat checks the roster afterwards. If a builder is still on the spine, tell it by DM to run its persona's channel step.
+
 Posting rules:
 
-- Post only what someone must act on or will look for later. No "thanks", "agreed" or "on it".
+- Post only what someone must act on or will look for later. No "thanks", "agreed", "on it" or "starting now". A seat that got a brief starts working; it does not confirm by message.
+- One message per event, one line when it fits. A second message to correct the first is fine; a running commentary is not.
+- Pick the narrowest audience: a DM when one agent needs it, the lane channel when the lane needs it, `progress` when the fleet needs it. Never cross-post the same text to two channels.
+- Before asking, read `progress` and the plan Log. If the answer is there, do not ask.
 - `@mention` only the agent that must act now. A mention wakes it even on a quiet channel, so a mention in an acknowledgement wakes someone for nothing.
 - A message points at a file, a commit or a PR. Anything the next agent needs to know goes in the plan Log or the contract file, because a message is lost once a reader's context is compacted.
 - Reply on the channel you were asked on. Anything private goes by DM.
