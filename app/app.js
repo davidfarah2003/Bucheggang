@@ -1,6 +1,8 @@
 "use strict";
 
 const MANDATE_KEY = "viseca.demo.mandateId";
+const MANDATE_OWNER_KEY = "viseca.demo.mandateOwner";
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const screen = document.querySelector("#screen");
 const overlayRoot = document.querySelector("#overlay-root");
 const toastRoot = document.querySelector("#toast-root");
@@ -24,8 +26,8 @@ const state = {
   details: new Map(),
   detail: null,
   prompt: "",
-  filters: { category: "monitor", budget: 400, brand: "Any", color: "Any", size: "", usbC: true },
   serial: 0,
+  pendingSerial: 0,
   timer: null,
   exampleTimer: null,
   overlayTrigger: null,
@@ -92,7 +94,11 @@ function clearDraftLink() {
   document.querySelector("#wallet-indicator").hidden = true;
 }
 
-function mandateId() { return window.sessionStorage.getItem(MANDATE_KEY); }
+function mandateId() {
+  const owner = window.sessionStorage.getItem(MANDATE_OWNER_KEY);
+  if (owner && owner !== state.user) return null;
+  return window.sessionStorage.getItem(MANDATE_KEY);
+}
 
 function validateDraft(draft) {
   if (!draft || typeof draft !== "object" || !Array.isArray(draft.rules) || !Array.isArray(draft.open_questions) || !Array.isArray(draft.examples)) throw new Error("The saved spending plan is incomplete.");
@@ -116,6 +122,7 @@ function validateMandate(payload) {
   validateDraft(draft);
   if (!Array.isArray(effective_policy.rules) || !Array.isArray(usage.approvals) || usage.mandate_id !== mandate.mandate_id) throw new Error("The permission and its purchase state do not match.");
   effective_policy.rules.forEach((rule) => { text(rule.field, "Current rule field"); text(rule.plain_english, "Current rule description"); });
+  window.sessionStorage.setItem(MANDATE_OWNER_KEY, text(state.user, "Current customer"));
   return payload;
 }
 
@@ -152,6 +159,7 @@ function navigate(route, { keepScroll = false } = {}) {
   }
   state.route = route;
   state.serial += 1;
+  state.pendingSerial += 1;
   window.clearInterval(state.timer);
   window.clearTimeout(state.exampleTimer);
   state.timer = null;
@@ -168,6 +176,28 @@ function navigate(route, { keepScroll = false } = {}) {
   void render();
 }
 
+function sessionExpired(error) {
+  state.serial += 1;
+  state.pendingSerial += 1;
+  window.clearInterval(state.timer);
+  window.clearTimeout(state.exampleTimer);
+  state.timer = null;
+  state.user = null;
+  state.mandate = null;
+  state.pending = [];
+  state.draft = null;
+  state.answers = {};
+  state.details.clear();
+  state.history = [];
+  state.detail = null;
+  state.prompt = "";
+  closeOverlay();
+  state.overlayTrigger = null;
+  document.querySelector("#wallet-indicator").hidden = true;
+  renderLogin();
+  toast(error.message);
+}
+
 async function render() {
   const serial = state.serial;
   if (!state.user) { renderLogin(); return; }
@@ -178,15 +208,7 @@ async function render() {
     else await renderActivity(serial);
   } catch (error) {
     if (serial !== state.serial) return;
-    if (error.status === 401) {
-      state.user = null;
-      state.mandate = null;
-      state.pending = [];
-      window.sessionStorage.removeItem(MANDATE_KEY);
-      renderLogin();
-      toast(error.message);
-      return;
-    }
+    if (error.status === 401) { sessionExpired(error); return; }
     setScreen(`<div class="page-title"><h1>${esc(state.route === "review" ? "Review spending permission" : state.route)}</h1></div>${errorPanel("This screen could not be loaded", error)}`);
   }
 }
@@ -208,13 +230,16 @@ async function initialize() {
 }
 
 function startExamples() {
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  window.clearTimeout(state.exampleTimer);
+  if (reducedMotion.matches) return;
   let index = 0, position = 0, erasing = false;
   function tick() {
     const composer = document.querySelector("#shop-prompt");
     const example = document.querySelector("#animated-example");
-    if (!composer || !example || document.activeElement === composer || composer.value) return;
+    if (!composer || !example || document.activeElement === composer || document.activeElement === example || composer.value) return;
     const current = examples[index];
+    example.dataset.example = current;
+    example.setAttribute("aria-label", `Use example: ${current}`);
     example.textContent = current.slice(0, position);
     if (!erasing && position < current.length) { position += 1; state.exampleTimer = window.setTimeout(tick, 44); }
     else if (!erasing) { erasing = true; state.exampleTimer = window.setTimeout(tick, 1900); }
@@ -222,26 +247,6 @@ function startExamples() {
     else { erasing = false; index = (index + 1) % examples.length; state.exampleTimer = window.setTimeout(tick, 350); }
   }
   tick();
-}
-
-function filterRequest() {
-  const { category, budget, brand, color, size, usbC } = state.filters;
-  if (!Number.isInteger(budget) || budget < 100 || budget > 1000) throw new Error("Choose a budget from CHF 100 to CHF 1,000.");
-  const base = category === "monitor" ? `Find me a 27-inch monitor below CHF ${budget}` : `Find me running shoes below CHF ${budget}`;
-  const details = category === "monitor"
-    ? [usbC ? "with USB-C" : null, brand !== "Any" ? `from ${brand}` : null]
-    : [brand !== "Any" ? `from ${brand}` : null, color !== "Any" ? `in ${color.toLowerCase()}` : null, size ? `in EU size ${size}` : null];
-  return `${base}${details.filter(Boolean).length ? `, ${details.filter(Boolean).join(", ")}` : ""}.`;
-}
-
-function openFilters() {
-  const f = state.filters;
-  openOverlay(`<div class="filter-sheet"><span class="section-kicker">SHOPPING REQUEST</span><h2>Refine your search</h2><p class="calm-copy">These controls create a request for your shopping agent. The Wallet will separately show any enforceable spending rules before you authorize them.</p>
-    <div class="filter-category" role="group" aria-label="Product example"><button type="button" data-action="filter-category" data-category="monitor" class="${f.category === "monitor" ? "selected" : ""}" aria-pressed="${f.category === "monitor"}">Monitor</button><button type="button" data-action="filter-category" data-category="shoes" class="${f.category === "shoes" ? "selected" : ""}" aria-pressed="${f.category === "shoes"}">Running shoes</button></div>
-    <label class="filter-field" for="filter-budget"><span>Spend below</span><strong id="budget-value">CHF ${f.budget}</strong></label><input type="range" class="budget-slider" id="filter-budget" min="100" max="1000" step="10" value="${f.budget}" /><div class="budget-ends"><span>CHF 100</span><span>CHF 1,000</span></div>
-    <label class="filter-field" for="filter-brand">Brand <select id="filter-brand"><option>Any</option>${(f.category === "monitor" ? ["Dell", "LG", "BenQ"] : ["On", "Nike", "Adidas"]).map((brand) => `<option ${f.brand === brand ? "selected" : ""}>${brand}</option>`).join("")}</select></label>
-    ${f.category === "monitor" ? `<div class="filter-field"><span>Screen size</span><strong>27 inch</strong></div><label class="filter-field" for="filter-usbc"><span>USB-C connection</span><input type="checkbox" id="filter-usbc" ${f.usbC ? "checked" : ""} /></label>` : `<label class="filter-field" for="filter-color">Colour <select id="filter-color">${["Any", "Black", "White", "Blue", "Green"].map((color) => `<option ${f.color === color ? "selected" : ""}>${color}</option>`).join("")}</select></label><label class="filter-field" for="filter-size">EU size <select id="filter-size"><option value="">Choose size</option>${[41, 42, 43, 44].map((size) => `<option ${f.size === String(size) ? "selected" : ""}>${size}</option>`).join("")}</select></label>`}
-    <div class="filter-preview"><span class="section-kicker">REQUEST TO COPY</span><p id="filter-preview-text">${esc(filterRequest())}</p></div><p class="calm-copy">Using this request replaces the current composer text. You can edit it before copying.</p><button type="button" class="primary-button filter-apply" data-action="apply-filters">Use this request</button></div>`, "Refine your search");
 }
 
 function purchaseCap(rules) {
@@ -263,9 +268,8 @@ async function renderShop(serial) {
   if (serial !== state.serial) return;
   const cap = plan && purchaseCap(plan.rules);
   setScreen(`<section class="shop-view"><div class="shop-intro"><h1>What can I<br />get for you?</h1><div class="orbit" aria-hidden="true"><span class="orbit-ring one"></span><span class="orbit-ring two"></span><span class="orbit-core">✓</span><span class="orbit-dot"></span></div></div>
-    <div class="composer"><label for="shop-prompt" class="sr-only">Your shopping request</label><textarea id="shop-prompt" rows="2" placeholder="Ask Viseca to buy something…">${esc(state.prompt)}</textarea><div class="prompt-example" ${state.prompt.trim() ? "hidden" : ""}><span>FOR EXAMPLE</span><button type="button" data-action="use-example" id="animated-example">${esc(examples[0])}</button></div><button class="send-button" type="button" data-action="copy-prompt" aria-label="Copy request for your shopping agent" ${state.prompt.trim() ? "" : "disabled"}>Copy</button></div>
-    <button type="button" class="filter-trigger" data-action="open-filters">Refine request with product filters <span aria-hidden="true">⌄</span></button>
-    <p class="agent-state">Shopping agent <span>· connect an external agent</span></p><p class="external-agent">No shopping model is connected inside this demo. Copy your request to an MCP-compatible agent. The agent can send you a Wallet review link.</p>
+    <div class="composer"><label for="shop-prompt" class="sr-only">Your shopping request</label><textarea id="shop-prompt" rows="2" placeholder="Ask Viseca to buy something…">${esc(state.prompt)}</textarea><div class="prompt-example" ${state.prompt.trim() ? "hidden" : ""}><span>FOR EXAMPLE</span><button type="button" data-action="use-example" id="animated-example" data-example="${esc(examples[0])}" aria-label="Use example: ${esc(examples[0])}">${esc(examples[0])}</button></div><button class="send-button" type="button" data-action="copy-prompt" aria-label="Copy request for your shopping agent" ${state.prompt.trim() ? "" : "disabled"}>Copy</button></div>
+    <p class="agent-state">Shopping agent <span>· use an external MCP client</span></p><p class="external-agent">No shopping model is connected inside this demo. Copy your request to an MCP-compatible agent. The agent can send you a Wallet review link.</p>
     ${plan ? `<section class="shop-plan"><span class="section-kicker">PLAN SAVED BY YOUR AGENT</span><h2>${esc(productName(plan))}</h2><p>${cap ? `${cap.strict ? "Below" : "Up to"} ${esc(money(cap.amount))}` : "Review the saved limits"}</p><button type="button" class="text-button" data-route="review">Review in Wallet <span aria-hidden="true">→</span></button></section>` : ""}
   </section>`);
   startExamples();
@@ -326,12 +330,16 @@ async function refreshPending() {
   if (state.route !== "wallet" || state.walletTab !== "needs" || !mandateId()) return;
   const container = document.querySelector("#pending-list");
   if (!container) return;
+  const request = ++state.pendingSerial;
+  const route = state.serial;
+  const id = mandateId();
   try {
     const pending = await walletApi.pending();
     if (!Array.isArray(pending)) throw new Error("Pending purchases must be a list.");
-    if (!container.isConnected) return;
+    if (request !== state.pendingSerial || route !== state.serial || id !== mandateId() || !container.isConnected) return;
+    const markup = pending.map(pendingCard).join("");
     state.pending = pending;
-    container.innerHTML = pending.map(pendingCard).join("");
+    container.innerHTML = markup;
     const openAnswer = overlayRoot.querySelector('[data-action="resolve"]');
     if (openAnswer) {
       const current = pending.find((item) => item.authorization_id === openAnswer.dataset.id);
@@ -344,8 +352,16 @@ async function refreshPending() {
     const count = pending.length + (state.draft ? 1 : 0);
     document.querySelector("#needs-heading").textContent = count ? `${count} thing${count === 1 ? " needs" : "s need"} you` : "You're all caught up";
     document.querySelector("#wallet-indicator").hidden = !count;
+    return true;
   } catch (error) {
-    if (container.isConnected) container.innerHTML = errorPanel("Pending purchases could not be refreshed", error);
+    if (request !== state.pendingSerial || route !== state.serial || !container.isConnected) return;
+    if (error.status === 401) { sessionExpired(error); return; }
+    window.clearInterval(state.timer);
+    state.timer = null;
+    state.pending = [];
+    closeOverlay();
+    container.innerHTML = errorPanel("Pending purchases could not be refreshed", error);
+    return false;
   }
 }
 
@@ -441,7 +457,8 @@ async function renderActivity(serial) {
   });
   const details = await Promise.all(history.map(({ decision }) => walletApi.decision(decision.authorization_id).then(validateDecision)));
   if (serial !== state.serial) return;
-  state.history = [...history].reverse();
+  state.history = history.map((entry, index) => ({ decision: details[index].decision, state_after: details[index].state_after }))
+    .sort((a, b) => new Date(b.decision.decided_at) - new Date(a.decision.decided_at));
   state.details = new Map(details.map((detail) => [detail.decision.authorization_id, detail]));
   setScreen(`<section class="activity-view"><div class="page-title"><h1>Activity</h1></div>${activityTabs()}<div id="activity-list">${activityRows()}</div><p class="activity-disclaimer">Recorded purchase decisions for the selected permission. Permission changes are not in this history.</p></section>`);
 }
@@ -501,6 +518,7 @@ async function performConfirm() {
   const mandate = await walletApi.confirm(draft.draft_id, draft.version, draft.hash, answers);
   text(mandate?.mandate_id, "Confirmed permission ID");
   window.sessionStorage.setItem(MANDATE_KEY, mandate.mandate_id);
+  window.sessionStorage.setItem(MANDATE_OWNER_KEY, text(state.user, "Current customer"));
   clearDraftLink();
   state.walletTab = "active";
   setScreen(`<section class="confirmed-state" role="status"><span aria-hidden="true">✓</span><h1>Agent authorized</h1><p>Your spending limits are active. Return to your shopping agent to continue.</p></section>`);
@@ -526,10 +544,15 @@ async function performResolution(button) {
   if (new Date(pending.expires_at).getTime() <= Date.now()) throw new Error("The decision window has closed. Refresh Wallet for the final outcome.");
   const decision = button.dataset.decision;
   if (!["approve", "decline"].includes(decision)) throw new Error("Choose whether to buy or decline.");
+  state.pendingSerial += 1;
+  window.clearInterval(state.timer);
+  state.timer = null;
+  overlayRoot.querySelectorAll('[data-action="resolve"]').forEach((action) => { action.disabled = true; });
   await walletApi.answer(id, decision);
   closeOverlay();
   toast(decision === "approve" ? "Your answer was accepted for this purchase." : "Your decline was accepted for this purchase.", "success");
-  await refreshPending();
+  const refreshed = await refreshPending();
+  if (refreshed && state.route === "wallet" && state.walletTab === "needs") state.timer = window.setInterval(() => { void refreshPending(); }, 2000);
 }
 
 async function performTighten() {
@@ -563,18 +586,7 @@ document.addEventListener("click", async (event) => {
     }
     if (action === "wallet-tab") { state.walletTab = button.dataset.tab; navigate("wallet", { keepScroll: true }); return; }
     if (action === "activity-filter") { state.activityFilter = button.dataset.filter; document.querySelector("#activity-list").innerHTML = activityRows(); document.querySelectorAll(".activity-tabs [role=tab]").forEach((tab) => { const active = tab === button; tab.classList.toggle("selected", active); tab.setAttribute("aria-selected", String(active)); tab.tabIndex = active ? 0 : -1; }); return; }
-    if (action === "use-example") { const composer = document.querySelector("#shop-prompt"); composer.value = button.textContent; state.prompt = composer.value; composer.focus(); composer.dispatchEvent(new Event("input", { bubbles: true })); return; }
-    if (action === "open-filters") { openFilters(); return; }
-    if (action === "filter-category") {
-      state.filters.category = button.dataset.category;
-      state.filters.budget = button.dataset.category === "monitor" ? 400 : 200;
-      state.filters.brand = "Any";
-      state.filters.color = "Any";
-      state.filters.size = "";
-      openFilters();
-      return;
-    }
-    if (action === "apply-filters") { state.prompt = filterRequest(); closeOverlay(); navigate("shop"); return; }
+    if (action === "use-example") { const composer = document.querySelector("#shop-prompt"); composer.value = text(button.dataset.example, "Example request"); state.prompt = composer.value; composer.focus(); composer.dispatchEvent(new Event("input", { bubbles: true })); return; }
     if (action === "account") { openOverlay(`<span class="section-kicker">LOCAL DEMO ACCOUNT</span><h2>${esc(state.user || "Sign in")}</h2><p class="calm-copy">This demo uses a local username and session cookie. It is not a Viseca banking login.</p>${state.user ? `<button type="button" class="outline-button" data-action="logout">Sign out</button>` : `<button type="button" class="outline-button" data-action="close-overlay">Close</button>`}`, "Account"); return; }
     if (action === "open-pending") { openPending(button.dataset.id); return; }
     if (action === "inspector") { inspector(button.dataset.tab); return; }
@@ -582,24 +594,56 @@ document.addEventListener("click", async (event) => {
     if (action === "open-tighten") { confirmDialog("Decline uncertain purchases?", "Future purchases with missing evidence will be declined instead of asking you.", "tighten", "Decline uncertainty"); return; }
     if (action === "open-revoke") { confirmDialog("Revoke this permission?", "Your shopping agent will no longer be able to use it.", "revoke", "Revoke permission"); return; }
     if (action === "answer-question") { state.answers[button.dataset.question] = button.dataset.answer; await renderReview(state.serial); return; }
-    if (action === "open-detail") { const detail = state.details.get(button.dataset.id) || validateDecision(await walletApi.decision(button.dataset.id)); openDetail(detail); return; }
+    if (action === "open-detail") {
+      const id = button.dataset.id;
+      const route = state.serial;
+      const detail = validateDecision(await walletApi.decision(id));
+      if (route !== state.serial || state.route !== "activity") return;
+      state.details.set(id, detail);
+      const entry = state.history.find((item) => item.decision.authorization_id === id);
+      if (!entry) throw new Error("This purchase is no longer in the current history.");
+      if (entry.decision.decision !== detail.decision.decision || entry.decision.decided_at !== detail.decision.decided_at) {
+        entry.decision = detail.decision;
+        entry.state_after = detail.state_after;
+        state.history.sort((a, b) => new Date(b.decision.decided_at) - new Date(a.decision.decided_at));
+        document.querySelector("#activity-list").innerHTML = activityRows();
+        const updated = [...document.querySelectorAll('[data-action="open-detail"]')].find((item) => item.dataset.id === id);
+        if (updated) updated.focus();
+        else document.querySelector('.activity-tabs [aria-selected="true"]').focus();
+      }
+      openDetail(detail);
+      return;
+    }
     if (action === "reload") { void render(); return; }
     button.disabled = true;
     if (action === "login") {
       const username = text(document.querySelector("#username").value.trim(), "Username");
       const session = await walletApi.login(username);
       state.user = text(session.username, "Session username");
+      const previousOwner = window.sessionStorage.getItem(MANDATE_OWNER_KEY);
+      if (previousOwner && previousOwner !== state.user) {
+        window.sessionStorage.removeItem(MANDATE_KEY);
+        window.sessionStorage.removeItem(MANDATE_OWNER_KEY);
+      }
       navigate(linkedDraftId() ? "review" : "shop");
     } else if (action === "logout") {
       await walletApi.logout();
       window.sessionStorage.removeItem(MANDATE_KEY);
+      window.sessionStorage.removeItem(MANDATE_OWNER_KEY);
+      state.pendingSerial += 1;
       window.clearInterval(state.timer);
       window.clearTimeout(state.exampleTimer);
       state.serial += 1;
       state.user = null;
       state.mandate = null;
       state.pending = [];
+      state.draft = null;
+      state.answers = {};
+      state.history = [];
+      state.detail = null;
+      state.prompt = "";
       state.details.clear();
+      document.querySelector("#wallet-indicator").hidden = true;
       closeOverlay();
       renderLogin();
     } else if (action === "confirm") await performConfirm();
@@ -615,19 +659,15 @@ document.addEventListener("click", async (event) => {
       toast("Request copied. Paste it into your connected shopping agent.", "success");
     }
   } catch (error) {
+    if (error.status === 401) { sessionExpired(error); return; }
     if (error.status === 409 && state.route === "review") { state.draft = null; state.answers = {}; void render(); }
     toast(error.message);
+    if (action === "resolve") { navigate("wallet"); return; }
     if (button.isConnected) button.disabled = false;
   }
 });
 
 document.addEventListener("input", (event) => {
-  if (event.target.id === "filter-budget") {
-    state.filters.budget = Number(event.target.value);
-    document.querySelector("#budget-value").textContent = `CHF ${state.filters.budget}`;
-    document.querySelector("#filter-preview-text").textContent = filterRequest();
-    return;
-  }
   if (event.target.id !== "shop-prompt") return;
   state.prompt = event.target.value;
   const send = document.querySelector(".send-button");
@@ -637,20 +677,13 @@ document.addEventListener("input", (event) => {
   if (example) example.hidden = Boolean(state.prompt);
 });
 
-document.addEventListener("change", (event) => {
-  const fields = { "filter-brand": "brand", "filter-color": "color", "filter-size": "size", "filter-usbc": "usbC" };
-  const field = fields[event.target.id];
-  if (!field) return;
-  state.filters[field] = field === "usbC" ? event.target.checked : event.target.value;
-  document.querySelector("#filter-preview-text").textContent = filterRequest();
-});
-
 document.addEventListener("focusin", (event) => {
   if (event.target.id === "shop-prompt") window.clearTimeout(state.exampleTimer);
 });
 
 document.addEventListener("focusout", (event) => {
   if (event.target.id === "shop-prompt" && !event.target.value) startExamples();
+  if (event.target.id === "animated-example" && !state.prompt && state.route === "shop") startExamples();
 });
 
 new MutationObserver(() => {
@@ -693,4 +726,11 @@ window.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("hashchange", () => navigate(window.location.hash.slice(1) || (linkedDraftId() ? "review" : "shop")));
+reducedMotion.addEventListener("change", () => {
+  window.clearTimeout(state.exampleTimer);
+  const example = document.querySelector("#animated-example");
+  if (!example || state.route !== "shop") return;
+  if (reducedMotion.matches) example.textContent = text(example.dataset.example, "Example request");
+  else startExamples();
+});
 initialize();
