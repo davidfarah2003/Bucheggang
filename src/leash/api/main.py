@@ -30,14 +30,19 @@ def create_app(store: DraftStore, mandates: MandateClient) -> FastAPI:
     sessions: dict[str, str] = {}
     sessions_lock = RLock()
 
-    def authenticated_customer(leash_session: str | None = Cookie(default=None)) -> str:
+    def current_customer_session(leash_session: str | None = Cookie(default=None)) -> tuple[str, str]:
         if leash_session is None:
             raise HTTPException(status_code=401, detail="customer login is required")
         with sessions_lock:
             customer = sessions.get(leash_session)
         if customer is None:
-            raise HTTPException(status_code=401, detail="customer session is invalid or expired")
-        return customer
+            raise HTTPException(status_code=401, detail="customer session is invalid")
+        return leash_session, customer
+
+    def authenticated_customer(
+        session: tuple[str, str] = Depends(current_customer_session),
+    ) -> str:
+        return session[1]
 
     @app.post("/session")
     def login(body: LoginBody, response: Response) -> dict[str, str]:
@@ -51,14 +56,19 @@ def create_app(store: DraftStore, mandates: MandateClient) -> FastAPI:
         return {"username": username}
 
     @app.get("/session")
-    def current_session(customer: str = Depends(authenticated_customer)) -> dict[str, str]:
-        return {"username": customer}
+    def get_session(
+        session: tuple[str, str] = Depends(current_customer_session),
+    ) -> dict[str, str]:
+        return {"username": session[1]}
 
     @app.delete("/session", status_code=204)
-    def logout(response: Response, leash_session: str = Cookie(),
-               customer: str = Depends(authenticated_customer)) -> None:
+    def logout(
+        response: Response,
+        session: tuple[str, str] = Depends(current_customer_session),
+    ) -> None:
         with sessions_lock:
-            del sessions[leash_session]
+            if sessions.pop(session[0], None) is None:
+                raise HTTPException(status_code=401, detail="customer session is invalid")
         response.delete_cookie(COOKIE_NAME, path="/")
 
     app.include_router(policy_router(store, mandates, authenticated_customer))
