@@ -13,6 +13,7 @@ _RETURN_PATTERNS = (
     re.compile(r"\breturns?\s+(?:within|for)\s+(\d{1,3})\s+days?\b", re.I),
 )
 _NO_RETURNS = re.compile(r"\b(?:no returns?|non[ -]returnable|final sale)\b", re.I)
+_RETURNS_UNSTATED = re.compile(r"\breturn policy not stated\b", re.I)
 _SIZE = re.compile(r"\bsize\s+(?:EU\s*)?([A-Z]{1,3}|\d{1,3}(?:\.\d)?)\b", re.I)
 _EU_SIZE = re.compile(r"\bEU\s*(\d{2}(?:\.\d)?)\b", re.I)
 _UK_SIZE = re.compile(r"\bUK\s*(\d{1,2}(?:\.\d)?)\b", re.I)
@@ -51,11 +52,12 @@ def _product_type(name: str) -> str | None:
     return value
 
 
-def _return_days(copy: str) -> int | None:
+def _return_days(copy: str) -> tuple[int | None, bool]:
     values = {int(m.group(1)) for pattern in _RETURN_PATTERNS for m in pattern.finditer(copy)}
     if _NO_RETURNS.search(copy):
         values.add(0)
-    return next(iter(values)) if len(values) == 1 else None
+    observed = bool(values) or bool(_RETURNS_UNSTATED.search(copy))
+    return (next(iter(values)) if len(values) == 1 else None), observed
 
 
 def _size(copy: str) -> str | None:
@@ -93,11 +95,11 @@ def extract_item(
         sources["product_type"] = "structured" if reference else "merchant_text"
 
     size = _size(copy)
-    if size is not None:
+    if size is not None or any(pattern.search(copy) for pattern in (_SIZE, _EU_SIZE, _UK_SIZE)):
         sources["size"] = "merchant_text"
 
-    return_days = _return_days(copy)
-    if return_days is not None:
+    return_days, return_claim_seen = _return_days(copy)
+    if return_claim_seen:
         sources["return_days"] = "merchant_text"
 
     # Positive flags may come from the trusted catalogue category or text.

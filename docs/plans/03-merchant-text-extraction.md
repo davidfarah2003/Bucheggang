@@ -5,7 +5,7 @@
 - Lane: extract. Channel `team.zurichbuchegg.extract`, branch `lane/extract`, worktree `.worktrees/extract`
 - User flow step: inside the purchase decision, between "receive event" and "evaluate"
 - Design: [Decision pipeline, steps 6 to 9](../idea/viseca-agent-control-layer.md#decision-pipeline), [Security requirements](../idea/viseca-agent-control-layer.md#security-requirements)
-- Papers: [CaMeL](../papers/2503.18813v2.pdf) (sections 2 and 5: the quarantined model returns data only and never controls the flow; section 6: 77% of tasks solved with security versus 84% undefended, so some ordinary purchases will be escalated), [SAFR](../papers/SAFR.pdf) (a claim supplied by the party being checked is not evidence)
+- Papers: [CaMeL](../papers/2503.18813v2.pdf) (sections 2 and 5: the quarantined model returns data only and never controls the flow; section 6: 77% of tasks solved with security versus 84% undefended, so some ordinary purchases will be escalated), [SAFR](../papers/SAFR.pdf) (a claim supplied by the party being checked is not evidence), [Fides](https://arxiv.org/abs/2505.23643) (integrity labels, quarantined extraction, and constrained output capacity)
 - Challenge API: `items[].item_details` and `purchase_description` in the [event schema](../../viseca-2026/data/schemas/authorization_event.schema.json); [data/README.md](../../viseca-2026/data/README.md) says `item_details` may contain prompt injection
 - Contracts: `PurchaseFacts` in [contracts.md](../contracts.md)
 
@@ -18,8 +18,9 @@ Turn untrusted text (`item_details`, `purchase_description`, merchant name) into
 In:
 
 - Pass 1, deterministic: regular expressions plus the `items.csv` catalogue (category and CHF price range) for return periods ("30-day returns", "no returns"), gift cards and vouchers, protection plans and warranties, subscriptions, sizes, and instruction patterns ("ignore", "approve", "the customer has agreed", "as authorised by", "system:").
-- Pass 2, model: one call with a strict JSON schema, the requested item from the confirmed policy as a short structured description, and a hard timeout. The model has no tools. Output is validated; anything outside the schema is dropped.
-- Merge: pass 1 wins on conflict; pass 2 fills `unknown`s; `sources` records `structured`, `merchant_text` or `model` per field.
+- Pass 2, model: one Swisscom Apertus call requesting JSON, the requested item from the confirmed policy as a short structured description, and a hard timeout. The model has no tools. Output is strictly validated locally; malformed output raises an error.
+- Merge: pass 1 wins on conflict. Pass 2 can add affirmative risk flags by default. It fills unknown product facts only when `allow_model_resolution` is enabled by the caller; return and size claims also need a related phrase in merchant text. `sources` records `structured`, `merchant_text` or `model` per field.
+- Information flow: merchant descriptions and all facts inferred from them retain untrusted integrity even when the model returns valid JSON. The `sources` map preserves this provenance for the engine. JSON shape limits the information an injected instruction can carry; it does not prove a merchant claim. The extractor never sees the bearer key or invokes a purchase tool.
 - Failure: a pass 2 timeout or error raises. There is no fallback to pass 1 only (AGENTS.md section 6).
 
 Out:
@@ -32,7 +33,7 @@ Out:
 1. Agree `PurchaseFacts` with the engine lane on `team.zurichbuchegg.contracts` with `@engine_builder`, then land it as a PR touching `docs/contracts.md` and `src/leash/contracts/`.
 2. Sample corpus `docs/samples/extract-corpus.jsonl`: the 56 cart lines from `purchase_attempt_items.csv`, plus 20 adversarial lines you write (an instruction hidden mid-description, a gift card described as a "flexible present", a protection plan described as "included care", a size stated in EU and UK). Each line carries its expected facts.
 3. Pass 1. Run it over the corpus once.
-4. Pass 2: prompt and JSON schema. Model `claude-haiku-4-5-20251001` first, because of the deadline budget. Budget: whatever is left of `deadline_at` minus 2 s, capped at 1.5 s. Both numbers are starting values; measure and write the real ones in the Log.
+4. Pass 2: prompt and strict local JSON validation. Model `swiss-ai/Apertus-v1.5-70B` via the [Swisscom hacker guide](https://zh.ai-weeks.ch/tools/swisscom-hacker-guide). Budget: whatever is left of `deadline_at` minus 2 s, capped at 5 s. The challenge's default decision deadline is 8 s from queueing, so the actual remaining time may be less. Measure and write the real latency in the Log.
 5. Merge and provenance.
 6. Measure on the corpus: per-field accuracy for pass 1 alone and pass 1 plus 2; instruction-detection recall on the adversarial lines; latency p50 and p99. Table in the Log. If pass 2 adds nothing measurable, remove it and say so in the demo.
 
@@ -45,7 +46,7 @@ Out:
 
 ## Open questions
 
-- Which model? Haiku 4.5 by default. The event provides Apertus 70B (Swisscom) and OpenAI credits; try one only if Haiku's latency or accuracy is a problem, and record the comparison here.
+- Can Swisscom Apertus reliably answer within the 5 s model cap when the event arrives after queueing? Measure p50/p99 on representative carts before relying on model-added fields in the demonstration.
 - Does the model see the requested item? Proposed: yes, as `{product_type, size, must_be_returnable_days}`, never the raw instruction sentence.
 
 ## Log
@@ -53,3 +54,10 @@ Out:
 (one line per finished task: date time, who, what, how it was tried, sha)
 
 2026-09-24 17:35 oskar1: deterministic extraction and 76-line sample corpus, including disguised "Included care" copy; ran `extract_item` over `docs/samples/extract-corpus.jsonl`, 145/145 selected field checks matched, @b24139d.
+2026-09-24 17:39 oskar1: one-call Haiku adapter with JSON schema and deadline budget; ran it with a fake response and observed risk flag true, unknown return term unchanged by default; broken model raised `RuntimeError`, expired deadline raised `TimeoutError`, missing key raised `ValueError`, @6f7b446. No live model call was possible without a key.
+2026-09-24 17:55 oskar1: replaced the Haiku transport with one Swisscom Apertus chat-completions request after reading the official hacker guide. Credential is supplied at runtime and never committed. The guide does not document a structured-output request option, so the response is validated strictly in this package.
+2026-09-24 18:01 oskar1: incorporated Fides's integrity-label and low-capacity extraction principles: merchant-derived fields retain their source and the no-tools model response is confined to typed facts; paper reviewed at arXiv:2505.23643v2.
+2026-09-24 18:06 oskar1: live Swisscom probe returned HTTP 200 in 0.32 s for a one-word response. One injected shoe description timed out at a 1.5 s client cap; the same description returned the expected instruction flag and 30-day term in 2.19 s under a 5 s cap. Set model cap to 5 s while retaining a 2 s decision reserve.
+2026-09-24 18:08 oskar1: full extraction of one injected shoe cart line with an 8 s deadline completed in 2.03 s, kept `contains_instructions: true`, `return_days: 30` and `sources.return_days: merchant_text`. This is one live sample, not a p50/p99 benchmark.
+2026-09-24 18:11 oskar1: sampled five adversarial corpus lines with live Apertus under a 5 s request timeout. All five responses passed local shape validation and matched 7/7 annotated fields; observed durations were 5.16, 2.04, 2.07, 2.05 and 1.98 s (median 2.05 s). One response exceeded the nominal request timeout by 0.16 s, so this small sample does not establish deadline reliability or a meaningful p99.
+2026-09-24 18:57 oskar1: checked model value on two unseen risk phrases. `Stored CHF 50 value ... transferable` remained unknown for gift-card status in both passes (2.24 s); `renews automatically every month until cancelled` was unknown to pass 1 but Apertus marked `is_subscription: true` with `sources.is_subscription: model` (2.53 s). The second example shows a bounded affirmative risk flag the model adds without authorizing a purchase.
