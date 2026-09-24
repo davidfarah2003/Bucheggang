@@ -30,7 +30,7 @@ a { color: inherit; }
 img, svg { display: block; max-width: 100%; }
 textarea { resize: vertical; }
 .composer textarea { resize: none; }
-:focus-visible { outline: 3px solid rgb(200 56 49 / 42%); outline-offset: 3px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 ::selection { background: #f6d2cc; color: var(--ink); }
 
 .app-shell, .app, .shell {
@@ -270,7 +270,7 @@ p { margin: 0; line-height: 1.48; }
 .filter-sheet > p { color: var(--muted); font-size: 14px; line-height: 1.5; }
 .filter-category { display: flex; flex-wrap: wrap; gap: 8px; }
 .filter-category button {
-  min-height: 37px;
+  min-height: 44px;
   padding: 8px 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -286,7 +286,7 @@ p { margin: 0; line-height: 1.48; }
 .filter-field:has(+ .budget-slider) strong { color: var(--accent); text-align: right; }
 .filter-field:has(input[type="checkbox"]) { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
 .filter-field input[type="checkbox"] { width: 19px; height: 19px; flex: 0 0 19px; margin: 0; accent-color: var(--accent); }
-.filter-field input:not([type="range"]), .filter-field select, .filter-field textarea {
+.filter-field input:not([type="range"]):not([type="checkbox"]), .filter-field select, .filter-field textarea {
   width: 100%;
   min-height: 47px;
   padding: 11px 13px;
@@ -400,7 +400,7 @@ p { margin: 0; line-height: 1.48; }
 .wallet-empty p { margin-top: 9px; color: var(--muted); font-size: 14px; }
 
 .activity-tabs { display: flex; gap: 5px; justify-content: space-between; margin-bottom: 33px; }
-.activity-tabs button { min-height: 38px; padding: 8px 13px; border: 0; border-radius: 24px; background: transparent; color: var(--muted); font-size: 13px; font-weight: 570; }
+.activity-tabs button { min-height: 44px; padding: 8px 13px; border: 0; border-radius: 24px; background: transparent; color: var(--muted); font-size: 13px; font-weight: 570; }
 .activity-tabs button.selected, .activity-tabs button[aria-selected="true"] { background: var(--ink); color: #fff; }
 #activity-list { display: grid; gap: 13px; }
 .date-group { margin: 5px 0 10px; color: var(--muted); font-size: 13px; font-weight: 600; }
@@ -484,10 +484,10 @@ body.dialog-open { overflow: hidden; }
   border-radius: 25px 25px 0 0;
   background: var(--surface);
   box-shadow: 0 -16px 50px rgb(18 27 27 / 15%);
-  outline: none;
   animation: sheet-in .22s ease-out;
 }
-.overlay-close { position: absolute; top: 14px; right: 17px; display: grid; width: 34px; height: 34px; place-items: center; border: 0; border-radius: 50%; background: #f6f4f1; color: var(--muted); font-size: 22px; line-height: 1; }
+.overlay:focus { outline: 3px solid var(--accent); outline-offset: -3px; }
+.overlay-close { position: absolute; top: 9px; right: 12px; display: grid; width: 44px; height: 44px; place-items: center; border: 0; border-radius: 50%; background: #f6f4f1; color: var(--muted); font-size: 22px; line-height: 1; }
 .overlay > .section-kicker { max-width: calc(100% - 40px); }
 .overlay h2 { margin-top: 14px; max-width: calc(100% - 8px); font-size: 26px; }
 .overlay h3 { margin: 26px 0 14px; font-size: 19px; }
