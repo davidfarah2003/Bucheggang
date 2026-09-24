@@ -1,7 +1,11 @@
-"""Customer step-up routes: GET /step-ups/pending and POST /step-ups/{authorization_id}/answer.
+"""Customer routes served from the runner's files.
 
-leash.api includes this router behind the app's customer login dependency, the
-same way it includes leash.policy.routes.policy_router.
+step_up_router: GET /step-ups/pending and POST /step-ups/{authorization_id}/answer.
+history_router: GET /mandates/{mandate_id}/decisions and GET /decisions/{authorization_id}.
+
+leash.api includes both behind the app's customer login dependency, the same way
+it includes leash.policy.routes.policy_router. They read data/ written by the
+run loop process, so they work from the API process.
 """
 
 from __future__ import annotations
@@ -11,10 +15,28 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from leash.contracts import StepUp, StepUpAnswer
+from pydantic import BaseModel, ConfigDict
 
-from . import api
+from leash.contracts import Decision, Event, MandateState, StepUp, StepUpAnswer
+
+from . import api, records
 from .stepups import StepUpBook, StepUpError
+
+
+class DecisionEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Decision
+    state_after: MandateState
+
+
+class DecisionDetail(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Decision
+    event: Event
+    state_before: MandateState
+    state_after: MandateState
 
 
 def step_up_router(book: StepUpBook, authenticated_customer: Callable[..., str]) -> APIRouter:
@@ -44,5 +66,33 @@ def step_up_router(book: StepUpBook, authenticated_customer: Callable[..., str])
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except api.ApiError as exc:
             raise HTTPException(status_code=502, detail=f"simulator refused resolve: HTTP {exc.status} {exc.body}") from exc
+
+    return router
+
+
+def history_router(authenticated_customer: Callable[..., str]) -> APIRouter:
+    """GET /mandates/{mandate_id}/decisions and GET /decisions/{authorization_id}.
+
+    Mount only behind the app's customer login dependency, as step_up_router is.
+    """
+    router = APIRouter()
+
+    @router.get("/mandates/{mandate_id}/decisions")
+    def mandate_decisions(mandate_id: str, customer: str = Depends(authenticated_customer)) -> list[DecisionEntry]:
+        if not customer:
+            raise HTTPException(status_code=401, detail="customer login is required")
+        try:
+            return [DecisionEntry(**entry) for entry in records.mandate_history(mandate_id)]
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"no decisions recorded for mandate {mandate_id}") from exc
+
+    @router.get("/decisions/{authorization_id}")
+    def decision(authorization_id: str, customer: str = Depends(authenticated_customer)) -> DecisionDetail:
+        if not customer:
+            raise HTTPException(status_code=401, detail="customer login is required")
+        try:
+            return DecisionDetail(**records.decision_detail(authorization_id))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"no decision recorded for {authorization_id}") from exc
 
     return router

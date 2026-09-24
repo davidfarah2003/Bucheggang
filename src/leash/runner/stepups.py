@@ -1,32 +1,45 @@
-"""Step-up handling (plan 05 task 5).
+"""Step-up handling (plan 05 tasks 5 and 6).
 
-A step_up the simulator accepted is held here as a pending StepUp until the
-customer answers through the app or its expires_at passes.
+A step_up the simulator accepted is held as a file until the customer answers
+through the app or its expires_at passes:
 
-- The customer's answer arrives on POST /step-ups/{authorization_id}/answer.
-  The runner sends it to POST /v1/authorizations/{id}/resolve unchanged and
-  records the result.
-- A sweeper thread resolves every step-up whose expires_at has passed with
-  decline and step_up_timeout. The runner never invents an approve.
+    data/stepups/<mandate_id>/<authorization_id>.json
+    { step_up: StepUp, status: "pending" | "resolved", resolution: {...} | null }
+
+The run loop and the API shell are two processes. Both build StepUpBook() and
+read the same files, and every change happens under
+leash.runner.records.mandate_lock with one atomic write (temp file, rename).
+
+- The customer's answer arrives on POST /step-ups/{authorization_id}/answer
+  (API process). The runner sends it to POST /v1/authorizations/{id}/resolve,
+  records it through leash.engine.state.record, writes the decision file and
+  marks the step-up file resolved.
+- The run loop's sweeper thread does the same with decline and step_up_timeout
+  for every pending step-up whose expires_at has passed. The runner never
+  invents an approve.
 
 expires_at = the time the step_up was accepted + bootstrap
 limits.step_up_timeout_seconds - EXPIRY_MARGIN_S. The margin makes the runner's
 timeout decline reach the simulator before the platform's own window closes.
+A missing or malformed step-up file raises.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
-from leash.contracts import Decision, Event, MandateState, StepUp, StepUpAnswer
+from leash.contracts import Decision, Event, StepUp, StepUpAnswer
 
-from . import api
+from . import api, records
 
 EXPIRY_MARGIN_S = 5.0
 SWEEP_INTERVAL_S = 1.0
+STEPUPS_DIR = records.DATA_DIR / "stepups"
 
 log = logging.getLogger("leash.runner.stepups")
 
@@ -41,6 +54,10 @@ def human_window_s() -> float:
     if not isinstance(limits, dict) or not isinstance(limits.get("step_up_timeout_seconds"), (int, float)):
         raise StepUpError(f"bootstrap has no limits.step_up_timeout_seconds: {limits}")
     return float(limits["step_up_timeout_seconds"])
+
+
+def expires_at(accepted_at: datetime, window_s: float) -> datetime:
+    return accepted_at + timedelta(seconds=window_s - EXPIRY_MARGIN_S)
 
 
 def _now() -> datetime:
@@ -59,48 +76,68 @@ def resolve(authorization_id: str, decision: str, customer_message: str) -> Any:
 
 
 class StepUpBook:
-    """Pending step-ups and the MandateState they belong to, behind one lock.
+    """File-backed pending step-ups. Any process can build one over the same root."""
 
-    The run loop and the HTTP routes share one book. Every state change goes
-    through `lock`.
-    """
-
-    def __init__(self, state: MandateState, window_s: float):
-        self.state = state
-        self.window_s = window_s
-        self.lock = threading.RLock()
-        self._pending: dict[str, StepUp] = {}
+    def __init__(self, root: Path = STEPUPS_DIR):
+        self.root = Path(root)
         self._stop = threading.Event()
         self._sweeper: threading.Thread | None = None
         self.failure: BaseException | None = None
 
-    def add(self, event: Event, decision: Decision, accepted_at: datetime) -> StepUp:
+    # files
+
+    def _path(self, mandate_id: str, authorization_id: str) -> Path:
+        return self.root / records._safe(mandate_id, "mandate_id") / f"{records._safe(authorization_id, 'authorization_id')}.json"
+
+    @staticmethod
+    def _read(path: Path) -> dict[str, Any]:
+        record = json.loads(path.read_text())
+        if record.get("status") not in ("pending", "resolved") or "step_up" not in record:
+            raise StepUpError(f"{path} is not a step-up record")
+        record["step_up"] = StepUp.model_validate(record["step_up"])
+        return record
+
+    def _find(self, authorization_id: str) -> Path:
+        found = list(self.root.glob(f"*/{records._safe(authorization_id, 'authorization_id')}.json"))
+        if not found:
+            raise KeyError(authorization_id)
+        if len(found) > 1:
+            raise StepUpError(f"step-up {authorization_id} exists under more than one mandate: {found}")
+        return found[0]
+
+    def _records(self, mandate_id: str | None = None) -> list[dict[str, Any]]:
+        pattern = f"{records._safe(mandate_id, 'mandate_id')}/*.json" if mandate_id else "*/*.json"
+        return [self._read(p) for p in self.root.glob(pattern)]
+
+    # reads
+
+    def pending(self, mandate_id: str | None = None) -> list[StepUp]:
+        return sorted(
+            (r["step_up"] for r in self._records(mandate_id) if r["status"] == "pending"),
+            key=lambda s: s.expires_at,
+        )
+
+    def has_pending(self, mandate_id: str) -> bool:
+        return bool(self.pending(mandate_id))
+
+    # writes
+
+    def add(self, event: Event, decision: Decision, expires: datetime) -> StepUp:
+        """Write the pending record. The caller holds mandate_lock for the event's mandate."""
         if decision.decision != "step_up":
             raise StepUpError(f"{decision.authorization_id} is {decision.decision}, not step_up")
-        step_up = StepUp(
-            authorization_id=decision.authorization_id,
-            decision=decision,
-            event=event,
-            expires_at=accepted_at + timedelta(seconds=self.window_s - EXPIRY_MARGIN_S),
-        )
-        with self.lock:
-            if step_up.authorization_id in self._pending:
-                raise StepUpError(f"step-up {step_up.authorization_id} is already pending")
-            self._pending[step_up.authorization_id] = step_up
+        step_up = StepUp(authorization_id=decision.authorization_id, decision=decision, event=event, expires_at=expires)
+        path = self._path(event.mandate.mandate_id, step_up.authorization_id)
+        if path.exists():
+            raise StepUpError(f"step-up {step_up.authorization_id} is already recorded at {path}")
+        records.write_atomic(path, {"step_up": step_up.model_dump(mode="json"), "status": "pending", "resolution": None})
         return step_up
 
-    def pending(self) -> list[StepUp]:
-        with self.lock:
-            return sorted(self._pending.values(), key=lambda s: s.expires_at)
-
-    def has_pending(self) -> bool:
-        with self.lock:
-            return bool(self._pending)
-
-    def _finish(self, step_up: StepUp, outcome: str, reason_codes: list[str], message: str, explanation: str) -> Any:
-        """Resolve on the simulator, then record. Caller holds the lock."""
+    def _finish(self, path: Path, step_up: StepUp, outcome: str, reason_codes: list[str], message: str, explanation: str) -> Any:
+        """Resolve on the simulator, then record. Caller holds the mandate lock."""
         auth_id = step_up.authorization_id
         accepted = resolve(auth_id, outcome, message)
+        accepted_at = _now()
         final = Decision(
             authorization_id=auth_id,
             decision=outcome,
@@ -111,25 +148,31 @@ class StepUpBook:
             engine_version=step_up.decision.engine_version,
             mandate_version=step_up.decision.mandate_version,
             elapsed_ms=step_up.decision.elapsed_ms,
-            decided_at=_now(),
+            decided_at=accepted_at,
         )
-        from .loop import record_resolution  # loop imports this module
-
-        record_resolution(self.state, step_up.event, final)
-        del self._pending[auth_id]
+        records.record_accepted(step_up.event, final, accepted_at, accepted, resolution=True)
+        records.write_atomic(path, {
+            "step_up": step_up.model_dump(mode="json"),
+            "status": "resolved",
+            "resolution": {"decision": final.model_dump(mode="json"), "accepted": accepted, "accepted_at": accepted_at.isoformat()},
+        })
         log.info("resolved %s %s %s accepted=%s", auth_id, outcome, reason_codes, accepted)
         return accepted
 
     def answer(self, answer: StepUpAnswer) -> Any:
-        """Send the customer's answer to /resolve and record it."""
-        with self.lock:
-            step_up = self._pending.get(answer.authorization_id)
-            if step_up is None:
-                raise KeyError(answer.authorization_id)
+        """Send the customer's answer to /resolve and record it. KeyError when unknown."""
+        path = self._find(answer.authorization_id)
+        mandate_id = path.parent.name
+        with records.mandate_lock(mandate_id):
+            record = self._read(path)
+            step_up = record["step_up"]
+            if record["status"] != "pending":
+                raise StepUpError(f"step-up {answer.authorization_id} is already resolved")
             if _now() >= step_up.expires_at:
                 raise StepUpError(f"step-up {answer.authorization_id} expired at {step_up.expires_at.isoformat()}")
             code = "customer_confirmation" if answer.decision == "approve" else "customer_declined"
             return self._finish(
+                path,
                 step_up,
                 answer.decision,
                 [code],
@@ -137,13 +180,16 @@ class StepUpBook:
                 f"The customer answered {answer.decision} at {answer.answered_at.isoformat()}.",
             )
 
-    def sweep(self) -> list[str]:
-        """Resolve every expired step-up with decline step_up_timeout."""
+    def sweep(self, mandate_id: str) -> list[str]:
+        """Resolve every expired pending step-up of one mandate with decline step_up_timeout."""
         done = []
-        with self.lock:
+        with records.mandate_lock(mandate_id):
             now = _now()
-            for step_up in [s for s in self._pending.values() if now >= s.expires_at]:
+            for step_up in self.pending(mandate_id):
+                if now < step_up.expires_at:
+                    continue
                 self._finish(
+                    self._path(mandate_id, step_up.authorization_id),
                     step_up,
                     "decline",
                     ["step_up_timeout"],
@@ -153,10 +199,12 @@ class StepUpBook:
                 done.append(step_up.authorization_id)
         return done
 
-    def _sweep_forever(self) -> None:
+    # sweeper thread (run loop process only)
+
+    def _sweep_forever(self, mandate_id: str) -> None:
         try:
             while not self._stop.wait(SWEEP_INTERVAL_S):
-                self.sweep()
+                self.sweep(mandate_id)
         except BaseException as exc:
             # Kept for the run loop, which re-raises it; the thread then ends.
             self.failure = exc
@@ -167,14 +215,11 @@ class StepUpBook:
         if self.failure is not None:
             raise StepUpError("step-up sweeper failed; pending step-ups are no longer timed out") from self.failure
 
-    def start(self) -> None:
-        self._sweeper = threading.Thread(target=self._sweep_forever, name="step-up-sweeper", daemon=True)
+    def start(self, mandate_id: str) -> None:
+        self._sweeper = threading.Thread(target=self._sweep_forever, args=(mandate_id,), name="step-up-sweeper", daemon=True)
         self._sweeper.start()
 
     def stop(self) -> None:
         self._stop.set()
         if self._sweeper is not None:
             self._sweeper.join()
-
-    def sweeper_alive(self) -> bool:
-        return self._sweeper is not None and self._sweeper.is_alive()

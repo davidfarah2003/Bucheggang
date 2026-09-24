@@ -18,7 +18,9 @@ from pathlib import Path
 
 from leash.contracts import Decision, Event, MandateState, PolicyDraft, PurchaseFacts
 
-from . import loop, routes, stepups
+from leash.engine import state as state_store
+
+from . import loop, records, routes, stepups
 
 
 def serve(book: stepups.StepUpBook, port: int) -> None:
@@ -33,6 +35,7 @@ def serve(book: stepups.StepUpBook, port: int) -> None:
 
     app = FastAPI()
     app.include_router(routes.step_up_router(book, local_customer))
+    app.include_router(routes.history_router(local_customer))
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     threading.Thread(target=server.run, name="step-up-routes", daemon=True).start()
 
@@ -97,11 +100,17 @@ def main() -> None:
     if run["scenario_id"] != args.scenario or run["mandate_id"] != args.mandate_id:
         raise loop.RunLoopError(f"run {run['run_id']} is for {run['scenario_id']}/{run['mandate_id']}")
     print("run:", json.dumps(run, default=str))
-    book = stepups.StepUpBook(MandateState(mandate_id=args.mandate_id), stepups.human_window_s())
-    book.start()
+    records.check_consistent(args.mandate_id)
+    with records.mandate_lock(args.mandate_id):
+        start_state = state_store.load(args.mandate_id)
+    print("state at start:", json.dumps({"handled": sorted(start_state.handled), "approvals": len(start_state.approvals),
+                                        "pending_step_ups": start_state.pending_step_ups}))
+    window_s = stepups.human_window_s()
+    book = stepups.StepUpBook()
+    book.start(args.mandate_id)
     if args.serve_port:
         serve(book, args.serve_port)
-    state = loop.run_loop(run["run_id"], EVALUATORS[args.evaluate], policy, book)
+    state = loop.run_loop(run["run_id"], EVALUATORS[args.evaluate], policy, args.mandate_id, book, window_s)
     book.stop()
     print("final run:", json.dumps(loop.run_progress(run["run_id"]), default=str))
     print("state:", state.model_dump_json())
