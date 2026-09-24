@@ -118,6 +118,15 @@ class StepUpBook:
             key=lambda s: s.expires_at,
         )
 
+    def get(self, authorization_id: str) -> StepUp:
+        path = self._find(authorization_id)
+        step_up = self._read(path)["step_up"]
+        if (step_up.authorization_id != authorization_id
+                or step_up.event.authorization.authorization_id != authorization_id
+                or step_up.event.mandate.mandate_id != path.parent.name):
+            raise StepUpError(f"step-up {authorization_id} identity differs from its saved path")
+        return step_up
+
     def has_pending(self, mandate_id: str) -> bool:
         return bool(self.pending(mandate_id))
 
