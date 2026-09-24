@@ -18,7 +18,23 @@ from pathlib import Path
 
 from leash.contracts import Decision, Event, MandateState, PolicyDraft, PurchaseFacts
 
-from . import loop
+from . import loop, routes, stepups
+
+
+def serve(book: stepups.StepUpBook, port: int) -> None:
+    """Serve the step-up router alone for a local try. The demo mounts it in leash.api."""
+    import threading
+
+    import uvicorn
+    from fastapi import FastAPI, Header
+
+    def local_customer(x_local_customer: str = Header()) -> str:
+        return x_local_customer
+
+    app = FastAPI()
+    app.include_router(routes.step_up_router(book, local_customer))
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    threading.Thread(target=server.run, name="step-up-routes", daemon=True).start()
 
 
 def decline_everything_smoke(
@@ -40,7 +56,29 @@ def decline_everything_smoke(
     )
 
 
-EVALUATORS = {"decline_everything_smoke": decline_everything_smoke}
+def step_up_everything_smoke(
+    event: Event, policy: PolicyDraft, state: MandateState, facts: list[PurchaseFacts] | None
+) -> Decision:
+    """Smoke-test evaluator: asks the customer about every purchase. Never used in the demo."""
+    started = time.monotonic()
+    return Decision(
+        authorization_id=event.authorization.authorization_id,
+        decision="step_up",
+        reason_codes=["customer_confirmation"],
+        customer_message="Runner smoke test: please confirm or decline this purchase.",
+        evidence=[],
+        explanation="Runner smoke test: this evaluator steps up every purchase to exercise step-up handling.",
+        engine_version="runner-smoke-step-up-everything",
+        mandate_version=policy.version,
+        elapsed_ms=int((time.monotonic() - started) * 1000),
+        decided_at=loop._now(),
+    )
+
+
+EVALUATORS = {
+    "decline_everything_smoke": decline_everything_smoke,
+    "step_up_everything_smoke": step_up_everything_smoke,
+}
 
 
 def main() -> None:
@@ -49,6 +87,7 @@ def main() -> None:
     parser.add_argument("--mandate-id", required=True)
     parser.add_argument("--draft", required=True, type=Path, help="confirmed PolicyDraft JSON")
     parser.add_argument("--evaluate", required=True, choices=sorted(EVALUATORS))
+    parser.add_argument("--serve-port", type=int, help="also serve the step-up routes on 127.0.0.1:PORT (local try only)")
     parser.add_argument("--run-id", help="attach to a run that is already started instead of starting one")
     args = parser.parse_args()
 
@@ -58,8 +97,12 @@ def main() -> None:
     if run["scenario_id"] != args.scenario or run["mandate_id"] != args.mandate_id:
         raise loop.RunLoopError(f"run {run['run_id']} is for {run['scenario_id']}/{run['mandate_id']}")
     print("run:", json.dumps(run, default=str))
-    state = MandateState(mandate_id=args.mandate_id)
-    state = loop.run_loop(run["run_id"], EVALUATORS[args.evaluate], policy, state)
+    book = stepups.StepUpBook(MandateState(mandate_id=args.mandate_id), stepups.human_window_s())
+    book.start()
+    if args.serve_port:
+        serve(book, args.serve_port)
+    state = loop.run_loop(run["run_id"], EVALUATORS[args.evaluate], policy, book)
+    book.stop()
     print("final run:", json.dumps(loop.run_progress(run["run_id"]), default=str))
     print("state:", state.model_dump_json())
 
