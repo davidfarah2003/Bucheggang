@@ -51,4 +51,4 @@ cotal_spawn(name: "policy_builder", cwd: ".worktrees/policy", model: "gpt-6-sol"
             prompt: "Do task 2 of docs/plans/01-policy-confirmation.md ...")
 ```
 
-The seat joins `team.zurichbuchegg.policy` and reports there. The lane owner (Oskar) reads that channel from their own main session and re-briefs by posting on it with an `@policy_builder` mention. `cotal_despawn(name: ...)` only reaches your own seats, so the owner asks on the spine when they want a seat David spawned stopped.
+The seat joins `team.zurichbuchegg.policy` and reports there. The lane owner (Oskar) reads that channel from their own main session and re-briefs by posting on it with an `@policy_builder` mention. `cotal_despawn(name: ...)` only reaches your own seats, so the owner asks David on the spine when they want a seat David spawned stopped.

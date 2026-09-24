@@ -29,7 +29,7 @@ Out:
 
 ## Steps
 
-1. Agree `PurchaseFacts` with the engine lane (a PR touching `docs/contracts.md` and `src/leash/contracts/`, carried to the spine by the owner).
+1. Agree `PurchaseFacts` with the engine lane on `team.zurichbuchegg.contracts` with `@engine_builder`, then land it as a PR touching `docs/contracts.md` and `src/leash/contracts/`.
 2. Test corpus `tests/extract/corpus.jsonl`: the 56 cart lines from `purchase_attempt_items.csv`, plus 20 adversarial lines you write (an instruction hidden mid-description, a gift card described as a "flexible present", a protection plan described as "included care", a size stated in EU and UK). Each line carries its expected facts.
 3. Pass 1 with tests.
 4. Pass 2: prompt and JSON schema. Model `claude-haiku-4-5-20251001` first, because of the deadline budget. Budget: whatever is left of `deadline_at` minus 2 s, capped at 1.5 s. Both numbers are starting values; measure and write the real ones in the Log.

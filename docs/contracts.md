@@ -1,6 +1,6 @@
 # Contracts between lanes
 
-The executable versions are the pydantic models in `src/leash/contracts/`, owned by the engine lane. A change to this file or that package is its own PR, posted on the spine with an `@` to the owners of every lane it touches, and merged before any lane depends on it. Field names below are the names in code.
+The executable versions are the pydantic models in `src/leash/contracts/`, owned by the engine lane. A change to this file or that package is agreed on `team.zurichbuchegg.contracts` by the builders of every lane it touches, lands as its own PR, and is merged before any lane depends on it. Field names below are the names in code.
 
 ## Who produces what, for whom
 

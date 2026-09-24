@@ -33,7 +33,7 @@ Everything below these is a named residual, listed but not blocking.
 
 ## Verdict
 
-Post exactly one message on `team.zurichbuchegg.review`:
+Post exactly one message on `team.zurichbuchegg.review`, with `mentions` set to the builder whose PR it is (`<lane>_builder`) so the verdict wakes them:
 
 `APPROVE <lane> PR #<n> @<sha>` or `BLOCK <lane> PR #<n> @<sha>`, then one line per finding: severity (blocker or residual), `file:line`, what fails, how you showed it. Then the commands you ran with their exit codes. No prose beyond that.
 
