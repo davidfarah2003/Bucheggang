@@ -32,7 +32,7 @@ Out:
 
 ## Steps
 
-1. Settings and API client with retries on 5xx and a 30 s request timeout, matching the organizer's curl helper. Call `/healthz` and `/v1/bootstrap` once to see them answer.
+1. Settings and API client with a 30 s request timeout, matching the organizer's curl helper. No retry on 5xx or anywhere else: a non-2xx raises `ApiError(status, body)` (AGENTS.md section 6). Call `/healthz` and `/v1/bootstrap` once to see them answer.
 2. Mandate client. Try it on the `SCEN0000` instruction (the quickstart's rule) once the key arrives; before that, against a recorded response.
 3. `scripts/replay.py` with the `SCEN0002` fixture draft. This lets the engine lane replay today, before the key.
 4. Run loop and deadline guard. Try it against the live API as soon as the key arrives.
@@ -54,3 +54,5 @@ Out:
 ## Log
 
 (one line per finished task: date time, who, what, how it was tried, sha)
+2026-09-24 19:47 runner_builder: settings, API client and mandate client (leash.runner.settings, .api, .mandates); tried with `uv run python -c` calling api.healthz() -> {"status":"ok","service":"saw26-sandbox","api_version":"0.1.0"}, api.bootstrap() -> team_id team2, limits decision_timeout_seconds 8, step_up_timeout_seconds 120, long_poll_max_seconds 25, features.reset false, live scenarios SCEN0101 SCEN0135 SCEN0130 SCEN0106 SCEN0122 (not SCEN0000..0004); mandates.create(SCEN0000 quickstart draft, rule billing_amount_chf <= 20 CHF purchase, uncertainty ask) -> draft_c108c8b3cdf66c29, confirm -> TMd8b7df71d23ca697, get -> status active; get("TMdoesnotexist") raised ApiError 404 mandate_not_found; key redacted, read only in settings.py, @e383b5d
+2026-09-24 19:47 runner_builder: bootstrap says team reset is disabled (features.reset false), so the open question on POST /v1/team/reset before demo runs resolves to: create a fresh mandate per run instead.
