@@ -33,7 +33,7 @@ Out:
 1. Agree `PurchaseFacts` with the engine lane on `team.zurichbuchegg.contracts` with `@engine_builder`, then land it as a PR touching `docs/contracts.md` and `src/leash/contracts/`.
 2. Sample corpus `docs/samples/extract-corpus.jsonl`: the 56 cart lines from `purchase_attempt_items.csv`, plus 20 adversarial lines you write (an instruction hidden mid-description, a gift card described as a "flexible present", a protection plan described as "included care", a size stated in EU and UK). Each line carries its expected facts.
 3. Pass 1. Run it over the corpus once.
-4. Pass 2: prompt and strict local JSON validation. Model `swiss-ai/Apertus-v1.5-70B` via the [Swisscom hacker guide](https://zh.ai-weeks.ch/tools/swisscom-hacker-guide). Budget: whatever is left of `deadline_at` minus 2 s, capped at 1.5 s. Both numbers are starting values; measure and write the real ones in the Log.
+4. Pass 2: prompt and strict local JSON validation. Model `swiss-ai/Apertus-v1.5-70B` via the [Swisscom hacker guide](https://zh.ai-weeks.ch/tools/swisscom-hacker-guide). Budget: whatever is left of `deadline_at` minus 2 s, capped at 5 s. The challenge's default decision deadline is 8 s from queueing, so the actual remaining time may be less. Measure and write the real latency in the Log.
 5. Merge and provenance.
 6. Measure on the corpus: per-field accuracy for pass 1 alone and pass 1 plus 2; instruction-detection recall on the adversarial lines; latency p50 and p99. Table in the Log. If pass 2 adds nothing measurable, remove it and say so in the demo.
 
@@ -46,7 +46,7 @@ Out:
 
 ## Open questions
 
-- Can Swisscom Apertus reliably answer within the 1.5 s provisional model budget? Measure on live calls before relying on model-added fields in the demonstration.
+- Can Swisscom Apertus reliably answer within the 5 s model cap when the event arrives after queueing? Measure p50/p99 on representative carts before relying on model-added fields in the demonstration.
 - Does the model see the requested item? Proposed: yes, as `{product_type, size, must_be_returnable_days}`, never the raw instruction sentence.
 
 ## Log
@@ -57,3 +57,5 @@ Out:
 2026-09-24 17:39 oskar1: one-call Haiku adapter with JSON schema and deadline budget; ran it with a fake response and observed risk flag true, unknown return term unchanged by default; broken model raised `RuntimeError`, expired deadline raised `TimeoutError`, missing key raised `ValueError`, @6f7b446. No live model call was possible without a key.
 2026-09-24 17:55 oskar1: replaced the Haiku transport with one Swisscom Apertus chat-completions request after reading the official hacker guide. Credential is supplied at runtime and never committed. The guide does not document a structured-output request option, so the response is validated strictly in this package.
 2026-09-24 18:01 oskar1: incorporated Fides's integrity-label and low-capacity extraction principles: merchant-derived fields retain their source and the no-tools model response is confined to typed facts; paper reviewed at arXiv:2505.23643v2.
+2026-09-24 18:06 oskar1: live Swisscom probe returned HTTP 200 in 0.32 s for a one-word response. One injected shoe description timed out at a 1.5 s client cap; the same description returned the expected instruction flag and 30-day term in 2.19 s under a 5 s cap. Set model cap to 5 s while retaining a 2 s decision reserve.
+2026-09-24 18:08 oskar1: full extraction of one injected shoe cart line with an 8 s deadline completed in 2.03 s, kept `contains_instructions: true`, `return_days: 30` and `sources.return_days: merchant_text`. This is one live sample, not a p50/p99 benchmark.

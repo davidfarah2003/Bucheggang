@@ -81,7 +81,7 @@ class SwisscomFactClient:
         target = dict(requested) if requested else {}
         body = {
             "model": self.model,
-            "max_tokens": 512,
+            "max_tokens": 1024,
             "temperature": 0,
             "messages": [
                 {
@@ -168,7 +168,7 @@ def extract_event_with_model(
     deadline_at: datetime | str,
     catalogue: Mapping[str, Mapping[str, Any]] | None = None,
     requested: Mapping[str, str] | None = None,
-    max_model_s: float = 1.5,
+    max_model_s: float = 5.0,
     reserve_s: float = 2.0,
     allow_model_resolution: bool = False,
 ) -> list[dict[str, Any]]:
