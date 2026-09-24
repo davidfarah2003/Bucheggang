@@ -51,6 +51,8 @@ Out:
 - Use the local `/session` cookie contract for the demo. The app loads saved drafts through `GET /drafts/{id}` and uses the runner's live step-up routes.
 - Deliver the mobile-first Wallet demo first. It works directly from `/app/?draft=<id>` without a Shopping Harness.
 - Mount the customer UI in the FastAPI shell with `leash.api.static.mount_customer_app(api)`.
+- Disable Confirm for answers outside `open_questions[].confirming_answers`.
+- Read current permissions from `effective_policy`, separate from the immutable confirmed draft.
 - `docs/screens/` has a 400 px review capture and preview captures for approvals, policy, activity and the judge panel. The previews use the organizer's example Event and temporary browser data, not a live decision. Replace the judge preview with AU0016 after the decision detail route is live.
 
 ## Later
