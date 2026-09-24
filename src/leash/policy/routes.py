@@ -21,6 +21,8 @@ class ConfirmBody(BaseModel):
 class RejectBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    version: StrictInt
+    hash: str
     reason: str
 
 
@@ -72,11 +74,10 @@ def policy_router(
         if not customer:
             raise HTTPException(status_code=401, detail="customer login is required")
         try:
-            draft = store.get(draft_id)
             store.reject(
                 draft_id,
-                version=draft["version"],
-                hash_value=draft["hash"],
+                version=body.version,
+                hash_value=body.hash,
                 rejected_by=customer,
                 reason=body.reason,
             )

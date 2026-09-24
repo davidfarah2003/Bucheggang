@@ -38,13 +38,15 @@ def _answered_draft(
         answer = answers[question["question"]]
         if answer not in question["options"]:
             raise UnresolvedQuestion(f"answer is not an option: {question['question']}")
-        if set(question["options"]) - {"ask", "decline"}:
+        if answer not in question["confirming_answers"]:
             raise UnresolvedQuestion(
                 f"question needs a revised executable policy before confirmation: {question['question']}"
             )
-        if policy == "decline" and answer == "ask":
+        if answer in {"ask", "decline"} and set(question["options"]) - {"ask", "decline"}:
+            raise UnresolvedQuestion("an uncertainty answer cannot resolve a semantic question")
+        if answer == "ask" and policy == "decline":
             raise UnresolvedQuestion("ask would expand a decline policy; revise and review the draft first")
-        if policy == "approve" or answer == "decline":
+        if answer in {"ask", "decline"} and (policy == "approve" or answer == "decline"):
             policy = answer
         answered.append({**question, "answer": answer})
 
