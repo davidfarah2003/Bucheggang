@@ -32,20 +32,19 @@ Out:
 
 ## Steps
 
-1. Settings and API client with retries on 5xx and a 30 s request timeout, matching the organizer's curl helper. `/healthz` and `/v1/bootstrap` smoke test.
-2. Mandate client with a test against the `SCEN0000` instruction (the quickstart's rule) once the key arrives; before that, against a recorded response.
-3. `scripts/replay.py` with the `SCEN0002` fixture draft. This unblocks the engine lane's replay test today, before the key.
-4. Run loop and deadline guard, with a fake simulator (`tests/runner/fake_api.py`) that serves the CSV attempts over HTTP, delivers one authorization twice, and returns 204 between events.
-5. Step-up handling and timeout resolution against the fake simulator.
-6. Persistence and restart reconciliation test: kill the worker mid-run, restart, spend counted once.
+1. Settings and API client with retries on 5xx and a 30 s request timeout, matching the organizer's curl helper. Call `/healthz` and `/v1/bootstrap` once to see them answer.
+2. Mandate client. Try it on the `SCEN0000` instruction (the quickstart's rule) once the key arrives; before that, against a recorded response.
+3. `scripts/replay.py` with the `SCEN0002` fixture draft. This lets the engine lane replay today, before the key.
+4. Run loop and deadline guard. Try it against the live API as soon as the key arrives.
+5. Step-up handling and timeout resolution.
+6. Persistence, so a restarted worker does not count spend twice. Try it once by killing the worker mid-run.
 7. Live run of `SCEN0000`, then `SCEN0001` to `SCEN0004`, log in `docs/eval/`.
 
 ## How we check it works
 
-- Fake-simulator test: 45 attempts, zero missed deadlines, one duplicate delivery recorded once, one step-up resolved by an answer and one by timeout.
 - Live `SCEN0000` accepted; live `SCEN0002` completes with the decision log in `docs/eval/`.
 - `grep -rn "TEAM_API_KEY\|Bearer" src/` matches only `leash/runner/settings.py` and the client.
-- Restart test passes.
+- A worker killed mid-run and restarted counts spend once.
 
 ## Open questions
 
@@ -54,4 +53,4 @@ Out:
 
 ## Log
 
-(one line per finished task: date time, who, what, test, sha)
+(one line per finished task: date time, who, what, how it was tried, sha)

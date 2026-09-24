@@ -53,4 +53,4 @@ Out:
 
 ## Log
 
-(one line per finished task: date time, who, what, test, sha)
+(one line per finished task: date time, who, what, how it was tried, sha)

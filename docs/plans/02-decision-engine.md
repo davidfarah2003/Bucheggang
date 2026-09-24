@@ -32,22 +32,20 @@ Out:
 
 ## Steps
 
-1. Contracts package with tests that load `example_authorization_request.json` and reject a mutated copy (a missing required field, a boolean rule value).
+1. Contracts package. Load `example_authorization_request.json` through it once to see it parse.
 2. Rule evaluator: resolve a field path against the event, facts, history and state. Operators `<`, `<=`, `=`, `!=`, `>`, `>=`, `in`, `not_in`. Period rules add the trailing-window approvals (simulated timestamps) to the purchase amount before comparing. Unknown value gives `uncertain`, never `pass`.
 3. State store with idempotent `record`. Only an API-accepted `approve` moves spend and count. A pending `step_up` moves nothing. Delivery fees are already inside `billing_amount_chf`; do not add them twice.
-4. Built-in checks, each a small function with a positive and a negative test, in this order: mandate active and not expired; hard rules; cart lines vs requested item; add-ons; return terms; merchant type; familiarity; velocity; country; duplicate and re-quote; gift card, subscription, protection plan; lookalike merchant; injected instructions.
+4. Built-in checks, each a small function, in this order: mandate active and not expired; hard rules; cart lines vs requested item; add-ons; return terms; merchant type; familiarity; velocity; country; duplicate and re-quote; gift card, subscription, protection plan; lookalike merchant; injected instructions.
 5. Combine: any `fail` on an explicit rule or a hard check gives `decline`. Any `uncertain` with no `fail` gives the `uncertainty_policy` outcome. All `pass` gives `approve`. Injected instructions never change a rule: they add a reason code and evidence, and mark that line's facts uncertain.
 6. Explanation and customer message in the customer's own terms ("CHF 230 is over your CHF 200 limit"). Evidence lists every check with value and source.
-7. `tests/engine/test_latency.py`: p99 under 50 ms over the 45 replayed attempts.
-8. `tests/engine/test_no_fixture_ids.py`: no string in `src/leash/engine/` matches `SCEN00`, `AU00` or `replay_order`.
+7. Time the replay of the 45 attempts once and write p99 in the Log. Target under 50 ms.
 
 ## How we check it works
 
-- Unit tests per check, positive and negative arm, all green.
 - `scripts/replay.py --scenario SCEN0001 SCEN0002 SCEN0003 SCEN0004` (plan 05) runs every attempt with the policies from plan 06; decisions match `docs/eval/labels.csv`. Mismatches are listed in the Log with a reason, never hidden.
-- Duplicate delivery of one live ID changes nothing the second time (test).
-- Rolling spend: two approvals then a third over a 7-day limit is declined; a declined purchase in between does not count (test).
-- Latency and fixture-ID tests green.
+- Feeding the same live ID twice changes nothing the second time (try it once by hand).
+- Rolling spend: two approvals then a third over a 7-day limit is declined; a declined purchase in between does not count (try it once in the replay).
+- `grep -rn "SCEN00\|AU00\|replay_order" src/leash/engine/` prints nothing.
 
 ## Open questions
 
@@ -57,4 +55,4 @@ Out:
 
 ## Log
 
-(one line per finished task: date time, who, what, test, sha)
+(one line per finished task: date time, who, what, how it was tried, sha)

@@ -36,13 +36,12 @@ src/leash/       one Python package, one subpackage per lane
   policy/  engine/  extract/  runner/
   api/           FastAPI app that mounts the lanes and serves the app lane's pages
 app/             customer UI assets, if the app lane uses a separate frontend build
-tests/<lane>/    pytest, one folder per lane
 scripts/         replay.py, report.py
 .cotal/agents/   personas (committed); everything else under .cotal/ is ignored
 .worktrees/      one worktree per lane (ignored)
 ```
 
-Python 3.13 with `uv`, FastAPI, pydantic, httpx, pytest, ruff. `uv sync` installs everything. The app lane picks its own frontend approach and records it in plan 04. Nothing else goes in `src/`.
+Python 3.13 with `uv`, FastAPI, pydantic, httpx. `uv sync` installs everything. The app lane picks its own frontend approach and records it in plan 04. Nothing else goes in `src/`.
 
 ## 4. Git
 
@@ -145,7 +144,7 @@ At the start of every turn, every agent:
 At the end of every task, every builder:
 
 1. Commits on the lane branch.
-2. Appends one line to the plan's Log: `2026-09-24 21:40 engine_builder: period spend state, tests/engine/test_spend.py, @1a2b3c4`.
+2. Appends one line to the plan's Log: `2026-09-24 21:40 engine_builder: period spend state, tried with replay on SCEN0002, @1a2b3c4`.
 3. Posts one line on the lane channel: `done: <what> @<sha>` or `blocked: <why> (needs <who>)`.
 4. Sets `cotal_status` activity to the next task, or `idle`.
 
@@ -156,12 +155,15 @@ Across lanes:
 
 ## 6. Verification
 
-- A task is done when its test passes and the matching line in the plan's "How we check it works" holds, with the command and its output in the Log.
-- `uv run pytest tests/<lane>` and `uv run ruff check` before every commit.
-- `scripts/replay.py` over the 45 public attempts is the integration test. Once it exists, every PR runs it before asking for review, and the decision table goes in the PR body.
+This is a hackathon. We move fast and try things as we go.
+
+- No tests. Do not write unit tests, test files, fixtures for tests, or test suites, and do not run a linter. Nobody spends tokens on them.
+- A task is done when you ran it once and saw it work: run the script, call the route, open the page, replay the attempts. Put the command and what came out in the Log line.
+- `scripts/replay.py` over the 45 public attempts is the one check that matters. Once it exists, run it before asking for review and paste the decision table in the PR body.
+- If something breaks, fix it and move on. Do not add a test for it.
 - Never key behaviour on scenario IDs, authorization IDs or replay order. The organizers forbid it and a reviewer blocks it.
 - Never invent a customer answer. A `step_up` is resolved by the app, or times out to `decline`.
-- Report what you observed. Paste a failing test; name a skipped step.
+- Report what you observed. Paste the error you saw; name what you did not try.
 
 ## 7. Replay floor
 

@@ -22,7 +22,7 @@ The full list is in `~/.jcode/config.toml` (`grep '^id = '`).
 
 | Persona | Default | Why | Swap to |
 | --- | --- | --- | --- |
-| `<lane>_builder` | `claude-opus-5-5` high | strongest on multi-file Python with tests | `gpt-6-sol` for a second builder in the same lane, so the two seats do not share blind spots |
+| `<lane>_builder` | `claude-opus-5-5` high | strongest on multi-file Python | `gpt-6-sol` for a second builder in the same lane, so the two seats do not share blind spots |
 | `reviewer` | `gemini-3.8-flash` high | a different family from the builder; fast enough for one PR per spawn | `grok-4.7` for the security-shaped PRs (engine combine step, runner deadline guard) |
 | `librarian` | `gemini-3.8-flash` medium | long context, cheap, stays up all event | `glm-5.3` if Gemini quota runs out |
 | `labeler` | `grok-4.7` high | independent from the builder family | the second labeler is `gpt-5.6-sol`; the two files are reconciled by a human |

@@ -8,7 +8,7 @@
 
 ## Goal
 
-Labels to test against, a report the pitch can quote, and a demo that runs the same way twice.
+Labels to check decisions against, a report the pitch can quote, and a demo that runs the same way twice.
 
 ## Labels
 
@@ -58,4 +58,4 @@ Assets: `docs/screens/` screenshots, the agent-side terminal transcript from pla
 
 ## Log
 
-(one line per finished task: date time, who, what, test, sha)
+(one line per finished task: date time, who, what, how it was tried, sha)

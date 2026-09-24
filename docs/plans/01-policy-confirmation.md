@@ -34,7 +34,7 @@ Out:
 
 ## Steps
 
-1. Draft schema in `src/leash/contracts/` with the engine lane (already sketched in `contracts.md`). A fixture draft for `SCEN0002` in `tests/policy/fixtures/` so the app lane can build against it today.
+1. Draft schema in `src/leash/contracts/` with the engine lane (already sketched in `contracts.md`). A sample draft for `SCEN0002` in `docs/samples/` so the app lane can build against it today.
 2. Extractor prompt with a fixed JSON output. Validate against the schema, reject unknown fields and fields outside the vocabulary. Rule values stay numbers, strings or lists of strings.
 3. Example purchases, following AutoCedar's floors and ceilings:
    - must approve: size 43 road shoes, CHF 150, sports retailer, 30-day returns;
@@ -61,4 +61,4 @@ Out:
 
 ## Log
 
-(one line per finished task: date time, who, what, test, sha)
+(one line per finished task: date time, who, what, how it was tried, sha)
