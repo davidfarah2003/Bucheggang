@@ -30,6 +30,7 @@ const state = {
   extraDetails: "",
   serial: 0,
   pendingSerial: 0,
+  detailSerial: 0,
   timer: null,
   exampleTimer: null,
   overlayTrigger: null,
@@ -162,7 +163,8 @@ function navigate(route, { keepScroll = false } = {}) {
   state.route = route;
   state.serial += 1;
   state.pendingSerial += 1;
-  window.clearInterval(state.timer);
+  state.detailSerial += 1;
+  window.clearTimeout(state.timer);
   window.clearTimeout(state.exampleTimer);
   state.timer = null;
   state.exampleTimer = null;
@@ -181,8 +183,9 @@ function navigate(route, { keepScroll = false } = {}) {
 function sessionExpired(error) {
   state.serial += 1;
   state.pendingSerial += 1;
-  window.clearInterval(state.timer);
+  window.clearTimeout(state.timer);
   window.clearTimeout(state.exampleTimer);
+  state.detailSerial += 1;
   state.timer = null;
   state.user = null;
   state.mandate = null;
@@ -232,6 +235,11 @@ async function initialize() {
   }
 }
 
+function growTextArea(input, minimum) {
+  input.style.height = "auto";
+  input.style.height = `${Math.max(minimum, input.scrollHeight)}px`;
+}
+
 function startExamples() {
   window.clearTimeout(state.exampleTimer);
   if (reducedMotion.matches) return;
@@ -277,6 +285,8 @@ async function renderShop(serial) {
     <p class="agent-state">Shopping agent <span>· use an external MCP client</span></p><p class="external-agent">The arrow copies your request for your external agent. This demo has no in-app shopping model. Your agent can send you a Wallet review link after saving a plan.</p>
     ${plan ? `<section class="shop-plan"><span class="section-kicker">PLAN SAVED BY YOUR AGENT</span><h2>${esc(productName(plan))}</h2><p>${cap ? `${cap.strict ? "Below" : "Up to"} ${esc(money(cap.amount))}` : "Review the saved limits"}</p><button type="button" class="text-button" data-route="review">Review in Wallet <span aria-hidden="true">→</span></button></section>` : ""}
   </section>`);
+  growTextArea(document.querySelector("#shop-prompt"), 62);
+  if (state.prompt.trim()) growTextArea(document.querySelector("#request-details"), 72);
   startExamples();
 }
 
@@ -284,6 +294,15 @@ function walletTabs() {
   return `<div class="wallet-tabs" role="tablist" aria-label="Wallet sections">${[
     ["needs", "Needs you"], ["active", "Active"], ["rules", "Rules"],
   ].map(([id, label]) => `<button type="button" role="tab" aria-selected="${state.walletTab === id}" tabindex="${state.walletTab === id ? 0 : -1}" class="${state.walletTab === id ? "selected" : ""}" data-action="wallet-tab" data-tab="${id}">${label}</button>`).join("")}</div>`;
+}
+
+function schedulePendingRefresh() {
+  window.clearTimeout(state.timer);
+  if (state.route !== "wallet" || state.walletTab !== "needs" || !mandateId() || !state.user) return;
+  state.timer = window.setTimeout(async () => {
+    state.timer = null;
+    if (await refreshPending()) schedulePendingRefresh();
+  }, 2000);
 }
 
 async function renderWallet(serial) {
@@ -298,7 +317,7 @@ async function renderWallet(serial) {
     screen.querySelector('.wallet-tabs [aria-selected="true"]').focus();
     state.pendingTabFocus = null;
   }
-  if (state.walletTab === "needs" && mandateId()) state.timer = window.setInterval(() => { void refreshPending(); }, 2000);
+  if (state.walletTab === "needs" && mandateId()) schedulePendingRefresh();
 }
 
 async function needsContent(serial) {
@@ -361,7 +380,7 @@ async function refreshPending() {
   } catch (error) {
     if (request !== state.pendingSerial || route !== state.serial || !container.isConnected) return;
     if (error.status === 401) { sessionExpired(error); return; }
-    window.clearInterval(state.timer);
+    window.clearTimeout(state.timer);
     state.timer = null;
     state.pending = [];
     closeOverlay();
@@ -550,14 +569,14 @@ async function performResolution(button) {
   const decision = button.dataset.decision;
   if (!["approve", "decline"].includes(decision)) throw new Error("Choose whether to buy or decline.");
   state.pendingSerial += 1;
-  window.clearInterval(state.timer);
+  window.clearTimeout(state.timer);
   state.timer = null;
   overlayRoot.querySelectorAll('[data-action="resolve"]').forEach((action) => { action.disabled = true; });
   await walletApi.answer(id, decision);
   closeOverlay();
   toast(decision === "approve" ? "Your answer was accepted for this purchase." : "Your decline was accepted for this purchase.", "success");
   const refreshed = await refreshPending();
-  if (refreshed && state.route === "wallet" && state.walletTab === "needs") state.timer = window.setInterval(() => { void refreshPending(); }, 2000);
+  if (refreshed) schedulePendingRefresh();
 }
 
 async function performTighten() {
@@ -584,6 +603,7 @@ document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-action]");
   if (!button || button.disabled) return;
   const action = button.dataset.action;
+  if (action !== "open-detail") state.detailSerial += 1;
   try {
     if (action === "close-overlay") {
       if (button === event.target || button.classList.contains("overlay-close") || event.target.classList.contains("overlay-backdrop")) closeOverlay();
@@ -601,9 +621,16 @@ document.addEventListener("click", async (event) => {
     if (action === "answer-question") { state.answers[button.dataset.question] = button.dataset.answer; await renderReview(state.serial); return; }
     if (action === "open-detail") {
       const id = button.dataset.id;
-      const route = state.serial;
-      const detail = validateDecision(await walletApi.decision(id));
-      if (route !== state.serial || state.route !== "activity") return;
+      const screenAtClick = state.serial;
+      const request = ++state.detailSerial;
+      let detail;
+      try {
+        detail = validateDecision(await walletApi.decision(id));
+      } catch (error) {
+        if (request !== state.detailSerial || screenAtClick !== state.serial) return;
+        throw error;
+      }
+      if (request !== state.detailSerial || screenAtClick !== state.serial || state.route !== "activity") return;
       state.details.set(id, detail);
       const entry = state.history.find((item) => item.decision.authorization_id === id);
       if (!entry) throw new Error("This purchase is no longer in the current history.");
@@ -636,7 +663,7 @@ document.addEventListener("click", async (event) => {
       window.sessionStorage.removeItem(MANDATE_KEY);
       window.sessionStorage.removeItem(MANDATE_OWNER_KEY);
       state.pendingSerial += 1;
-      window.clearInterval(state.timer);
+      window.clearTimeout(state.timer);
       window.clearTimeout(state.exampleTimer);
       state.serial += 1;
       state.user = null;
@@ -676,9 +703,10 @@ document.addEventListener("click", async (event) => {
 });
 
 document.addEventListener("input", (event) => {
-  if (event.target.id === "request-details") { state.extraDetails = event.target.value; return; }
+  if (event.target.id === "request-details") { state.extraDetails = event.target.value; growTextArea(event.target, 72); return; }
   if (event.target.id !== "shop-prompt") return;
   state.prompt = event.target.value;
+  growTextArea(event.target, 62);
   const hasPrompt = Boolean(state.prompt.trim());
   if (!hasPrompt) {
     state.extraDetails = "";
@@ -698,6 +726,10 @@ document.addEventListener("input", (event) => {
 
 document.addEventListener("focusin", (event) => {
   if (event.target.id === "shop-prompt") window.clearTimeout(state.exampleTimer);
+  if (event.target.id === "animated-example") {
+    window.clearTimeout(state.exampleTimer);
+    event.target.textContent = text(event.target.dataset.example, "Example request");
+  }
 });
 
 document.addEventListener("focusout", (event) => {
