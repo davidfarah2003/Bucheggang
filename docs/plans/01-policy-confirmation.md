@@ -32,9 +32,9 @@ In:
 
 Out:
 
-- Global policies (after the hackathon).
 - Purchase decisions and step-up handling (plans 02, 05).
 - Real Viseca authentication. The demo app uses a local login.
+- Global policy management is parked until the live runner loop, app step-up flow, and replay work end to end. The intended shape is recorded under Later in plan 04.
 
 ## Steps
 
@@ -47,7 +47,7 @@ Out:
    Run them through `leash.engine.evaluate` at draft time; the expected result is stored next to each example, and a mismatch fails validation of the draft.
 4. Open questions for gaps the instruction leaves, for example "the merchant does not state a return period: ask me, or decline?" The answer becomes a rule or sets `uncertainty_policy`.
 5. Store the draft immutably with version and SHA-256 of its canonical JSON. Any edit is a new version.
-6. Confirm route per `contracts.md`: mismatch is a 409; success calls the runner's mandate client and stores the `Mandate`.
+6. Confirm route per `contracts.md`: mismatch is a 409; call the runner's mandate client and store the `Mandate`.
 7. MCP server exposing the agent-facing tools, backed by the same store. A short transcript of an agent using them is a demo asset (plan 06).
 8. Audit entries for draft, confirmation and rejection: what was submitted, version, hash, who confirmed, when.
 
@@ -58,10 +58,10 @@ Out:
 - Changing a rule after the app has loaded the draft makes confirmation fail with a 409.
 - `grep -r "confirm\|resolve\|revoke" src/leash/policy/mcp*` shows no agent-callable tool with those names.
 
-## Open questions
+## Decisions
 
-- Who answers open questions in the demo: the customer on the confirmation screen (proposed), or a default we pick and show?
-- Do we keep the simulator's `guidance` and `open_questions` fields empty, given live events omit them? Proposed: yes; our store keeps the real answers.
+- The customer answers open questions on the confirmation screen. The app never chooses a default on the customer's behalf.
+- Keep the simulator's `guidance` and `open_questions` fields empty because live events omit them. Store the customer's answers in the confirmed policy and audit record.
 
 ## Log
 
@@ -79,3 +79,4 @@ Out:
 2026-09-24 18:51 policy_confirm: reserved draft confirmation before simulator calls; one-off FastAPI call observed concurrent reject blocked, confirm 200 and stale repeat 409; simulated confirm failure raised and left pending simulator draft ID `sim-2` while revise was blocked, @7267153.
 2026-09-24 18:46 policy_confirm: MCP authoring guide resource and two agent tools; called `list_tools`, `read_resource`, `get_policy_authoring_instructions`, and `propose_task_policy` through an in-memory MCP client, observed two tools, JSON guide and stored draft version 1; installed the source package with pip, @39b8e6e.
 2026-09-24 19:39 oskar1: removed the unused server-side deterministic compiler and made the authoring guide category agnostic; stored a kitchen mixer proposal with one rule and observed two MCP tools through `list_tools`.
+2026-09-24 20:32 oskar1: recorded the owner decision to defer global policy management until the runner loop, app step-up flow and replay work end to end; its later shape is in plan 04.

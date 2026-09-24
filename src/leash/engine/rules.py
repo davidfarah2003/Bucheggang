@@ -86,6 +86,11 @@ def _prior_approvals(ctx: RuleContext) -> list:
     return [a for a in ctx.state.approvals if a.authorization_id != own]
 
 
+def check_source(fact_source: str) -> str:
+    """A PurchaseFacts source as a Check source: a structured fact comes from the event."""
+    return "event" if fact_source == "structured" else fact_source
+
+
 def _bool_str(value: bool | None) -> str | None:
     return None if value is None else ("true" if value else "false")
 
@@ -146,8 +151,7 @@ def resolve(rule: AnyRule, ctx: RuleContext) -> list[Observed]:
                 continue
             if name not in fact.sources:
                 raise ValueError(f"facts for {item.item_id} give {name} without a source")
-            source = "model" if fact.sources[name] == "model" else "merchant_text"
-            out.append(Observed(value, source, f"line {item.line_no}"))
+            out.append(Observed(value, check_source(fact.sources[name]), f"line {item.line_no}"))
         return out
 
     if field == "history.merchant_seen_on_card":

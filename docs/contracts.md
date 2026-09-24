@@ -81,7 +81,7 @@ mandate_id     str, from the simulator's confirm response
 draft_id       str
 version        int
 hash           str
-status         active | revoked | expired
+status         active | superseded | revoked | expired
 confirmed_at   datetime
 ```
 
@@ -91,7 +91,7 @@ Mirror of `viseca-2026/data/schemas/authorization_event.schema.json`, validated 
 
 ## PurchaseFacts
 
-One per cart line. Every field may be `unknown`.
+One per cart line. This is the form the shopping agent fills when it calls `buy`; the backend checks it deterministically. In demo mode the simulator does not send the form, so `leash.extract.extract_event` fills it from the event's structured item fields and a deterministic parse of `item_details`. No model reads merchant text or fills the form on the backend's behalf. Every field may be `unknown`.
 
 ```
 item_id                str
@@ -105,20 +105,20 @@ is_protection_plan     bool | unknown
 matches_request        bool | unknown
 contains_instructions  bool
 excerpt                str | null          (the injected text, if any)
-sources                { field_name: structured | merchant_text | model }
+sources                { field_name: agent_form | structured | merchant_text }
 ```
 
 ## MandateState
 
 ```
 mandate_id            str
-approvals[]           { authorization_id, amount_chf, timestamp (simulated) }
+approvals[]           { authorization_id, merchant_id, amount_chf, timestamp (simulated) }
 handled               { authorization_id: accepted Decision }
 pending_step_ups      [authorization_id]
 declined              [authorization_id]
 ```
 
-`record(mandate_id, authorization_id, accepted)` is idempotent. Only a Decision the API accepted with `approve` moves `approvals`. A `step_up` stays pending until `/resolve` is accepted.
+`record(mandate_id, event, accepted)` is idempotent: the same authorization with the same accepted decision changes nothing. Only a Decision the API accepted with `approve` moves `approvals`, taking `billing_amount_chf`, `merchant_id` and the simulated `timestamp` from the event. A `step_up` stays pending until `/resolve` is accepted; the runner then records the final `approve` or `decline` with the same `authorization_id`, which is the one change allowed after a first record. Any other change to a recorded authorization raises. The runner calls `record` only after the API accepted the submit or `/resolve`. `record` does no simulator I/O; it writes `data/state/<mandate_id>.json`, and the engine is its only writer.
 
 ## Check and Decision
 
@@ -127,7 +127,7 @@ Check
   name     str, from the check list in plan 02
   result   pass | fail | uncertain
   value    str | number | null
-  source   event | history | merchant_text | model | state
+  source   event | history | agent_form | merchant_text | state
   note     str
 
 Decision
@@ -171,7 +171,7 @@ StepUpAnswer
 leash.engine.evaluate(event: Event, policy: PolicyDraft, state: MandateState,
                       facts: list[PurchaseFacts] | None) -> Decision      # pure, no I/O
 leash.engine.state.load(mandate_id) -> MandateState
-leash.engine.state.record(mandate_id, authorization_id, accepted: Decision) -> None   # idempotent
+leash.engine.state.record(mandate_id: str, event: Event, accepted: Decision) -> MandateState   # idempotent, returns the saved state
 ```
 
 `facts=None` means the extract lane did not answer in time; every `facts.*` field is then unknown.

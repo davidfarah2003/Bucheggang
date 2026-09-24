@@ -6,12 +6,14 @@ Build an agent-independent payment control layer that allows AI shopping agents 
 
 The shopping flow applies to any product or service category. Shoes in the examples are one scenario, not a product restriction. The agent derives a task policy from the customer's actual request and surfaces any detail that the available policy fields cannot enforce.
 
-Customers can use either:
+The first-party experience has two distinct mobile-first interfaces that may share one web app shell with swipe or tab navigation:
 
-- an external shopping agent such as Claude, Codex, or another MCP-compatible agent; or
-- a Viseca shopping app that acts as an agent harness and lets the customer choose the model or shopping agent. AG-UI could provide the interaction layer for this application.
+- The **Shopping Harness** is the customer-facing shopping agent. The customer selects a configured agent or model provider, enters a request, and sees the proposed task policy in a friendly editable view. The harness connects the selected agent to the existing MCP control tools. It cannot confirm a policy or approve a purchase exception.
+- The **Viseca Wallet** is the trusted customer control interface. It lets the customer review and confirm pending task policies, set account-wide global policies, inspect active confirmed mandates, answer purchase step-ups, and review history. Customers can open and use this interface directly without entering the Shopping Harness.
 
-Both options use the same MCP backend, policy system, decision engine, and Viseca authentication flow.
+The Shopping Harness offers configured integrations for Apertus, ChatGPT/OpenAI, Claude/Anthropic, Grok/xAI, Gemini/Google, DeepSeek, and other supported agents. An unavailable provider is shown as unavailable; a failed provider call is surfaced to the customer rather than switched silently to another provider. External MCP-compatible agents may also use the same backend.
+
+Both interfaces use the same policy store, MCP backend, decision engine, and authentication boundary. The Wallet remains usable on its own; an external MCP-compatible agent can replace the built-in harness.
 
 ## Core responsibilities
 
@@ -27,6 +29,12 @@ The shopping agent:
 - displays the result and explanation.
 
 The shopping agent cannot confirm policies, approve its own exceptions, access payment credentials, modify global policies, or bypass the control layer.
+
+### Shopping Harness
+
+The Shopping Harness provides the model or agent selector and the shopping conversation. It presents proposed limits with clear units and editable controls such as sliders. Where supported by the policy contract, it can show a separate uncertainty or step-up band around a limit. A visual adjustment must map to an explicit structured rule; if the backend cannot express it, the harness shows it as an unresolved question instead of approximating it. Every proposal and edit remains unconfirmed until the customer reviews the backend's saved draft in the Viseca Wallet.
+
+The selected agent receives the existing policy-authoring MCP tools. It may propose policies and request policy data, but it cannot confirm, reject, tighten, or revoke policies. The MCP backend makes no model call.
 
 ### MCP backend
 
@@ -53,18 +61,19 @@ Suggested MCP tools:
 
 Policy confirmation, global-policy administration, and customer resolution of a `step_up` must not be exposed as ordinary agent-callable tools.
 
-### Viseca authentication app
+### Viseca Wallet
 
-The authenticated Viseca app is the trusted human approval surface. It manages:
+The authenticated Viseca Wallet is the trusted human approval surface. It manages:
 
 - persistent global policies;
 - task-policy review and confirmation;
+- an inbox of task-policy drafts awaiting confirmation and a list of active confirmed mandates;
 - policy tightening and revocation;
 - transaction step-up approval or rejection;
 - policy and purchase history;
 - evidence and decision explanations.
 
-The app must load the policy directly from the trusted backend. It must never display a policy copy supplied by the shopping agent as if it were authoritative.
+The Wallet must load policies directly from the trusted backend. It must never display a policy copy supplied by the shopping agent as if it were authoritative. Both interfaces are designed for mobile screens first.
 
 ## Policy model
 
@@ -103,6 +112,8 @@ issuer limits
 
 A task policy may tighten a global policy but may never weaken it.
 
+At task confirmation, compose the current global rules with the task rules into one effective `PolicyDraft` and hash the exact rules sent to the simulator. The current challenge simulator supports one active mandate per team; confirming a new mandate supersedes the previous one. A global policy edit therefore applies to the next confirmed mandate in the demo, and the Wallet must say clearly when an existing active mandate still carries the previous version.
+
 ## Secure policy confirmation
 
 The model may propose a policy, but it must never be trusted to report that the customer confirmed it.
@@ -119,7 +130,7 @@ The secure confirmation flow is:
 
 Any material policy change creates a new version and requires confirmation again.
 
-When requesting a purchase, the agent sends the `mandate_id` and purchase facts. It does not resend the policy. The backend retrieves the confirmed policy internally, preventing the agent from silently changing the confirmed rules.
+When requesting a purchase, the agent sends the `mandate_id` and the purchase facts form (`PurchaseFacts` in `docs/contracts.md`). It does not resend the policy. The backend retrieves the confirmed policy internally, preventing the agent from silently changing the confirmed rules.
 
 Policy confirmation and transaction confirmation are different actions:
 
@@ -136,11 +147,12 @@ For each proposed purchase, the backend should:
 4. Apply task-specific deterministic rules.
 5. Check rolling spend, retries, duplicates, and previous decisions.
 6. Treat merchant pages, product descriptions, and agent-generated content as untrusted data.
-7. Extract relevant product facts without allowing that content to modify the policy.
+7. Read the purchase facts form the shopping agent filled (product type, size, return terms, gift card, subscription, protection plan, add-on) and the structured merchant fields, and parse untrusted item text deterministically for the same facts and for embedded instructions. Untrusted content can supply facts; it cannot modify the policy.
 8. Evaluate merchant, device, session, and behavioural risk.
-9. Use a model only for bounded extraction or ambiguous classification.
-10. Return `approve`, `decline`, or `step_up` with evidence and a plain-language explanation.
-11. Continue to payment only after a final approval.
+9. Return `approve`, `decline`, or `step_up` with evidence and a plain-language explanation.
+10. Continue to payment only after a final approval.
+
+No language model reads merchant text or fills the form on the backend's behalf. The shopping agent's model fills the form before it calls `buy`; the backend checks the form, and every explicit requirement, with deterministic rules. A bounded classifier over the customer's own purchase history (the Jev decision classifier, `docs/plans/02-classifier-design.md` on `lane/classifier`, [pinned](https://github.com/davidfarah2003/Bucheggang/blob/d9bd26dc62784fad954c921e6fa5a58e19c69080/docs/plans/02-classifier-design.md) until it merges) may add a risk signal in step 8; it never overrides a deterministic check and never reads merchant text.
 
 Deterministic checks must remain the final authority for explicit requirements such as price limits, permitted categories, rolling budgets, mandate expiry, and maximum purchase count.
 
@@ -155,7 +167,7 @@ Deterministic checks must remain the final authority for explicit requirements s
 - Make purchase handling idempotent using authorization IDs.
 - Return only minimal history summaries to agents, not raw customer histories.
 - Use stable merchant identifiers rather than merchant names alone.
-- Apply hard model timeouts. A timeout or error raises and is logged; there are no fallback paths.
+- No model call over untrusted content in the decision path. A model that fails or times out raises and is logged; there are no fallback paths.
 - Never allow an LLM or shopping agent to directly authorize or execute payment.
 
 Prompt-injection detection is an additional signal, not the primary boundary. The main protection is structural: untrusted content can supply facts, but it cannot alter policy, confirm authority, or execute payment.
@@ -274,7 +286,6 @@ sequenceDiagram
 - Use simulated timestamps for spending windows and real time for response deadlines.
 - Count only final approvals toward rolling spend.
 - Do not count repeated delivery of the same authorization twice.
-- Continue predictably if an optional model is unavailable.
 - Ensure the API-generated purchases pass through the real decision engine used by the product design.
 
 ## Demo presentation
