@@ -1,0 +1,14 @@
+authorization_id,initial_engine_decision,final_platform_status,final_platform_source,final_platform_reasons,local_final_decision,local_final_reasons,finalized_at,extract_ms,evaluate_ms,ms_to_deadline_at_submit
+AU10234-fb2858da,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:20:50.474245Z,0,0,7669
+AU10235-fb2858da,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:22:46.970521Z,0,0,7243
+AU10236-fb2858da,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:24:43.718264Z,0,0,7332
+AU10237-fb2858da,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:26:39.607591Z,0,0,7918
+AU10238-fb2858da,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:28:35.402134Z,0,0,7537
+AU10239-fb2858da,decline,declined,team,amount_over_limit,decline,amount_over_limit,2026-09-24T21:28:35.812622Z,0,0,7645
+AU10240-fb2858da,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:30:32.016213Z,0,0,7867
+AU10241-fb2858da,decline,declined,team,amount_over_limit|item_mismatch|unrequested_item|subscription|protection_plan,decline,"amount_over_limit, item_mismatch, unrequested_item, subscription, protection_plan",2026-09-24T21:30:33.056814Z,0,0,7016
+AU10242-fb2858da,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:32:28.969712Z,0,0,7854
+AU10243-fb2858da,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:34:24.901000Z,0,0,7329
+AU10244-fb2858da,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:36:20.644798Z,0,0,7776
+AU10245-fb2858da,decline,declined,team,item_mismatch|gift_card,decline,"item_mismatch, gift_card",2026-09-24T21:36:21.390935Z,0,0,7308
+AU10246-fb2858da,step_up,declined,human,human_confirmation,decline,step_up_timeout,2026-09-24T21:38:17.275702Z,0,0,7844
