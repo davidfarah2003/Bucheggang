@@ -393,11 +393,11 @@ async function renderPolicy() {
     const { mandate, draft, state } = getPayloadParts(await api(`/mandates/${encodeURIComponent(id)}`));
     currentPolicy = { mandate, draft, state };
     const approvals = state.approvals;
-    const isRevoked = mandate.status === "revoked";
-    setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.", `<span class="outcome-pill ${isRevoked ? "decline" : "approve"}"><i class="outcome-dot"></i>${esc(pretty(mandate.status))}</span>`)}
+    const isActive = mandate.status === "active";
+    setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.", `<span class="outcome-pill ${isActive ? "approve" : "decline"}"><i class="outcome-dot"></i>${esc(pretty(mandate.status))}</span>`)}
       <div class="content-grid"><div class="main-column">
         <section class="card card-pad"><div class="section-head"><div><h2 class="section-title">Spend and purchase activity</h2><div class="section-subtitle">Counts include accepted approvals only.</div></div></div>${spendMetrics(approvals, draft.rules)}</section>
-        <section class="card card-pad"><div class="section-head"><div><h2 class="section-title">Your active rules</h2><div class="section-subtitle">The agent follows every one of these limits.</div></div></div><div class="rule-view">${ruleViews(draft.rules)}</div><div class="policy-actions"><button class="button button-secondary button-small" type="button" data-action="open-tighten" ${isRevoked ? "disabled" : ""}>Tighten a rule</button><button class="button button-danger button-small" type="button" data-action="revoke-mandate" ${isRevoked ? "disabled" : ""}>Revoke mandate</button></div></section>
+        <section class="card card-pad"><div class="section-head"><div><h2 class="section-title">Your rules</h2><div class="section-subtitle">The agent follows every one of these limits while the mandate is active.</div></div></div><div class="rule-view">${ruleViews(draft.rules)}</div><div class="policy-actions"><button class="button button-secondary button-small" type="button" data-action="open-tighten" ${isActive ? "" : "disabled"}>Tighten a rule</button><button class="button button-danger button-small" type="button" data-action="revoke-mandate" ${isActive ? "" : "disabled"}>Revoke mandate</button></div></section>
       </div><aside class="side-column"><section class="card side-summary"><div class="summary-top"><span class="eyebrow"><i class="eyebrow-mark"></i>MANDATE</span><h3>${esc(mandate.status === "active" ? "Active and protected" : pretty(mandate.status))}</h3><p>Confirmed ${esc(new Date(mandate.confirmed_at).toLocaleDateString())} · version ${esc(mandate.version)}</p></div><div class="summary-body"><div class="summary-row"><span>Mandate ID</span><strong>${esc(mandate.mandate_id)}</strong></div><div class="summary-row"><span>Policy version</span><strong>${esc(mandate.version)}</strong></div><div class="summary-row"><span>Uncertainty</span><strong>${esc(pretty(draft.uncertainty_policy))}</strong></div></div></section><section class="learn-card"><span class="learn-icon" aria-hidden="true">↗</span><strong>Keep your policy current</strong><p>You can always add a stricter limit or stop the mandate. The shopping agent cannot loosen these rules.</p></section></aside></div>`);
   } catch (error) {
     setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.")}${dataError("Your mandate could not be loaded.", error)}`);
@@ -503,6 +503,7 @@ function modal(title, body, primaryLabel, action, danger = false) {
 }
 
 function openTighten() {
+  if (!currentPolicy || currentPolicy.mandate.status !== "active") throw new Error("Only an active mandate can be tightened.");
   modal("Make this policy stricter", `<p class="section-subtitle">Add one restriction to the policy you confirmed. You can set another one after this change is saved.</p>
     <label class="field-label" style="margin-top:16px">New per-purchase limit in CHF<input id="tighten-cap" inputmode="decimal" type="number" min="1" step="1" placeholder="e.g. 150" /><small class="helper-text">This limit will be added to your existing rules.</small></label>
     <div class="toggle-row"><span class="toggle-copy"><strong>Decline when details are uncertain</strong><small>Replace “ask me” with a stricter default.</small></span><button class="toggle-switch" type="button" role="switch" aria-checked="false" data-action="toggle-uncertainty" aria-label="Decline when details are uncertain"></button></div>`, "Apply tightening", "submit-tighten");
@@ -564,15 +565,20 @@ function switchForUncertainty() {
 
 async function submitTighten() {
   if (!currentPolicy) throw new Error("The current mandate has not been loaded.");
+  if (currentPolicy.mandate.status !== "active") throw new Error("Only an active mandate can be tightened.");
   const switchEl = drawerRoot.querySelector("[data-action=toggle-uncertainty]");
   const capText = drawerRoot.querySelector("#tighten-cap").value.trim();
   if (switchEl.getAttribute("aria-checked") === "true" && capText) throw new Error("Choose either the purchase cap or the stricter uncertainty setting. Save one change at a time.");
   if (switchEl.getAttribute("aria-checked") === "true") {
+    if (currentPolicy.draft.uncertainty_policy === "decline") throw new Error("This mandate already declines uncertain purchases.");
     await api(`/mandates/${encodeURIComponent(currentPolicy.mandate.mandate_id)}/tighten`, { method: "POST", body: JSON.stringify({ uncertainty_policy: "decline" }) });
   } else {
     const input = drawerRoot.querySelector("#tighten-cap");
     const cap = Number(input.value);
     if (!Number.isFinite(cap) || cap <= 0) throw new Error("Enter a positive CHF purchase limit or turn on the stricter uncertainty setting.");
+    const existingCaps = currentPolicy.draft.rules.filter((rule) => rule.field === "authorization.billing_amount_chf" && rule.scope === "purchase" && rule.operator === "<=").map((rule) => Number(rule.value));
+    if (existingCaps.some((value) => !Number.isFinite(value))) throw new Error("The current purchase limit is invalid.");
+    if (existingCaps.length && cap >= Math.min(...existingCaps)) throw new Error(`Enter a limit below the current CHF ${Math.min(...existingCaps)} cap.`);
     const rule = {
       field: "authorization.billing_amount_chf",
       operator: "<=",
@@ -591,6 +597,7 @@ async function submitTighten() {
 
 async function revokeMandate() {
   if (!currentPolicy) throw new Error("The current mandate has not been loaded.");
+  if (currentPolicy.mandate.status !== "active") throw new Error("Only an active mandate can be revoked.");
   await api(`/mandates/${encodeURIComponent(currentPolicy.mandate.mandate_id)}/revoke`, { method: "POST" });
   drawerRoot.replaceChildren();
   showToast("The mandate has been revoked.", "success");

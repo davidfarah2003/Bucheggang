@@ -55,3 +55,4 @@ Out:
 
 (one line per finished task: date time, who, what, how it was tried, sha)
 2026-09-24 18:38 rb_turbo_charged: built responsive review, step-up, policy, activity and evidence screens; `node --check app/app.js` exited 0, local HTTP returned 200 for page, CSS, JS and draft, Chrome at 400 px rendered the review with `scrollWidth: 400`; @6ebf233.
+2026-09-24 18:41 rb_turbo_charged: constrained tightening controls to active mandates and strictly lower purchase caps; `node --check app/app.js` exited 0; mutation routes are not implemented yet, so the behavior was not run against the backend; @7e24ed0.
