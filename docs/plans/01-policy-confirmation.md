@@ -64,3 +64,4 @@ Out:
 (one line per finished task: date time, who, what, how it was tried, sha)
 
 2026-09-24 17:09 oskar1: SCEN0002 sample draft with six rules and five boundary examples; loaded `docs/samples/scen0002_draft.json` and recomputed its SHA-256, `hash_matches True`, @4b912dc.
+2026-09-24 17:43 oskar1: immutable draft store and simulator draft mapping; created, revised and confirmed a temporary grocery draft through `DraftStore`, observed stale version rejected, version 2, simulator draft `SD-1`, mandate `TM-2`, @8b6d3b8.
