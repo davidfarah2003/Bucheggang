@@ -5,7 +5,6 @@ description: Implements the extract lane (docs/plans/03-merchant-text-extraction
 tags: [build, python]
 agent: jcode
 model: claude-opus-5-5
-variant: high
 subscribe: ["team.zurichbuchegg.extract", "team.zurichbuchegg.progress", "team.zurichbuchegg.contracts", "team.zurichbuchegg.review"]
 allowSubscribe: ["team.zurichbuchegg.>"]
 quiet: ["team.zurichbuchegg.progress", "team.zurichbuchegg.contracts", "team.zurichbuchegg.review"]

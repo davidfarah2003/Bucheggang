@@ -5,7 +5,6 @@ description: Implements the policy lane (docs/plans/01-policy-confirmation.md) o
 tags: [build, python]
 agent: jcode
 model: claude-opus-5-5
-variant: high
 subscribe: ["team.zurichbuchegg.policy", "team.zurichbuchegg.progress", "team.zurichbuchegg.contracts", "team.zurichbuchegg.review"]
 allowSubscribe: ["team.zurichbuchegg.>"]
 quiet: ["team.zurichbuchegg.progress", "team.zurichbuchegg.contracts", "team.zurichbuchegg.review"]

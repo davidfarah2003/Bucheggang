@@ -4,7 +4,7 @@ David's machine runs a `jcode` harness with one provider that exposes many model
 
 ## Catalog (jcode, provider `cliproxy`, ids are bare)
 
-Declared in `~/.jcode/config.toml` on David's machine; `cotal models --agent jcode` prints it when a local manager runs. Effort tiers are declared, not provider-verified; a rejected tier fails the spawn loudly.
+Declared in `~/.jcode/config.toml` on David's machine; `cotal models --agent jcode` prints it when a local manager runs. The cliproxy provider refuses effort tiers for every model we tried (Gemini, Opus), and a refused tier kills the seat at boot, so no persona sets `variant`.
 
 | Family | Ids worth using | Efforts |
 | --- | --- | --- |
@@ -22,10 +22,10 @@ The full list is in `~/.jcode/config.toml` (`grep '^id = '`).
 
 | Persona | Default | Why | Other seats |
 | --- | --- | --- | --- |
-| `<lane>_builder` | `claude-opus-5-5` high | strongest on multi-file Python | `gpt-6-sol` for a second builder in the same lane, so the two seats do not share blind spots |
+| `<lane>_builder` | `claude-opus-5-5` | strongest on multi-file Python | `gpt-6-sol` for a second builder in the same lane, so the two seats do not share blind spots |
 | `reviewer` | `gemini-3.8-flash` (no effort tier; jcode refuses one for Gemini) | a different family from the builder; fast enough for one PR per spawn | `grok-4.7` for the security-shaped PRs (engine combine step, runner deadline guard) |
 | `librarian` | `gemini-3.8-flash` | long context, cheap, stays up all event | |
-| `labeler` | `grok-4.7` high | independent from the builder family | the second labeler is `gpt-5.6-sol`; the two files are reconciled by a human |
+| `labeler` | `grok-4.7` | independent from the builder family | the second labeler is `gpt-5.6-sol`; the two files are reconciled by a human |
 | extraction model inside the product (plan 03) | `claude-haiku-4-5-20251001` via the Anthropic API | latency; this is product code, not a seat | none at runtime: one model, no fallback. Apertus 70B only replaces it if measured better (plan 03) |
 
 Pair a builder with a reviewer from a different family.

@@ -5,7 +5,6 @@ description: Labels the 45 public purchase attempts against a scenario instructi
 tags: [eval, data]
 agent: jcode
 model: grok-4.7
-variant: high
 subscribe: []
 allowSubscribe: []
 allowPublish: []

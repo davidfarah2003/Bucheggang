@@ -5,7 +5,6 @@ description: Implements the engine lane (docs/plans/02-decision-engine.md) of th
 tags: [build, python]
 agent: jcode
 model: claude-opus-5-5
-variant: high
 subscribe: ["team.zurichbuchegg.engine", "team.zurichbuchegg.progress", "team.zurichbuchegg.contracts", "team.zurichbuchegg.review"]
 allowSubscribe: ["team.zurichbuchegg.>"]
 quiet: ["team.zurichbuchegg.progress", "team.zurichbuchegg.contracts", "team.zurichbuchegg.review"]

@@ -5,7 +5,6 @@ description: Implements the runner lane (docs/plans/05-simulator-runner.md) of t
 tags: [build, python]
 agent: jcode
 model: claude-opus-5-5
-variant: high
 subscribe: ["team.zurichbuchegg.runner", "team.zurichbuchegg.progress", "team.zurichbuchegg.contracts", "team.zurichbuchegg.review"]
 allowSubscribe: ["team.zurichbuchegg.>"]
 quiet: ["team.zurichbuchegg.progress", "team.zurichbuchegg.contracts", "team.zurichbuchegg.review"]

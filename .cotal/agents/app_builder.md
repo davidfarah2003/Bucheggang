@@ -5,7 +5,6 @@ description: Implements the app lane (docs/plans/04-customer-app.md) of the Vise
 tags: [build, python]
 agent: jcode
 model: claude-opus-5-5
-variant: high
 subscribe: ["team.zurichbuchegg.app", "team.zurichbuchegg.progress", "team.zurichbuchegg.contracts", "team.zurichbuchegg.review"]
 allowSubscribe: ["team.zurichbuchegg.>"]
 quiet: ["team.zurichbuchegg.progress", "team.zurichbuchegg.contracts", "team.zurichbuchegg.review"]
