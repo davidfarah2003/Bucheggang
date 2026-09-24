@@ -35,6 +35,15 @@ Out:
 4. Polling: the step-up list refreshes every 2 s; a pending step-up that the runner has already resolved (timeout) disappears with a note.
 5. Capture screenshots of the Wallet screens in `docs/screens/` for the pitch deck.
 
+## Customer UI revision
+
+- Color: `#f7f7f5` canvas, `#ffffff` surface, `#1c2422` text, `#66716d` secondary text, `#d83c32` action, `#287352` success, `#a46b2c` uncertainty. Red is limited to the primary action and small status marks.
+- Type: the existing Inter and system sans stack. Page title 30 px, purchase amount 46 px, section heading 18 px, body 14 px, metadata 12 px. Labels use sentence case.
+- Layout: a narrow desktop navigation rail with one main column up to 1120 px. Home leads with the current wallet limit and recent purchases. Mobile keeps the bottom navigation and puts approval actions within thumb reach.
+- Review maps `renderReview`, `questionCards` and `exampleCards` to a compact draft summary with unanswered choices. Examples move into a details sheet. `confirmDraft` and `rejectDraft` keep their exact hash/version checks.
+- Home reads the existing mandate and history routes. Approvals uses the existing `stepUpCard`, `loadApprovals` and answer route once the runner publishes both routes. Policy keeps `renderPolicy`, `submitTighten` and `revokeMandate`; a pause control needs a backend contract before it can be offered. Activity keeps `renderActivity` and `openDecision`; the full Event, checks and state move into a separate technical view reached from the decision drawer.
+- No new backend endpoint, response shape or synthetic transaction data. A missing route renders its actual error or an explicit unavailable state while its owner implements it.
+
 ## How we check it works
 
 - Confirm with a stale hash shows the 409 message and reloads the draft.
