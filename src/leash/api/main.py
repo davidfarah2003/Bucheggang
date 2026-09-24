@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import secrets
-from threading import RLock
+from threading import Lock
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
 from pydantic import BaseModel, ConfigDict
@@ -28,7 +28,7 @@ def create_app(store: DraftStore, mandates: MandateClient) -> FastAPI:
 
     app = FastAPI(title="Agent on a Leash")
     sessions: dict[str, str] = {}
-    sessions_lock = RLock()
+    sessions_lock = Lock()
 
     def current_customer_session(leash_session: str | None = Cookie(default=None)) -> tuple[str, str]:
         if leash_session is None:
