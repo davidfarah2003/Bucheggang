@@ -98,6 +98,26 @@ Uiverse returned HTTP 403 through WebFetch and a Cloudflare challenge in the bro
 
 Check at 390-400 px and at a laptop width: review question gating, confirmation acknowledgment, an actual pending step-up and its resolved result, activity expansion, inspector keyboard use, session expiry and HTTP error display. The simulator-driven purchase flow depends on a live runner and an external shopping agent. No shipped mock, recorded purchase or synthetic customer answer substitutes for that check.
 
+## Shop, Wallet and Activity integration
+
+The mobile shell now has Shop, Wallet and Activity as its three destinations. Wallet contains Needs you, Active and Rules. The saved draft link still opens the trusted Wallet review directly through `?draft_id=<id>`; `?draft=<id>` remains an accepted alias. The app stays plain HTML, CSS and JavaScript served by FastAPI.
+
+| Customer action | App call | Result shown |
+| --- | --- | --- |
+| Open a spending request | `GET /drafts/{id}` | Saved draft, enforceable rules, questions and agent examples |
+| Authorize or reject | `POST /drafts/{id}/confirm` or `/reject` with exact version and hash | Accepted mandate or explicit error; no local authorization flag |
+| View current permission | `GET /mandates/{id}` | Effective rules and accepted approvals for that mandate |
+| Tighten or revoke | `POST /mandates/{id}/tighten` or `/revoke` | Reloaded backend state after acceptance |
+| Review a pending purchase | `GET /step-ups/pending` | Exact customer action and decision deadline |
+| Decide a pending purchase | `POST /step-ups/{id}/answer` | Backend-accepted response, then refreshed pending list |
+| Read Activity | `GET /mandates/{id}/decisions`, then `GET /decisions/{id}` | Recorded outcomes with merchant, amount, item and decision evidence |
+
+Shop accepts a request, cycles example prompts and offers product-specific authoring filters. Applying a filter edits the visible request text only. Copying the text hands it to an external MCP-compatible shopping agent. The app does not claim the agent is connected or that a purchase was initiated. The Wallet still fetches the saved draft from the backend before it permits authorization. Brand and colour are search preferences, and the filter budget has no financial effect until the agent proposes an enforceable rule and the customer confirms it.
+
+The simulator does not provide a hosted shopping model. There is no provider registry, conversation/search stream, purchase-initiation HTTP route, draft-revision HTTP route or account-wide Rules service in the current backend. Shop shows that gap; Rules groups the effective terms of the selected confirmed mandate and does not claim account-wide defaults were saved. Activity contains purchase decisions for that mandate only. It does not fabricate merchant fulfilment or permission lifecycle events.
+
+The browser stores only the last mandate ID as a per-tab navigation convenience. The server owns the draft, mandate, purchase result, step-up and history. Every read or write still goes through the local customer session cookie. A customer who loses that browser ID needs a backend list route to rediscover earlier mandates; that route is Later.
+
 ## Log
 
 (one line per finished task: date time, who, what, how it was tried, sha)
@@ -109,3 +129,4 @@ Check at 390-400 px and at a laptop width: review question gating, confirmation 
 2026-09-24 19:18 rb_turbo_charged: followed the merged confirming answer, reject version/hash and effective policy contracts in the review and policy screens; `node --check app/app.js` and `git diff --check` exited 0. A local HTTP run returned 200 for the app assets and sample. Chrome did not finish its DOM dump within 20 seconds, so this update has no new browser render result; live route checks remain open.
 2026-09-24 19:55 rishabh_agent: switched the app to local /session and query-driven GET /drafts/{id}, removed the sample mount, and disabled step-up controls until runner routes exist; `node --check app/app.js` and `git diff --check` exited 0, FastAPI TestClient returned `/app/` 200, JS 200, CSS 200 and sample URL 404; browser login, confirmation and step-up remain untried against the shared shell; @602b321.
 2026-09-24 20:32 oskar1: aligned demo scope with the owner ruling: standalone mobile-first Wallet first; Harness, sliders, draft inbox, mandate list and global policies are Later.
+2026-09-25 00:49 rishabh_agent: replaced the old app shell with Shop, Wallet and Activity, a request-only filter sheet, real Wallet API calls and a readable decision inspector; `node --check app/app.js`, `node --check app/api.js` and `git diff --check` exited 0, FastAPI returned `/app/` 200, `/app/api.js` 200 and unauthenticated draft 401, Chrome at 390 px loaded a stored draft through both `?draft_id=` and `?draft=`, rendered its actual rules and questions, copied a request and showed no horizontal scroll. No customer confirmation or step-up answer was submitted; Active and recorded Activity await an owned live mandate and the runner history fix. @05f2580.
