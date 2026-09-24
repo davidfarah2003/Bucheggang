@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from leash.contracts import Decision, Event, StepUp, StepUpAnswer
+from leash.contracts.event import Authorization
 
 from . import api, records
 
@@ -150,14 +151,57 @@ class StepUpBook:
             elapsed_ms=step_up.decision.elapsed_ms,
             decided_at=accepted_at,
         )
+        self._record_resolution(path, step_up, final, accepted_at, accepted)
+        log.info("resolved %s %s %s accepted=%s", auth_id, outcome, reason_codes, accepted)
+        return accepted
+
+    @staticmethod
+    def _record_resolution(path: Path, step_up: StepUp, final: Decision, accepted_at: datetime, accepted: Any) -> None:
         records.record_accepted(step_up.event, final, accepted_at, accepted, resolution=True)
         records.write_atomic(path, {
             "step_up": step_up.model_dump(mode="json"),
             "status": "resolved",
             "resolution": {"decision": final.model_dump(mode="json"), "accepted": accepted, "accepted_at": accepted_at.isoformat()},
         })
-        log.info("resolved %s %s %s accepted=%s", auth_id, outcome, reason_codes, accepted)
-        return accepted
+
+    def _reconcile_expired(self, path: Path, step_up: StepUp, run_id: str) -> None:
+        """Record a verified platform expiry. Never infer an outcome from the 409 alone."""
+        auth_id = step_up.authorization_id
+        rows = api.call("GET", "/v1/authorizations", params={"run_id": run_id})
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise StepUpError("GET /v1/authorizations did not return a list of authorization records")
+        found = [row for row in rows if row.get("authorization_id") == auth_id]
+        if len(found) != 1:
+            raise StepUpError(f"{auth_id}: expected one authoritative authorization, found {len(found)}")
+        accepted = found[0]
+        decision = accepted.get("decision")
+        if (accepted.get("run_id") != run_id or accepted.get("status") != "declined"
+                or accepted.get("decision_source") != "timeout"
+                or accepted.get("reason_codes") != ["step_up_expired"]
+                or not isinstance(decision, dict)
+                or decision.get("authorization_id") != auth_id or decision.get("decision") != "decline"
+                or decision.get("decision_source") != "timeout"
+                or decision.get("reason_codes") != ["step_up_expired"]):
+            raise StepUpError(f"{auth_id}: platform record is not a finalized step-up timeout decline")
+        authorization = Authorization.model_validate(accepted.get("authorization"))
+        if authorization != step_up.event.authorization:
+            raise StepUpError(f"{auth_id}: platform authorization differs from the stored pending event")
+        finalized = accepted.get("finalized_at")
+        if not isinstance(finalized, str):
+            raise StepUpError(f"{auth_id}: platform timeout has no finalized_at")
+        accepted_at = datetime.fromisoformat(finalized.replace("Z", "+00:00"))
+        if accepted_at.tzinfo is None or not step_up.expires_at <= accepted_at <= _now():
+            raise StepUpError(f"{auth_id}: platform finalized_at is outside the expiry-to-now interval")
+        final = Decision(
+            authorization_id=auth_id, decision="decline", reason_codes=["step_up_timeout"],
+            customer_message=decision.get("customer_message"), evidence=decision.get("evidence"),
+            explanation="The simulator expired the unanswered step-up. Recorded its verified timeout decline without resubmitting.",
+            engine_version="simulator-step-up-expiry", mandate_version=step_up.decision.mandate_version,
+            elapsed_ms=0, decided_at=accepted_at,
+        )
+        self._record_resolution(path, step_up, final, accepted_at, accepted)
+        log.info("reconciled %s declined decision_source=timeout reason=step_up_expired finalized_at=%s",
+                 auth_id, finalized)
 
     def answer(self, answer: StepUpAnswer) -> Any:
         """Send the customer's answer to /resolve and record it. KeyError when unknown."""
@@ -180,31 +224,36 @@ class StepUpBook:
                 f"The customer answered {answer.decision} at {answer.answered_at.isoformat()}.",
             )
 
-    def sweep(self, mandate_id: str) -> list[str]:
-        """Resolve every expired pending step-up of one mandate with decline step_up_timeout."""
+    def sweep(self, mandate_id: str, run_id: str) -> list[str]:
+        """Resolve expired step-ups, or reconcile a timeout the platform already recorded."""
         done = []
         with records.mandate_lock(mandate_id):
             now = _now()
             for step_up in self.pending(mandate_id):
                 if now < step_up.expires_at:
                     continue
-                self._finish(
-                    self._path(mandate_id, step_up.authorization_id),
-                    step_up,
-                    "decline",
-                    ["step_up_timeout"],
-                    "You did not answer in time, so this purchase was declined.",
-                    f"No customer answer before {step_up.expires_at.isoformat()}; declined on timeout.",
-                )
+                path = self._path(mandate_id, step_up.authorization_id)
+                try:
+                    self._finish(
+                        path, step_up, "decline", ["step_up_timeout"],
+                        "You did not answer in time, so this purchase was declined.",
+                        f"No customer answer before {step_up.expires_at.isoformat()}; declined on timeout.",
+                    )
+                except api.ApiError as exc:
+                    error = exc.body.get("error") if isinstance(exc.body, dict) else None
+                    if (exc.status != 409 or not isinstance(error, dict)
+                            or error.get("code") != "authorization_not_pending"):
+                        raise
+                    self._reconcile_expired(path, step_up, run_id)
                 done.append(step_up.authorization_id)
         return done
 
     # sweeper thread (run loop process only)
 
-    def _sweep_forever(self, mandate_id: str) -> None:
+    def _sweep_forever(self, mandate_id: str, run_id: str) -> None:
         try:
             while not self._stop.wait(SWEEP_INTERVAL_S):
-                self.sweep(mandate_id)
+                self.sweep(mandate_id, run_id)
         except BaseException as exc:
             # Kept for the run loop, which re-raises it; the thread then ends.
             self.failure = exc
@@ -215,8 +264,8 @@ class StepUpBook:
         if self.failure is not None:
             raise StepUpError("step-up sweeper failed; pending step-ups are no longer timed out") from self.failure
 
-    def start(self, mandate_id: str) -> None:
-        self._sweeper = threading.Thread(target=self._sweep_forever, args=(mandate_id,), name="step-up-sweeper", daemon=True)
+    def start(self, mandate_id: str, run_id: str) -> None:
+        self._sweeper = threading.Thread(target=self._sweep_forever, args=(mandate_id, run_id), name="step-up-sweeper", daemon=True)
         self._sweeper.start()
 
     def stop(self) -> None:

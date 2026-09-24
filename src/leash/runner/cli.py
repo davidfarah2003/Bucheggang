@@ -109,7 +109,7 @@ def main() -> None:
                                         "pending_step_ups": start_state.pending_step_ups}))
     window_s = stepups.human_window_s()
     book = stepups.StepUpBook()
-    book.start(args.mandate_id)
+    book.start(args.mandate_id, run["run_id"])
     if args.serve_port:
         serve(book, args.serve_port)
     state = loop.run_loop(run["run_id"], EVALUATORS[args.evaluate], policy, args.mandate_id, book, window_s)
