@@ -123,11 +123,18 @@ def extract_item(
         if target:
             # Exact compare of normalized names. Unknown only when a side is missing.
             matches_request = product_type == target
+            match_source = sources["product_type"]
             requested_size = requested.get("size")
             if matches_request and requested_size is not None:
-                matches_request = None if size is None else size == str(requested_size).upper()
+                if size is None:
+                    matches_request = None
+                else:
+                    # The size is read from merchant copy, so the result
+                    # inherits that provenance whenever the size decided it.
+                    matches_request = size == str(requested_size).upper()
+                    match_source = sources["size"]
             if matches_request is not None:
-                sources["matches_request"] = sources["product_type"]
+                sources["matches_request"] = match_source
 
     return {
         "item_id": item_id,
