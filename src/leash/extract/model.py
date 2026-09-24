@@ -1,4 +1,4 @@
-"""Optional single-call semantic extraction with a bounded deterministic fallback.
+"""Single-call semantic extraction with a bounded deterministic first pass.
 
 The caller supplies the model credential. Nothing in merchant text gains access
 to tools or policy mutation. Model facts retain their provenance in the result.
@@ -188,33 +188,30 @@ def _seconds_left(deadline_at: datetime | str) -> float:
 def extract_event_with_model(
     event: Mapping[str, Any],
     *,
+    model: FactModel,
+    deadline_at: datetime | str,
     catalogue: Mapping[str, Mapping[str, Any]] | None = None,
     requested: Mapping[str, str] | None = None,
-    model: FactModel | None = None,
-    deadline_at: datetime | str | None = None,
     max_model_s: float = 1.5,
     reserve_s: float = 2.0,
     allow_model_resolution: bool = False,
 ) -> list[dict[str, Any]]:
-    """Return pass-one facts, filling unknowns with one bounded model call.
+    """Merge pass-one facts with one bounded model call.
 
     By default, the model may add risk flags but cannot resolve an unknown fact
     into permission. The caller may enable resolution only when the customer's
-    mandate permits reliance on merchant-stated terms. Every model failure
-    leaves the deterministic result intact.
+    mandate permits reliance on merchant-stated terms. Model failures raise.
     """
     baseline = extract_event(event, catalogue=catalogue, requested=requested)
+    if model is None:
+        raise ValueError("fact model client is required")
     items = event.get("authorization", {}).get("items", [])
-    if model is None or deadline_at is None or not items:
-        return baseline
-    try:
-        timeout_s = min(max_model_s, _seconds_left(deadline_at) - reserve_s)
-        if timeout_s <= 0:
-            return baseline
-        rows = _validate_rows(model.classify(items, requested, timeout_s), items)
-    except Exception:
-        # The runner records the timeout/error if it needs that distinction.
-        return baseline
+    if not items:
+        raise ValueError("authorization has no cart lines for fact extraction")
+    timeout_s = min(max_model_s, _seconds_left(deadline_at) - reserve_s)
+    if timeout_s <= 0:
+        raise TimeoutError("no decision time remains for model fact extraction")
+    rows = _validate_rows(model.classify(items, requested, timeout_s), items)
 
     merged: list[dict[str, Any]] = []
     for item, first, second in zip(items, baseline, rows, strict=True):
