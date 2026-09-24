@@ -42,7 +42,7 @@ Assumptions encoded in these drafts:
 - SCEN0000 treats one prior approved purchase on the card as evidence of a regularly used shop. Its open question records that interpretation. It permits one grocery unit and one successful purchase.
 - SCEN0001 requires grocery cart lines and delivery. Its limits use the billed amount, which already includes delivery, and a rolling seven-day sum of projected approvals.
 - SCEN0003 checks prior merchant use on the same card. An unanswered question records the possible wider customer scope. Session checks come from the engine's existing device, country and velocity checks.
-- SCEN0004 preserves the instruction's literal product phrase, `27-inch monitor`. The chosen catalogue model is an unanswered question. The current extractor returns `27-inch computer monitor`, so exact equality fails. The replay does not change the policy wording to force an approval. It also limits the request to one unit and one successful purchase.
+- SCEN0004 preserves the instruction's literal product phrase, `27-inch monitor`. The chosen catalogue model is an unanswered question. The current extractor returns `27-inch computer monitor`, so exact equality fails. The replay does not change the policy wording to force an approval. It also limits the request to one unit and one successful purchase. Since 2026-09-25 it carries no `facts.is_addon = false` rule: extraction reports `is_addon` unknown on a line with no add-on marker, so that rule made every clean monitor line a step_up under `ask`. The engine's built-in add-ons check covers detected add-on lines.
 
 ## Event and state semantics
 
