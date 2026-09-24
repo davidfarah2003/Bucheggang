@@ -1,6 +1,6 @@
 # 04 Customer app
 
-- Status: draft
+- Status: in progress
 - Owner: Rishabh (proposed)
 - Lane: app. Channel `team.zurichbuchegg.app`, branch `lane/app`, worktree `.worktrees/app`
 - User flow steps: confirmation screen; step-up screen; policy and purchase history; the judge panel behind every decision
@@ -30,8 +30,8 @@ Out:
 
 ## Steps
 
-1. Pick the frontend approach and write it here: plain HTML plus a little JS served by FastAPI (fastest), or a small React or Svelte build in `app/`. Either way the pages must work at 400 px wide.
-2. Build against the `SCEN0002` fixture draft from plan 01 and the example event from `viseca-2026/data/scenario_fixtures/` before the backend routes exist. Until the routes exist, the pages read the sample JSON directly. That code is deleted when the routes land; there is no mock mode in the app.
+1. Frontend decision: plain HTML, CSS and JavaScript in `app/`, served by FastAPI. No frontend build step. Pages must work at 400 px wide.
+2. Build against the `SCEN0002` fixture draft from plan 01 and the example event from `viseca-2026/data/scenario_fixtures/` before the backend routes exist. Until the routes exist, pages read the sample JSON directly. Remove that data read when the routes land. There is no mock mode in the app.
 3. Confirmation screen, then step-up screen. These two are in the demo.
 4. Policy page with tighten and revoke.
 5. History and judge panel.
@@ -48,8 +48,8 @@ Out:
 
 ## Open questions
 
-- Which of the two frontend options? The owner decides in step 1 and records it here.
-- Do we show the shopping agent's proposed policy next to the stored draft, to show that only the stored one counts? Proposed: no; one authoritative view, with a sentence saying where it came from.
+- Frontend choice: plain HTML, CSS and JavaScript, served by FastAPI. This keeps the app readable and removes a build step before the deadline.
+- Show the saved policy draft as the authoritative view, with a sentence explaining that the shopping agent proposed it. There is no second policy display.
 
 ## Log
 
