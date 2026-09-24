@@ -5,10 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import math
-import subprocess
 import time
 from datetime import UTC, datetime
-from pathlib import Path
 
 import httpx
 
@@ -49,26 +47,6 @@ QUESTIONS = {
 
 class JevResponseError(ValueError):
     """The provider returned a response that cannot be used as a risk signal."""
-
-
-def _read_key() -> str:
-    common = subprocess.run(
-        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-        cwd=Path(__file__).resolve().parent, capture_output=True, text=True, check=True,
-        timeout=1.0,
-    ).stdout.strip()
-    path = Path(common).parent / ".env"
-    matches = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip().removeprefix("export ").strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        name, value = line.split("=", 1)
-        if name.strip() == "OPENROUTER_API":
-            matches.append(value.strip().strip('"').strip("'"))
-    if len(matches) != 1 or not matches[0]:
-        raise RuntimeError(f"{path}: expected one nonempty OPENROUTER_API entry")
-    return matches[0]
 
 
 def _unique_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -122,11 +100,13 @@ def _parse_response(text: str, latency_ms: int) -> SemanticAssessment:
     )
 
 
-async def assess_jev(features: HistoryFeatures, deadline_at: datetime) -> SemanticAssessment:
-    """Use numeric history only; fail before the runner's absolute deadline reserve."""
+async def assess_jev(features: HistoryFeatures, deadline_at: datetime, *,
+                     api_key: str) -> SemanticAssessment:
+    """Use numeric history only; the startup caller supplies a scoped Jev credential."""
     if deadline_at.tzinfo is None:
         raise ValueError("Jev deadline lacks timezone")
-    key = _read_key()
+    if not api_key:
+        raise RuntimeError("Jev API key is missing")
     remaining = (deadline_at - datetime.now(UTC)).total_seconds() - DEADLINE_RESERVE_SECONDS
     if remaining <= 0:
         raise TimeoutError("Jev has no time remaining before the deadline reserve")
@@ -146,7 +126,7 @@ async def assess_jev(features: HistoryFeatures, deadline_at: datetime) -> Semant
     async with asyncio.timeout_at(asyncio.get_running_loop().time() + remaining):
         async with httpx.AsyncClient(timeout=remaining, follow_redirects=False) as client:
             response = await client.post(URL, json=request,
-                                         headers={"Authorization": f"Bearer {key}"})
+                                         headers={"Authorization": f"Bearer {api_key}"})
     latency_ms = int((time.perf_counter() - started) * 1000)
     if response.status_code != 200:
         raise JevResponseError(f"Jev HTTP {response.status_code}")
