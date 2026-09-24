@@ -81,7 +81,7 @@ mandate_id     str, from the simulator's confirm response
 draft_id       str
 version        int
 hash           str
-status         active | revoked | expired
+status         active | superseded | revoked | expired
 confirmed_at   datetime
 ```
 
