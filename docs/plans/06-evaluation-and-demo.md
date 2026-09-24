@@ -1,6 +1,6 @@
 # 06 Evaluation and demo
 
-- Status: draft
+- Status: report generator implemented and exercised, review pending. Labels remain provisional; human Wallet E2E, two full live dry runs and pitch/submission work remain open.
 - Owner: everyone; Rishabh drives the pitch
 - Channel: `team.zurichbuchegg` (spine)
 - Papers: [Selective Conformal Risk Control](../papers/2512.12844v2.pdf) (report the two numbers: how often the system decides alone, and how often it is wrong when it does; its guarantees need more labelled, exchangeable data than 45 attempts, so no guarantee is claimed), [CaMeL](../papers/2503.18813v2.pdf) (report lost utility next to blocked attacks)
@@ -22,15 +22,17 @@ Labels to check decisions against, a report the pitch can quote, and a demo that
 - agreement with labels, with every disagreement listed and explained;
 - autonomy rate (share decided without a step-up) and error rate on those, per scenario;
 - extract lane's corpus table (pass 1; there is no model pass, docs/idea Decision pipeline);
-- latency p50 and p99 for extract, evaluate and end-to-end, from the fake-simulator run and the live run;
+- latency p50 and p99 for offline extraction/evaluation and the available live measurements; complete live end-to-end timing remains unavailable until both ends are recorded;
 - attacks in SCEN0004 stopped or escalated, and ordinary purchases in SCEN0000 to SCEN0002 approved without a question.
 
-Numbers come from files in `docs/eval/`; the report links to them. No number appears in the pitch that is not in the report.
+Numbers come from files in `docs/eval/`; the report links to them. No number appears in the pitch that is not in the report. [run-report.md](../run-report.md) documents explicit inputs, labels-pending operation and measurement limits. [live-demo-checklist.md](../live-demo-checklist.md) separates observed evidence from the customer flow still to be exercised.
 
 ## Demo script (four minutes of content, cut to the slot)
 
+This is the intended sequence. The public attempt IDs below identify offline examples, not selectable live purchases. Use the live bootstrap's team scenario IDs, the customer's actual choices and the resulting decisions. Do not announce an approval or fixed latency before observing it.
+
 1. The external shopping agent proposes a `SCEN0002` draft through MCP and opens the Wallet at `/app/?draft=<id>`. Review the saved draft and examples, answer the return-terms question, and confirm. Show the `mandate_id` the agent receives. The Wallet also works directly without any built-in Harness.
-2. Ordinary purchase approved with no question (an early `SCEN0002` attempt). Show the judge panel: every check passed, 6 ms.
+2. Show an ordinary purchase's actual outcome and judge panel. Quote the measured timing. The early `SCEN0002` approval is an offline reference; missing live-card history may cause a step-up.
 3. A manipulated purchase from `SCEN0004`: injected merchant text is shown verbatim on the panel, flagged, and the decision is driven by the rule it tried to override.
 4. A `step_up` on the phone: AU0016, return terms not stated; the customer rejects; the next attempt at the same merchant is declined as a re-quote.
 5. Revoke on the policy page; the following purchase is declined with `mandate_revoked`.
@@ -61,3 +63,5 @@ Assets: `docs/screens/` screenshots of the mobile-first Wallet demo, the agent-s
 (one line per finished task: date time, who, what, how it was tried, sha)
 
 2026-09-24 20:32 oskar1: clarified that the current demo uses an external shopping agent through MCP and opens the standalone Wallet with the saved draft ID; a built-in Harness is later work.
+
+2026-09-25 00:09 david_orch: report generator, evidence-linked report and live checklist implemented @3852542. `uv run python scripts/replay.py --all` with the five explicit drafts documented in run-replay.md wrote the new 45-row replay: 11 approve, 32 decline, 2 step_up; local total p50 0.248 ms, p99/max 0.462 ms. `uv run python scripts/report.py` read that replay plus four live CSVs (50 finalized, 49 local outcomes, one platform-only timeout), measured 145/145 annotated extraction fields and 7/7 authored adversarial instruction recall, and wrote docs/eval/report.md with labels pending. Explicit provisional labels-b @4e15565 exercised all labelled calculations and disagreement rows in an ignored scratch report; no provisional label metrics were put in the published report. Missing explicit labels and mismatched label/replay mode exited 1; omitted --labels-mode and existing output exited 2; the existing report hash was unchanged. labels-a @c3afec9 initially failed on its trailing comment row, reported to its owner; no input repair or fallback was applied by the reporter. No simulator request, customer answer, test suite or linter. Human reconciliation, full Wallet E2E, complete live end-to-end timing and repeated live demo remain open. Review pending.
