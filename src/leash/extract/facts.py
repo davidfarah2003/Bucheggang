@@ -38,18 +38,13 @@ _ADDON = re.compile(r"\b(?:add[ -]?on|optional (?:service|cover|plan))\b", re.I)
 
 
 def _product_type(name: str) -> str | None:
-    """Map a named item to a concise type without inferring from shop prose."""
-    value = name.strip().lower()
-    if not value:
-        return None
-    if "road-running shoe" in value:
-        return "road-running shoes"
-    if "trail-running shoe" in value:
-        return "trail-running shoes"
-    if "monitor" in value:
-        match = re.search(r"\b(\d{2})[ -]inch\b", value)
-        return f"{match.group(1)}-inch monitor" if match else "monitor"
-    return value
+    """Normalize a structured item name the same way for every category.
+
+    No category gets its own vocabulary, and nothing is inferred from shop
+    prose. A request matches only on an equal normalized name.
+    """
+    value = " ".join(name.split()).lower()
+    return value or None
 
 
 def _return_days(copy: str) -> tuple[int | None, bool]:
@@ -126,11 +121,13 @@ def extract_item(
     if requested and product_type is not None:
         target = _product_type(str(requested.get("product_type", "")))
         if target:
+            # Exact compare of normalized names. Unknown only when a side is missing.
             matches_request = product_type == target
             requested_size = requested.get("size")
             if matches_request and requested_size is not None:
                 matches_request = None if size is None else size == str(requested_size).upper()
-            sources["matches_request"] = sources["product_type"]
+            if matches_request is not None:
+                sources["matches_request"] = sources["product_type"]
 
     return {
         "item_id": item_id,
