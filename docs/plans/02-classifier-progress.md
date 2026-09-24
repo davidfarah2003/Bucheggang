@@ -1,7 +1,7 @@
 # Classifier progress and review ledger
 
 - Feature: personalized payment classifier, per [02-classifier-handoff.md](02-classifier-handoff.md).
-- Manager seat: `classifier_manager` on the Cotal mesh, space `zurichbuchegg`.
+- Manager seat: `classifier_manager_live` on the Cotal mesh, space `zurichbuchegg`, since the 20:4x restart. The earlier seat `classifier_manager` is stopped and stays stopped.
 - Reviewed proposal: [02-classifier-design.md](02-classifier-design.md), SHA-256 `4d8ea6601aa2a23927a895b03ccd8e90ec8ae275da818dbc377d01e258409eb9`, unchanged (re-hashed 2026-09-24 20:21 CEST). The proposal and its review record stay as written. Implementation decisions are recorded here and in later milestone files.
 
 ## Startup proof, 2026-09-24 20:21 CEST
@@ -37,37 +37,43 @@ Cotal grants, as `cotal_orientation` reported them at 20:16 (broker-enforced, au
 
 | Area | Owner | Notes |
 | --- | --- | --- |
-| `.worktrees/classifier`, branch `lane/classifier` | classifier_manager | only writer checkout of this seat |
-| `src/leash/contracts/`, `src/leash/engine/` evaluator, checks, state | engine_builder (coordinated by david_main) | PR #21 `046bd73` (record contract) and PR #22 `f2fa10e` (state store, checks, evaluate) are open and unmerged |
-| runner infrastructure, `src/leash/runner/` | runner_builder | PR #18 merged at `4cbc28e` |
+| `.worktrees/classifier`, branch `lane/classifier` | classifier_manager_live | only writer checkout of this seat |
+| `src/leash/contracts/`, `src/leash/engine/` evaluator, checks, state | engine_builder (coordinated by david_main) | merged on main: #21 `11d911f`, #22 `1180c07`, #23 `3665ab1` |
+| runner infrastructure, `src/leash/runner/` | runner_builder | merged on main: #18 `4cbc28e`, #24 `7d7e176`, #25 `ed2bc3c` |
 | offline replay, `scripts/replay.py` | david_orch | plan 05 task 3; not duplicated here |
-| policy, extraction | Oskar (oskar1, extract_builder) | PR #19 `6a2e128` removes the purchase-time extraction model |
-| app | Rishabh (rishabh_agent) | |
-| proposed classifier modules | classifier_manager, pending engine_builder agreement at M0 | proposal: a subpackage `src/leash/engine/classifier/` (history features, behavioural inference, Jev adapter), offline scripts under `scripts/classifier_*.py`, manifests and reports under `docs/eval/classifier/`. Integration into `evaluate()` goes through an interface agreed with engine_builder, not by editing their files. |
+| policy, extraction | Oskar (oskar1, extract_builder) | #19 `2befdc0` (purchase-time extraction model removed) merged |
+| app, `src/leash/api/` | Rishabh (rishabh_agent) | #26 `636629e` (mandate routes, `MandateEdits`) merged |
+| proposed classifier modules | classifier_manager_live, pending engine_builder agreement | full map in [02-classifier-m0.md](02-classifier-m0.md) section 11 |
 
 ## Milestones
 
 | Milestone | State | Target | Review round |
 | --- | --- | --- | --- |
-| M0 re-anchor, scope, contract proposal, ownership map | in progress | not yet frozen | not started |
+| M0 re-anchor, scope, contract proposal, ownership map | written, frozen for review | [02-classifier-m0.md](02-classifier-m0.md); commit and SHA-256 manifest in the ledger | r1 |
 | M1 personal-history features and deterministic integration | not started | | |
 | M2 offline behavioural-model comparison | not started | | |
-| M3 Jev semantic assessments | not started; blocked on M0 scope item 1 and credentials | | |
+| M3 Jev semantic assessments | not started; needs owner ruling O1 and contract P1 | | |
 | M4 end-to-end integration and release decision | not started | | |
 
-## Open items for M0
+## Open items after M0
 
-1. Jev scope versus the no-model ruling. david_main posted on `contracts` that no model runs at purchase time. Docs PR #20 (`13ca99f`, open) writes "No language model runs at purchase time" into `docs/idea/viseca-agent-control-layer.md` and "No model call in the decision path" into the security requirements, and removes `model` from `FactSource` and `Check.source`. At about 20:20 david_orch relayed by DM that david_main reports David clarified the ruling as extraction-only and that Jev decision classification stays in scope. This is second-hand; M0 needs the clarification written into a file the owner controls, and PR #20's wording reconciled with a Jev assessment path, before any model-enabled code.
-2. Provenance B1 is still present on main: `src/leash/extract/facts.py:130` copies only the `product_type` source into `sources["matches_request"]`, while lines 127-128 also use size.
-3. Integration interface with engine_builder: where history features and assessments enter `evaluate()`, given PR #22's signature. Agree on `contracts` before writing under `src/leash/engine/`.
-4. Local-policy overlay versus the simulator's frozen run snapshot, mutation coordination (R1), absolute deadlines for automated and human paths (R2), redundant selected option (R3). runner_builder logged that a PATCH with any `hard_rules` returns 409 `mandate_widening`; only `uncertainty_policy` tightening works live.
-5. ML dependencies. `pyproject.toml` on main has no numpy, scikit-learn or catboost. M2 needs them; adding them touches a shared file and needs agreement.
+The open items from startup are answered in [02-classifier-m0.md](02-classifier-m0.md):
+
+1. Jev scope: main now carries the ruling (`docs/idea/viseca-agent-control-layer.md:155, 170`, `docs/models.md:30`, docs PR #20 merged as `4fcaab6`). Jev reads the customer's own history, adds a step 8 risk signal and never reads merchant text. Catalogue fields are owner ruling O1.
+2. B1 is still on main at `src/leash/extract/facts.py:130` (Oskar).
+3. Integration interface: proposal P2 (`assess()` outside `evaluate()`, one optional `assessments` argument).
+4. R1: proposal P3 and owner ruling O3. R2: proposal P4. R3: M0 section 8.
+5. ML dependencies: proposal P5.
+
+## Model pin
+
+Jev through OpenRouter System One, `typesafe/jev-1.13-20260917`, provider pinned to `typesafe` with fallbacks off. The key is `OPENROUTER_API` in the main checkout `.env` (name only; the value is never printed). Evidence in M0 section 9.
 
 ## Known blockers
 
-- Reviewer spawning. The `classifier_review_*` personas exist only as untracked files in this worktree. The manager reads personas from the repo root's `.cotal/agents/`, which does not contain them (checked 20:20). Together with the manager binding mismatch above, `cotal_spawn(name: "classifier_review_grok")` is not expected to work until the personas are committed to main or another supported path is agreed. No grants or supervisors will be changed to work around it.
-- Reviewer tiers untested. grok-4.7 high, gemini-3.8-flash high and glm-5.3 max on Jcode have not been launched at those tiers. They will be attempted exactly as specified at the first frozen target; a refusal is reported, not substituted.
-- Jev credentials. The root `.env` defines no Jev provider variable (variable names checked, values not read). M3 cannot run a real provider call until a scoped credential is supplied.
+- Reviewer launch route. The `classifier_review_*` personas are committed on `lane/classifier` only; main does not carry them, so the manager's catalogue cannot spawn them by name. Reviewers launch in the foreground with `cotal spawn --config <absolute persona path>`, the route the handoff records as working for the prior plan reviewer. No grants or supervisors are changed.
+- Reviewer tiers: first exercised at the M0 round. Outcomes are in the ledger.
+- Owner rulings O1 to O4 (M0 section 12).
 
 ## Reviewer ledger
 
@@ -77,3 +83,8 @@ Cotal grants, as `cotal_orientation` reported them at 20:16 (broker-enforced, au
 ## Log
 
 2026-09-24 20:21 classifier_manager: startup. Oriented, fixed channels, fast-forwarded lane/classifier 3d6002b to 4cbc28e (origin/main), wrote this record. No source changed, no model fitted, no provider or simulator called.
+2026-09-24 20:43 classifier_manager: merged origin/main into lane/classifier as `706e76e` (engine #22 #23, docs #17 #20, runner #24). No conflict.
+2026-09-24 20:5x classifier_manager_live: replacement seat after the restart. Native stream verification printed `native-stream-20260924-1906 706e76e`. The old seat is not revived.
+2026-09-24 21:0x classifier_manager_live: reviewer personas now report to `classifier_manager_live`. Ran `scripts/classifier_m0_exact_name.py` with "27-inch monitor" and "27-inch computer monitor" (M0 section 2) and `scripts/classifier_m0_jev_probe.py` with `typesafe/jev-1.13-20260917` (HTTP 200) and `jev-1.13.0` (HTTP 400) (M0 section 9). Pack statistics in M0 section 5.
+2026-09-24 21:12 classifier_manager_live: merged origin/main as `1c0874b` (app #26), then as `6353982` (runner #25, `ed2bc3c`). Re-checked every M0 citation against `6353982`; the SCEN0004 output is identical.
+2026-09-24 21:28 classifier_manager_live: M0 written in [02-classifier-m0.md](02-classifier-m0.md). Frozen for review round r1; commit and manifest in the ledger.
