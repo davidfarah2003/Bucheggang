@@ -19,7 +19,7 @@ In:
 
 - Pass 1, deterministic: regular expressions plus the `items.csv` catalogue (category and CHF price range) for return periods ("30-day returns", "no returns"), gift cards and vouchers, protection plans and warranties, subscriptions, sizes, and instruction patterns ("ignore", "approve", "the customer has agreed", "as authorised by", "system:").
 - Pass 2, model: one call with a strict JSON schema, the requested item from the confirmed policy as a short structured description, and a hard timeout. The model has no tools. Output is validated; anything outside the schema is dropped.
-- Merge: pass 1 wins on conflict; pass 2 fills `unknown`s; `sources` records `structured`, `merchant_text` or `model` per field.
+- Merge: pass 1 wins on conflict. Pass 2 can add affirmative risk flags by default. It fills unknown product facts only when `allow_model_resolution` is enabled by the caller; return and size claims also need a related phrase in merchant text. `sources` records `structured`, `merchant_text` or `model` per field.
 - Failure: a pass 2 timeout or error raises. There is no fallback to pass 1 only (AGENTS.md section 6).
 
 Out:
