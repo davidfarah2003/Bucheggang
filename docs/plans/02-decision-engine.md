@@ -52,6 +52,8 @@ Out:
 - For "a shop I use regularly", an unseen merchant fails when the confirmed instruction explicitly requires prior use. If it does not, merchant familiarity is uncertain.
 - AU0016 has unknown return terms, so it is uncertain and follows the confirmed draft's uncertainty policy. If the customer answered the return-terms question during confirmation, evaluate against the rule created from that answer.
 - Treat the two SCEN0001 purchases minutes apart as separate orders for the per-order limit. Count both against the period limit and explain this interpretation on the judge panel.
+- A card with no row in `authorization_history.csv` before the purchase and no approval recorded on the mandate has no basis for device, merchant or country familiarity. The familiarity check is uncertain with the one reason code `no_card_history` and one message, and the country check is not reported separately. A customer rule on `history.*` is uncertain for such a card, with the same code. A card with history keeps the device, merchant and country checks. The live simulator serves the pack's history file unchanged, so the live card CA1331 is such a card (docs/eval/live-SCEN0101-2026-09-24.md on lane/runner). Owner ruling, 2026-09-24.
+- The built-in country check reports `country_unfamiliar` when it is uncertain. `country_blocked` is used only when a customer rule on `authorization.merchant.merchant_country` fails.
 
 ## Log
 

@@ -53,6 +53,8 @@ def _observed(rule, check: Check, event: Event) -> str:
     if field == "state.approvals_count":
         n = int(value)
         return f"you already have {n} approved purchase{'s' if n != 1 else ''} under this instruction"
+    if field.startswith("history.") and unknown:
+        return "this card has no purchase history yet, so we cannot tell"
     if field == "history.merchant_seen_on_card":
         return f"you have never bought from {auth.merchant.merchant_name} with this card"
     if field == "history.device_seen_on_card":

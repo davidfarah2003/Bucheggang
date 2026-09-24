@@ -110,6 +110,10 @@ def familiarity(ctx: RuleContext) -> Result:
     check never fails; an unseen device or merchant makes it uncertain.
     """
     auth = ctx.event.authorization
+    if ctx.no_card_history:
+        return _bad("familiarity", "uncertain", auth.card_id, "history",
+                    "This card has no purchase history yet, so we cannot tell whether this shop, this device "
+                    f"or a shop in {auth.merchant.merchant_country} is familiar to you.", "no_card_history")
     devices = ctx.history.device_count(auth.card_id, auth.customer_device_id, auth.timestamp)
     if devices == 0:
         return _bad("familiarity", "uncertain", auth.customer_device_id, "history",
@@ -132,13 +136,16 @@ def velocity(ctx: RuleContext) -> Result:
     return _ok("velocity", count, "event", f"{count} other attempts in the last 10 minutes.")
 
 
-def country(ctx: RuleContext) -> Result:
+def country(ctx: RuleContext) -> Result | None:
+    """None on a card with no history: familiarity already reports no_card_history for it."""
+    if ctx.no_card_history:
+        return None
     auth = ctx.event.authorization
     code = auth.merchant.merchant_country
     seen = ctx.history.country_count(auth.card_id, code, auth.timestamp)
     if seen == 0:
         return _bad("country", "uncertain", code, "history",
-                    f"This card has never bought from a shop in {code}.", "country_blocked")
+                    f"This card has never bought from a shop in {code}.", "country_unfamiliar")
     return _ok("country", code, "history", f"{seen} earlier approved purchases in {code}.")
 
 

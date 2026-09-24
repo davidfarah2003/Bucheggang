@@ -49,6 +49,16 @@ class RuleContext:
     facts: list[PurchaseFacts] | None  # None: the extract lane did not answer
     history: History = HISTORY
 
+    @property
+    def no_card_history(self) -> bool:
+        """The card has no history row before this purchase and no approval recorded on this mandate.
+
+        Owner ruling (plan 02 Decisions): such a card gives no basis for device,
+        merchant or country familiarity, so those are unknown, never unfamiliar.
+        """
+        auth = self.event.authorization
+        return not self.state.approvals and self.history.card_rows(auth.card_id, auth.timestamp) == 0
+
 
 @dataclass(frozen=True)
 class Observed:
@@ -154,6 +164,8 @@ def resolve(rule: AnyRule, ctx: RuleContext) -> list[Observed]:
             out.append(Observed(value, check_source(fact.sources[name]), f"line {item.line_no}"))
         return out
 
+    if field.startswith("history.") and ctx.no_card_history:
+        return [Observed(None, "history", "no purchase history on this card")]
     if field == "history.merchant_seen_on_card":
         seen = ctx.history.merchant_count(auth.card_id, auth.merchant.merchant_id, auth.timestamp)
         seen += sum(
@@ -278,6 +290,8 @@ def reason_code(rule: AnyRule, check: Check) -> str | None:
         return "period_limit_exceeded"
     if check.result == "uncertain" and rule.field in ("facts.return_days", "authorization.order_returnable"):
         return "return_terms_missing"
+    if check.result == "uncertain" and rule.field.startswith("history."):
+        return "no_card_history"
     code = REASON_BY_FIELD.get(rule.field)
     if code is None:
         raise ValueError(f"no reason code for rule field {rule.field!r}")
