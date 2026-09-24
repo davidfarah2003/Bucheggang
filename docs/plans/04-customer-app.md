@@ -1,7 +1,7 @@
 # 04 Customer app
 
 - Status: draft
-- Owner: third teammate (proposed)
+- Owner: Rishabh (proposed)
 - Lane: app. Channel `team.zurichbuchegg.app`, branch `lane/app`, worktree `.worktrees/app`
 - User flow steps: confirmation screen; step-up screen; policy and purchase history; the judge panel behind every decision
 - Design: [Viseca authentication app](../idea/viseca-agent-control-layer.md#viseca-authentication-app), [Demo presentation](../idea/viseca-agent-control-layer.md#demo-presentation)

@@ -1,6 +1,6 @@
 # Models and seats
 
-David's machine runs a `jcode` harness with one provider that exposes many model families. Seats spawned from David's manager can use any of them; Oskar and the third teammate spawn `claude` seats from their own machines with their own subscriptions, and can ask David's main session to spawn a jcode seat for them into their lane (the seat joins the same channels either way).
+David's machine runs a `jcode` harness with one provider that exposes many model families. Seats spawned from David's manager can use any of them; Oskar and Rishabh spawn `claude` seats from their own machines with their own subscriptions, and can ask David's main session to spawn a jcode seat for them into their lane (the seat joins the same channels either way).
 
 ## Catalog (jcode, provider `cliproxy`, ids are bare)
 

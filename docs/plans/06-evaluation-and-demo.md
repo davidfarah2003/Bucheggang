@@ -1,7 +1,7 @@
 # 06 Evaluation and demo
 
 - Status: draft
-- Owner: everyone; the third teammate drives the pitch
+- Owner: everyone; Rishabh drives the pitch
 - Channel: `team.zurichbuchegg` (spine)
 - Papers: [Selective Conformal Risk Control](../papers/2512.12844v2.pdf) (report the two numbers: how often the system decides alone, and how often it is wrong when it does; its guarantees need more labelled, exchangeable data than 45 attempts, so no guarantee is claimed), [CaMeL](../papers/2503.18813v2.pdf) (report lost utility next to blocked attacks)
 - Event: jury criteria and slots in [primary-findings.json](../research/2026-09-24/primary-findings.json) (JURY, SUBMIT); comparable projects in [wallet-control-research.html](../research/2026-09-24/wallet-control-research.html)
