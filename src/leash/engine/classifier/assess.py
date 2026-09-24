@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+from typing import TYPE_CHECKING
 
-from leash.contracts import Event, PolicyDraft
+from leash.contracts import Event, MandateState, PolicyDraft
 
 from .history import HistoryIndex
+from .jev import assess_jev
 from .types import AssessmentBundle, HistoryFeatures
+
+if TYPE_CHECKING:
+    from .behaviour import BehaviorModel
 
 
 def purchase_digest(event: Event, features: HistoryFeatures) -> str:
@@ -47,3 +52,21 @@ def validate_bundle(event: Event, policy: PolicyDraft, bundle: AssessmentBundle)
         raise ValueError(f"{auth.authorization_id}: assessment event time differs")
     if bundle.features.customer_id != mandate.customer_id or bundle.features.card_id != mandate.card_id:
         raise ValueError(f"{auth.authorization_id}: assessment customer or card differs")
+
+
+async def assess(event: Event, policy: PolicyDraft, state: MandateState,
+                 history: HistoryIndex, *, api_key: str,
+                 behaviour_model: BehaviorModel | None = None) -> AssessmentBundle:
+    """Call Jev on this mandate's own numeric history; dependency failures propagate."""
+    if state.mandate_id != event.mandate.mandate_id:
+        raise ValueError(f"{event.authorization.authorization_id}: assessment state mandate differs")
+    base = history_bundle(event, policy, history)
+    behaviour = behaviour_model.score(base.features) if behaviour_model is not None else None
+    semantic = await assess_jev(base.features, event.deadline_at, api_key=api_key)
+    result = AssessmentBundle(
+        authorization_id=base.authorization_id, purchase_digest=base.purchase_digest,
+        policy_hash=base.policy_hash, as_of=base.as_of, features=base.features,
+        behaviour=behaviour, semantic=semantic,
+    )
+    validate_bundle(event, policy, result)
+    return result

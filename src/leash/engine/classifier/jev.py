@@ -17,6 +17,8 @@ REQUESTED_MODEL = "typesafe/jev-1.13-20260917"
 SERVED_PROVIDER = "TypeSafe"
 PROMPT_VERSION = "history-risk-1"
 DEADLINE_RESERVE_SECONDS = 2.25
+MINIMUM_RECHECK_SECONDS = 2.0
+MAX_RESPONSE_BYTES = 64_000
 QUESTIONS = {
     "spend_pattern": {
         "type": "choice",
@@ -88,9 +90,14 @@ def _parse_response(text: str, latency_ms: int) -> SemanticAssessment:
         top = max(probabilities.values())
         winners = [option for option, value in probabilities.items() if value == top]
         choice = answer.get("choice")
-        if choice not in options or choice not in winners:
-            raise JevResponseError(f"{question_id}: provider choice differs from local argmax")
-        selected = winners[0] if len(winners) == 1 else None
+        if len(winners) == 1:
+            if choice != winners[0]:
+                raise JevResponseError(f"{question_id}: provider choice differs from local argmax")
+            selected = winners[0]
+        else:
+            if choice is not None and choice not in winners:
+                raise JevResponseError(f"{question_id}: provider choice is outside the tied options")
+            selected = None
         validated.append(JevAnswer(question_id=question_id,
                                    options={key: float(value) for key, value in probabilities.items()},
                                    selected=selected))
@@ -125,9 +132,23 @@ async def assess_jev(features: HistoryFeatures, deadline_at: datetime, *,
     started = time.perf_counter()
     async with asyncio.timeout_at(asyncio.get_running_loop().time() + remaining):
         async with httpx.AsyncClient(timeout=remaining, follow_redirects=False) as client:
-            response = await client.post(URL, json=request,
-                                         headers={"Authorization": f"Bearer {api_key}"})
-    latency_ms = int((time.perf_counter() - started) * 1000)
-    if response.status_code != 200:
-        raise JevResponseError(f"Jev HTTP {response.status_code}")
-    return _parse_response(response.text, latency_ms)
+            async with client.stream("POST", URL, json=request,
+                                     headers={"Authorization": f"Bearer {api_key}"}) as response:
+                if response.status_code != 200:
+                    raise JevResponseError(f"Jev HTTP {response.status_code}")
+                chunks = []
+                size = 0
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > MAX_RESPONSE_BYTES:
+                        raise JevResponseError("Jev response exceeds the bounded result size")
+                    chunks.append(chunk)
+        try:
+            text = b"".join(chunks).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise JevResponseError("Jev response is not UTF-8") from error
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        result = _parse_response(text, latency_ms)
+    if (deadline_at - datetime.now(UTC)).total_seconds() < MINIMUM_RECHECK_SECONDS:
+        raise TimeoutError("Jev result left too little time for state recheck")
+    return result
