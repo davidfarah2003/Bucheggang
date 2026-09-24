@@ -63,7 +63,10 @@ def extractor_prompt(instruction: str) -> str:
         "merchant or product identifier, or the cardholder's explicit consent to broader permissions. "
         "When a meaning is unclear, add an open question; do not invent permission. "
         "Each example has description, expected and why. Each open question has question, "
-        "options and answer (null until the cardholder answers). "
+        "options, confirming_answers and answer (null until the cardholder answers). "
+        "confirming_answers must be a subset of options and may be empty when no offered answer "
+        "can make the current rules executable. A confirming answer may explicitly accept the "
+        "meaning of an already displayed rule; it cannot silently add a rule. "
         "uncertainty_policy is ask, decline or approve, and must follow the customer's wording.\n\n"
         f"Cardholder instruction: {json.dumps(instruction, ensure_ascii=False)}"
     )
@@ -162,7 +165,8 @@ def compile_instruction(instruction: str) -> dict[str, Any]:
         questions.append(
             {
                 "question": "Which exact monitor did you choose? A screen size alone cannot identify it, and no purchase can be confirmed until a supported identifier is added to the rules.",
-                "options": ["I will provide the exact model", "Ask me for each purchase"],
+                "options": ["I will provide the exact model", "Ask me for each purchase", f"Allow any {monitor.group(1)}-inch monitor"],
+                "confirming_answers": [f"Allow any {monitor.group(1)}-inch monitor"],
                 "answer": None,
             }
         )
@@ -187,6 +191,7 @@ def compile_instruction(instruction: str) -> dict[str, Any]:
             {
                 "question": "If a seller does not state its return period, should we ask you or decline?",
                 "options": ["ask", "decline"],
+                "confirming_answers": ["ask", "decline"],
                 "answer": None,
             }
         )
@@ -197,6 +202,7 @@ def compile_instruction(instruction: str) -> dict[str, Any]:
             {
                 "question": "May any sporting goods retailer qualify, including general sellers, or must a supported merchant identifier be added before confirmation?",
                 "options": ["Allow any sporting goods retailer", "I will provide a merchant", "Ask me for each purchase"],
+                "confirming_answers": ["Allow any sporting goods retailer"],
                 "answer": None,
             }
         )
@@ -218,6 +224,7 @@ def compile_instruction(instruction: str) -> dict[str, Any]:
             {
                 "question": "Which session changes should always pause a purchase?",
                 "options": ["New device", "Unusual velocity", "Either signal"],
+                "confirming_answers": [],
                 "answer": None,
             }
         )

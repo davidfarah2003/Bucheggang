@@ -165,7 +165,9 @@ def _validate_draft(
     if not isinstance(open_questions, list):
         raise InvalidDraft("open_questions must be a list")
     for question in open_questions:
-        if not isinstance(question, dict) or set(question) != {"question", "options", "answer"}:
+        if not isinstance(question, dict) or set(question) != {
+            "question", "options", "confirming_answers", "answer"
+        }:
             raise InvalidDraft("open question shape is invalid")
         if not isinstance(question["question"], str) or not question["question"].strip():
             raise InvalidDraft("question text is required")
@@ -173,6 +175,13 @@ def _validate_draft(
             isinstance(option, str) and option for option in question["options"]
         ):
             raise InvalidDraft("question options are required")
+        if len(question["options"]) != len(set(question["options"])):
+            raise InvalidDraft("question options must be unique")
+        confirming = question["confirming_answers"]
+        if not isinstance(confirming, list) or any(
+            not isinstance(option, str) or option not in question["options"] for option in confirming
+        ) or len(confirming) != len(set(confirming)):
+            raise InvalidDraft("confirming answers must be a unique subset of options")
         if question["answer"] is not None and question["answer"] not in question["options"]:
             raise InvalidDraft("answer must be one of the options")
 
