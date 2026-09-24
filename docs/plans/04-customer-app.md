@@ -11,13 +11,13 @@
 
 ## Goal
 
-The current demo is the standalone Viseca Wallet at `/app/`: it loads the single pending task draft named by `?draft=<id>`, lets the customer confirm it, then shows that mandate across four screens and the judge panel. It does not require the customer to open or configure a Shopping Harness; an external MCP-compatible agent can create the draft and link directly to the Wallet. The product target is one mobile-first web app with distinct Shopping Harness and Wallet pages or swipeable views over the same backend. Neither interface computes purchase decisions or holds the challenge key. The app targets a 400 px phone viewport.
+The current demo is the standalone Viseca Wallet at `/app/`: it loads the single pending task draft named by `?draft_id=<id>`, lets the customer confirm it, then shows that mandate across four screens and the judge panel. It does not require the customer to open or configure a Shopping Harness; an external MCP-compatible agent can create the draft and link directly to the Wallet. The product target is one mobile-first web app with distinct Shopping Harness and Wallet pages or swipeable views over the same backend. Neither interface computes purchase decisions or holds the challenge key. The app targets a 400 px phone viewport.
 
 ## Scope
 
 In:
 
-1. Wallet request page at `/app/?draft=<id>`: the customer's sentence, readable rules, source phrases, example outcomes and open-question options. Confirm sends the draft's `version` and `hash`; Reject sends its version, hash and reason.
+1. Wallet request page at `/app/?draft_id=<id>`: the customer's sentence, readable rules, source phrases, example outcomes and open-question options. Confirm sends the draft's `version` and `hash`; Reject sends its version, hash and reason.
 2. Step-up screen: what is being bought, from whom, for how much; the one reason the engine paused (`customer_message`); a countdown from `expires_at`; Approve and Reject for a pending step-up.
 3. Policy page: the one confirmed mandate for this demo, its rules, spend so far, purchase count, Tighten and Revoke.
 4. History: every decision for the mandate with its outcome and one-line reason; tapping one opens the judge panel.
@@ -58,7 +58,7 @@ Out:
 - Use plain HTML, CSS and JavaScript in `app/`, served by FastAPI. This keeps the app readable and removes a build step before the deadline.
 - Show the saved policy draft as the authoritative view, with a sentence explaining that the shopping agent proposed it. There is no second policy display.
 - Use the local `/session` cookie contract for the demo. The app loads saved drafts through `GET /drafts/{id}` and uses the runner's live step-up routes.
-- Deliver the mobile-first Wallet demo first. It works directly from `/app/?draft=<id>` without a Shopping Harness.
+- Deliver the mobile-first Wallet demo first. It works directly from `/app/?draft_id=<id>` without a Shopping Harness.
 - Mount the customer UI in the FastAPI shell with `leash.api.static.mount_customer_app(api)`. The static mount does not expose a sample draft.
 - Disable Confirm for answers outside `open_questions[].confirming_answers`.
 - Read current permissions from `effective_policy`, separate from the immutable confirmed draft.

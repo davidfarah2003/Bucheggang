@@ -227,7 +227,7 @@ Draft `c6adb83f-d680-43b2-b3a7-c14a77dfbbd2`, mandate `TM8b150c14b81c91d0`.
 }
 ```
 
-The agent hands the customer `/app/?draft=c6adb83f-d680-43b2-b3a7-c14a77dfbbd2`.
+The agent hands the customer `/app/?draft_id=c6adb83f-d680-43b2-b3a7-c14a77dfbbd2`.
 
 ### customer: POST /session -> 200
 

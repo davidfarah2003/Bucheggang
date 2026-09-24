@@ -31,7 +31,7 @@ Numbers come from files in `docs/eval/`; the report links to them. No number app
 
 This is the intended sequence. The public attempt IDs below identify offline examples, not selectable live purchases. Use the live bootstrap's team scenario IDs, the customer's actual choices and the resulting decisions. Do not announce an approval or fixed latency before observing it.
 
-1. The external shopping agent proposes a `SCEN0002` draft through MCP and opens the Wallet at `/app/?draft=<id>`. Review the saved draft and examples, answer the return-terms question, and confirm. Show the `mandate_id` the agent receives. The Wallet also works directly without any built-in Harness.
+1. The external shopping agent proposes a `SCEN0002` draft through MCP and opens the Wallet at `/app/?draft_id=<id>`. Review the saved draft and examples, answer the return-terms question, and confirm. Show the `mandate_id` the agent receives. The Wallet also works directly without any built-in Harness.
 2. Show an ordinary purchase's actual outcome and judge panel. Quote the measured timing. The early `SCEN0002` approval is an offline reference; missing live-card history may cause a step-up.
 3. A manipulated purchase from `SCEN0004`: injected merchant text is shown verbatim on the panel, flagged, and the decision is driven by the rule it tried to override.
 4. A `step_up` on the phone: AU0016, return terms not stated; the customer rejects; the next attempt at the same merchant is declined as a re-quote.
