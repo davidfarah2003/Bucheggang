@@ -31,6 +31,8 @@ Leash gives a shopping agent a customer-confirmed spending policy. Proposed purc
 
 Customers control the budget, permitted products and merchants, purchase limits and treatment of uncertainty. The agent can propose a policy and request a purchase decision. Confirmation and purchase questions belong to the customer.
 
+A one-minute recording of the whole flow, with the agent's MCP calls beside the Wallet, is at [docs/demo/leash-user-flow.mp4](docs/demo/leash-user-flow.mp4). Re-record it with `scripts/record_demo.py` (docstring has the steps).
+
 > [!NOTE]
 > This is a hackathon prototype for the Viseca challenge. Payment processing and order placement are outside the project. Shop currently hands requests to an external MCP-compatible agent; in-app provider execution is not implemented.
 

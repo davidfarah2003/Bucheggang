@@ -104,10 +104,13 @@ The customer Wallet remains on loopback. If the MCP endpoint is hosted remotely,
 | `propose_task_policy` | Validates and stores an immutable customer-owned draft |
 | `get_policy_status` | Reads the state of a draft owned by the paired account |
 | `get_policy_summary` | Reads the customer-facing sentences for a draft owned by the paired account |
-| `buy` | Parked. Purchases arrive through the simulator in demo mode |
-| `get_purchase_status` | Parked with `buy` |
+| `connect` | Begins a pairing and waits until the customer approves it in the Wallet; the hands-free form of the two pairing tools |
+| `wait_for_policy` | Blocks until the customer confirms or rejects a draft |
+| `buy` | Submits one local purchase (cart, merchant, total, facts) under a confirmed mandate and returns `approve`, `decline` or `step_up` with reasons |
+| `get_purchase_status` | Reads the recorded outcome of a local purchase |
+| `wait_for_purchase` | Blocks until the customer answers a `step_up` in the Wallet or the answer window expires to `decline` |
 
-The resource `policy://authoring-guide` requires a paired agent with `policy:read`. No tool confirms, resolves, tightens or revokes a policy.
+The resource `policy://authoring-guide` requires a paired agent with `policy:read`. No tool confirms, resolves, tightens or revokes a policy, and no tool answers a purchase question for the customer. `buy` needs the `purchase:decide` scope, a confirmed mandate, a recorded card identity and the purchase budgets set by `scripts/mcp-stdio.sh`; the purchase input contract is in `docs/contracts.md`. Local purchases are separate from simulator authorizations and do not count toward a simulator run.
 
 ## The flow an agent runs
 
@@ -116,4 +119,4 @@ The resource `policy://authoring-guide` requires a paired agent with `policy:rea
 3. Call `complete_pairing` with the code and private verifier. Securely provide the returned token to the MCP client for later requests.
 4. Call `get_policy_authoring_instructions` with the customer's sentence.
 5. Draft the proposal and call `propose_task_policy`. The customer-owned draft appears in the Wallet list and opens at `/app/?draft_id=<draft_id>`.
-6. Poll `get_policy_status` until the customer confirms or rejects it. Use the `mandate_id` only after confirmation. Then search and authorize a purchase. External search or browsing before confirmation is outside backend control; only authorization is governed. No agent purchase API is active; demo purchase authorizations still arrive from the simulator. Examples are agent-authored claims and are not evaluated by this backend. For an exact product request, match the requested model and size from known facts; if the final all-in total is unknown, surface it as an open question rather than treating an estimate as a fact.
+6. Call `wait_for_policy` (or poll `get_policy_status`) until the customer confirms or rejects it. Use the `mandate_id` only after confirmation. Then search, and submit each purchase with `buy`; on `step_up`, call `wait_for_purchase` and act on the customer's answer. External search or browsing before confirmation is outside backend control; only the purchase decision is governed. Examples are agent-authored claims and are not evaluated by this backend. For an exact product request, match the requested model and size from known facts; if the final all-in total is unknown, surface it as an open question rather than treating an estimate as a fact.
