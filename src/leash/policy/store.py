@@ -233,15 +233,18 @@ class DraftStore:
     @staticmethod
     def _write_exclusive(path: Path, value: dict[str, Any]) -> None:
         data = json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2).encode("utf-8") + b"\n"
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        temporary = path.parent / f".{path.name}.{uuid4().hex}.tmp"
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
             with os.fdopen(descriptor, "wb") as stream:
                 stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
-        except BaseException:
-            path.unlink(missing_ok=True)
-            raise
+            # The final name must only become visible after the whole JSON is on disk.
+            # link preserves O_EXCL semantics when two writers race for one version.
+            os.link(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def _audit(self, folder: Path, event: str, **details: Any) -> None:
         entry = {"event": event, "at": _now(), **details}
