@@ -321,6 +321,8 @@ Served by `leash.api`. Paths and shapes are what the app lane codes against.
 
 All customer routes except `POST /account` and `POST /session` require a valid session cookie and return 401 without one. Every browser mutation, including `POST /account` and `POST /session` and every cookie-authenticated one (confirm, reject, answer, tighten, revoke, `PUT /global-policy`, pairing approve, agent revoke), requires an `Origin` header equal to `LEASH_APP_ORIGIN`, a configured value read at startup (the local demo sets `http://127.0.0.1:<port>`), never derived from the request's `Host`; a missing or different `Origin` is 403. The API sets no CORS headers. The Origin check runs before any session read; the middleware only tests that the cookie is present, and the route's session dependency performs the single session read and `last_seen_at` write. Confirmation, tightening, revocation and step-up answers are only reachable through these authenticated app routes. None of them is an MCP tool. The identity model behind these routes is in the section "Identity source" below.
 
+LEASH_APP_ORIGIN must be the canonical `scheme://netloc`: an HTTP or HTTPS scheme, a valid DNS label set or IP literal, and an optional integer port from 1 to 65535. A trailing colon, backslash, control character, path, query, fragment or non-canonical spelling is rejected at startup by the shared Wallet API and MCP validator.
+
 ## Harness link
 
 The built-in Shopping Harness (plan 04, Later) and any external MCP agent hand the customer to the trusted Wallet for two moments only: confirming a proposed policy and answering a step-up. The link carries one server-persisted identifier and nothing else.
