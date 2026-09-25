@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
-from leash.contracts import Check, Event, MandateState, PurchaseFacts, Rule
+from leash.contracts import Check, Event, FactConflict, MandateState, PurchaseFacts, Rule
 from leash.contracts.event import MandateRule
 
 from .data import FX_TO_CHF, HISTORY, History
@@ -62,11 +62,24 @@ class RuleContext:
 
 @dataclass(frozen=True)
 class Observed:
-    """One value the rule is compared against. `value is None` means unknown."""
+    """One value the rule is compared against. `value is None` means unknown.
+
+    `conflict` marks an unknown that comes from two disagreeing observations of the
+    same fact (`PurchaseFacts.conflicts`), which the contract keeps out of an approval.
+    """
 
     value: Any
     source: str
     label: str = ""
+    conflict: bool = False
+
+
+def conflicting(fact: PurchaseFacts, name: str) -> FactConflict | None:
+    """The recorded conflict on this fact field, if any."""
+    for conflict in fact.conflicts:
+        if conflict.field == name:
+            return conflict
+    return None
 
 
 def _money_chf(ctx: RuleContext, field: str, raw: float) -> float:
@@ -162,7 +175,9 @@ def resolve(rule: AnyRule, ctx: RuleContext) -> list[Observed]:
             raw = getattr(fact, name)
             value = _bool_str(raw) if isinstance(raw, bool) or name.startswith("is_") else raw
             if value is None:
-                out.append(Observed(None, "merchant_text", f"line {item.line_no}"))
+                conflict = conflicting(fact, name)
+                label = f"line {item.line_no}, {conflict.kind.replace('_', ' ')}" if conflict else f"line {item.line_no}"
+                out.append(Observed(None, "merchant_text", label, conflict=conflict is not None))
                 continue
             if name not in fact.sources:
                 raise ValueError(f"facts for {item.item_id} give {name} without a source")
@@ -250,13 +265,25 @@ def evaluate_rule(rule: AnyRule, ctx: RuleContext) -> Check:
             failed.append(obs)
     result = "fail" if failed else ("uncertain" if unknown else "pass")
     shown = failed or unknown or observed
+    if result == "uncertain" and any(o.conflict for o in unknown):
+        shown = [o for o in unknown if o.conflict] + [o for o in unknown if not o.conflict]
     values = [o.value for o in shown]
     value: Any = values[0] if len(values) == 1 else ", ".join("unknown" if v is None else str(v) for v in values)
     details = "; ".join(f"{o.label}: {'unknown' if o.value is None else o.value}" if o.label
                         else ('unknown' if o.value is None else str(o.value)) for o in shown)
     plain = getattr(rule, "plain_english", None)
     note = f"{plain} Observed {details}." if plain else f"Observed {details}."
+    if result == "uncertain" and any(o.conflict for o in unknown):
+        note += " The merchant's own statements disagree on this, so it counts as unknown by contradiction."
     return Check(name=rule_name(rule), result=result, value=value, source=shown[0].source, note=note)
+
+
+def conflicted(rule: AnyRule, ctx: RuleContext) -> bool:
+    """Whether this rule reads a fact field that some cart line marks as conflicting."""
+    if not rule.field.startswith("facts.") or ctx.facts is None:
+        return False
+    name = rule.field.removeprefix("facts.")
+    return any(conflicting(f, name) is not None for f in ctx.facts)
 
 
 def evaluate_rules(rules: list[AnyRule], ctx: RuleContext) -> list[Check]:
