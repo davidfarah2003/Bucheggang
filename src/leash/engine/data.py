@@ -39,11 +39,7 @@ class History:
     """
 
     def __init__(self, *paths: Path):
-        merchants: dict[tuple[str, str], list[datetime]] = {}
-        devices: dict[tuple[str, str], list[datetime]] = {}
-        countries: dict[tuple[str, str], list[datetime]] = {}
-        names: dict[str, dict[str, str]] = {}
-        cards: dict[str, list[datetime]] = {}
+        rows = []
         seen: set[str] = set()
         for path in paths:
             if not path.is_file():
@@ -53,7 +49,24 @@ class History:
                     if row["authorization_id"] in seen:
                         raise RuntimeError(f"{path}: authorization {row['authorization_id']} appears in two history files")
                     seen.add(row["authorization_id"])
-                    self._add(row, merchants, devices, countries, names, cards)
+                    rows.append(row)
+        self._index(rows)
+
+    @classmethod
+    def from_rows(cls, rows: list[dict[str, str]]) -> "History":
+        """A history from explicit rows (a contracts `History` slice), replacing the packaged files."""
+        history = cls.__new__(cls)
+        history._index(rows)
+        return history
+
+    def _index(self, rows: list[dict[str, str]]) -> None:
+        merchants: dict[tuple[str, str], list[datetime]] = {}
+        devices: dict[tuple[str, str], list[datetime]] = {}
+        countries: dict[tuple[str, str], list[datetime]] = {}
+        names: dict[str, dict[str, str]] = {}
+        cards: dict[str, list[datetime]] = {}
+        for row in rows:
+            self._add(row, merchants, devices, countries, names, cards)
         for series in (*merchants.values(), *devices.values(), *countries.values(), *cards.values()):
             series.sort()
         self._merchants = merchants
