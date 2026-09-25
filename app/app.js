@@ -3,7 +3,6 @@
 const MANDATE_KEY = "viseca.demo.mandateId";
 const MANDATE_OWNER_KEY = "viseca.demo.mandateOwner";
 class DraftLinkError extends Error {}
-class PairLinkError extends Error {}
 class PurchaseLinkError extends Error {}
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const screen = document.querySelector("#screen");
@@ -32,6 +31,8 @@ const state = {
   agents: [],
   pairing: null,
   pairingCode: null,
+  pairCode: null,
+  pairLinkError: null,
   pending: [],
   history: [],
   details: new Map(),
@@ -159,16 +160,29 @@ function hasPairLink() {
   return new URLSearchParams(window.location.search).has("pair");
 }
 
+function capturePairLink() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("pair")) return;
+  const codes = url.searchParams.getAll("pair");
+  state.pairLinkError = codes.length !== 1 || !codes[0]?.trim() || hasDraftLink() || hasPurchaseLink() ? "The agent connection link must contain one pairing code and no other Wallet link." : null;
+  state.pairCode = state.pairLinkError ? null : codes[0].trim();
+  for (const name of ["pair", "draft", "draft_id", "authorization_id"]) url.searchParams.delete(name);
+  url.hash = "pair";
+  window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+}
+
 function pairingCode() {
-  const code = new URLSearchParams(window.location.search).get("pair");
-  if (code === "") throw new PairLinkError("The agent connection link has an empty pairing code.");
-  return text(code, "Agent connection link");
+  return text(state.pairCode, "Agent connection code");
 }
 
 function clearPairLink() {
   const url = new URL(window.location.href);
   url.searchParams.delete("pair");
   window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+  state.pairCode = null;
+  state.pairLinkError = null;
+  state.pairing = null;
+  state.pairingCode = null;
 }
 
 function hasPurchaseLink() {
@@ -410,7 +424,7 @@ async function render() {
   } catch (error) {
     if (serial !== state.serial) return;
     if (error.status === 401) { sessionExpired(error); return; }
-    const linkAction = state.route === "purchase" ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this purchase link</button>` : state.route === "pair" && (error instanceof PairLinkError || error.status === 404) ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Continue without this agent link</button>` : error instanceof DraftLinkError ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this link</button>` : "";
+    const linkAction = state.route === "purchase" ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this purchase link</button>` : state.route === "pair" ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Continue without this agent link</button>` : error instanceof DraftLinkError ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this link</button>` : "";
     const title = state.route === "review" ? "Review spending permission" : state.route === "purchase" ? "Review pending purchase" : state.route === "pair" ? "Connect a shopping agent" : state.route;
     setScreen(`<div class="page-title"><h1>${esc(title)}</h1></div>${errorPanel("This screen could not be loaded", error)}${linkAction}`);
     if (state.route === "purchase") {
@@ -423,7 +437,7 @@ async function render() {
 
 function renderLogin() {
   const registering = state.authMode === "register";
-  const context = hasPurchaseLink() ? `${registering ? "Create an account" : "Sign in"} to review a pending purchase.` : hasPairLink() ? `${registering ? "Create an account" : "Sign in"} to review an agent connection request.` : `${registering ? "Create an account" : "Sign in"} to review spending permissions sent by your shopping agent.`;
+  const context = hasPurchaseLink() ? `${registering ? "Create an account" : "Sign in"} to review a pending purchase.` : (state.pairCode !== null || state.pairLinkError || requestedRoute() === "pair") ? `${registering ? "Create an account" : "Sign in"} to review an agent connection request.` : `${registering ? "Create an account" : "Sign in"} to review spending permissions sent by your shopping agent.`;
   setScreen(`<section class="identity-view"><div class="identity-intro"><span class="section-kicker">LOCAL DEMO ACCOUNT</span><h1>${registering ? "Create your account" : "Welcome to your Wallet."}</h1><p>${context} This uses a local account, not a Viseca banking login.</p></div><div class="auth-fields"><label for="username">Username</label><input id="username" maxlength="80" autocomplete="username" placeholder="Your username" /><label for="password">Password</label><input id="password" type="password" minlength="8" maxlength="256" autocomplete="${registering ? "new-password" : "current-password"}" /><p class="auth-error" role="alert" hidden></p><button class="primary-button" type="button" data-action="${registering ? "register" : "login"}">${registering ? "Create account" : "Sign in"}</button></div><div class="auth-switch"><span>${registering ? "Already have an account?" : "New here?"}</span><button type="button" class="text-button" data-action="auth-mode" data-mode="${registering ? "login" : "register"}">${registering ? "Sign in" : "Create an account"}</button></div></section>`);
 }
 
@@ -438,10 +452,25 @@ function setSession(payload) {
   state.user = username;
 }
 
+function renderPairEntry(message = state.pairLinkError) {
+  setScreen(`<section class="identity-view"><button type="button" class="back-button" data-route="shop">‹ Shop</button><div class="identity-intro"><span class="section-kicker">AGENT CONNECTION</span><h1>Enter a pairing code</h1><p>Copy the code from your shopping agent. Your Wallet will show its requested access before you decide whether to connect it.</p></div><section class="pair-code-entry"><div class="pair-code-fields"><label for="pair-code">Pairing code</label><input id="pair-code" class="pair-code-input" type="text" maxlength="128" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="pair-code-guidance pair-code-error" placeholder="Paste code from your agent" /><p id="pair-code-guidance">The code only opens an agent request. Entering it does not approve access.</p></div><p id="pair-code-error" class="pair-code-error" role="alert" ${message ? "" : "hidden"}>${message ? esc(message) : ""}</p><div class="pair-code-actions"><button type="button" class="outline-button" data-action="clear-pair-code">Clear</button><button type="button" class="primary-button" data-action="submit-pair-code">Review agent</button></div></section></section>`);
+}
+
 async function renderPair(serial) {
+  if (state.pairLinkError || state.pairCode === null) { renderPairEntry(); return; }
   const code = pairingCode();
   loading("Checking agent connection…");
-  const pairing = validatePairing(await walletApi.pairing(code));
+  let pairing;
+  try {
+    pairing = validatePairing(await walletApi.pairing(code));
+  } catch (error) {
+    if (serial !== state.serial) return;
+    if (error.status !== 404) throw error;
+    state.pairCode = null;
+    state.pairLinkError = "This pairing code is unavailable, expired or already used.";
+    renderPairEntry();
+    return;
+  }
   if (serial !== state.serial) return;
   state.pairing = pairing;
   state.pairingCode = code;
@@ -472,6 +501,7 @@ async function renderAgents(serial) {
 
 async function initialize() {
   try {
+    capturePairLink();
     setSession(await walletApi.session());
     navigate(requestedRoute());
   } catch (error) {
@@ -1031,6 +1061,31 @@ document.addEventListener("click", async (event) => {
     if (action === "wallet-tab") { state.walletTab = button.dataset.tab; navigate("wallet", { keepScroll: true }); return; }
     if (action === "activity-filter") { state.activityFilter = button.dataset.filter; document.querySelector("#activity-list").innerHTML = activityRows(); document.querySelectorAll(".activity-tabs [role=tab]").forEach((tab) => { const active = tab === button; tab.classList.toggle("selected", active); tab.setAttribute("aria-selected", String(active)); tab.tabIndex = active ? 0 : -1; }); return; }
     if (action === "auth-mode") { if (!["login", "register"].includes(button.dataset.mode)) throw new Error("Unknown account action."); state.authMode = button.dataset.mode; renderLogin(); return; }
+    if (action === "clear-pair-code") {
+      const input = document.querySelector("#pair-code");
+      const error = document.querySelector("#pair-code-error");
+      input.value = "";
+      error.textContent = "";
+      error.hidden = true;
+      state.pairLinkError = null;
+      input.focus();
+      return;
+    }
+    if (action === "submit-pair-code") {
+      const input = document.querySelector("#pair-code");
+      const code = input.value.trim();
+      if (!code || code.length > 128 || /\s/.test(code)) {
+        const error = document.querySelector("#pair-code-error");
+        error.textContent = "Enter one pairing code without spaces.";
+        error.hidden = false;
+        input.focus();
+        return;
+      }
+      state.pairCode = code;
+      state.pairLinkError = null;
+      await navigate("pair");
+      return;
+    }
     if (action === "decline-pair") { clearPairLink(); navigate(requestedRoute("")); return; }
     if (action === "refresh-agents") { void render(); return; }
     if (action === "open-draft") {
@@ -1051,7 +1106,7 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "use-example") { const composer = document.querySelector("#shop-prompt"); composer.value = text(button.dataset.example, "Example request"); state.prompt = composer.value; composer.focus(); composer.dispatchEvent(new Event("input", { bubbles: true })); return; }
-    if (action === "account") { openOverlay(`<span class="section-kicker">LOCAL DEMO ACCOUNT</span><h2>${esc(state.user || "Sign in")}</h2><p class="calm-copy">This demo uses a local password account and session cookie. It is not a Viseca banking login.</p>${state.user ? `<div class="agent-actions"><button type="button" class="outline-button" data-route="agents">Connected agents</button><button type="button" class="outline-button" data-action="logout">Sign out</button></div>` : `<button type="button" class="outline-button" data-action="close-overlay">Close</button>`}`, "Account"); return; }
+    if (action === "account") { openOverlay(`<span class="section-kicker">LOCAL DEMO ACCOUNT</span><h2>${esc(state.user || "Sign in")}</h2><p class="calm-copy">This demo uses a local password account and session cookie. It is not a Viseca banking login.</p>${state.user ? `<div class="agent-actions"><button type="button" class="outline-button" data-route="pair">Connect agent</button><button type="button" class="outline-button" data-route="agents">Connected agents</button><button type="button" class="outline-button" data-action="logout">Sign out</button></div>` : `<button type="button" class="outline-button" data-action="close-overlay">Close</button>`}`, "Account"); return; }
     if (action === "open-pending") { openPending(button.dataset.id); return; }
     if (action === "inspector") { inspector(button.dataset.tab); return; }
     if (action === "open-reject") { confirmDialog("Reject this spending plan?", "Your agent will not receive authority from this request.", "reject", "Reject request"); return; }
@@ -1124,6 +1179,7 @@ document.addEventListener("click", async (event) => {
       navigate(requestedRoute());
     } else if (action === "logout") {
       await walletApi.logout();
+      clearPairLink();
       window.sessionStorage.removeItem(MANDATE_KEY);
       window.sessionStorage.removeItem(MANDATE_OWNER_KEY);
       state.pendingSerial += 1;
@@ -1270,6 +1326,10 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && ["username", "password"].includes(event.target.id)) {
     event.preventDefault();
     document.querySelector('[data-action="login"], [data-action="register"]').click();
+  }
+  if (event.key === "Enter" && event.target.id === "pair-code") {
+    event.preventDefault();
+    document.querySelector('[data-action="submit-pair-code"]').click();
   }
 });
 
