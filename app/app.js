@@ -138,6 +138,7 @@ function validateDecision(payload) {
   if (!Number.isFinite(new Date(decision.decided_at).getTime())) throw new Error("The decision time is invalid.");
   if (!["approve", "decline", "step_up"].includes(decision.decision) || !Array.isArray(decision.evidence) || !Array.isArray(decision.reason_codes)) throw new Error("The transaction has an unsupported outcome.");
   if (!event.authorization || !event.authorization.merchant || !Array.isArray(event.authorization.items)) throw new Error("The transaction has no purchase details.");
+  if (event.authorization.authorization_id !== decision.authorization_id) throw new Error("The purchase event and decision refer to different authorizations.");
   text(event.authorization.merchant.merchant_name, "Merchant name");
   decision.evidence.forEach((check) => {
     text(check.name, "Check name");
@@ -342,14 +343,19 @@ function pendingTimeLabel(expiresAt) {
   return remaining > 0 ? `${Math.floor(remaining / 60000)}m ${String(Math.floor(remaining / 1000) % 60).padStart(2, "0")}s left` : "Deadline reached";
 }
 
+function pendingTitle(evidence) {
+  const count = evidence.filter((check) => check.result !== "pass").length;
+  return count === 1 ? "One detail needs a decision" : count ? `${count} details need a decision` : "Review this purchase";
+}
+
 function pendingCard(item) {
   text(item.authorization_id, "Pending purchase ID");
   text(item.expires_at, "Pending purchase deadline");
   if (!item.event?.authorization?.merchant || !item.decision || !Array.isArray(item.decision.evidence)) throw new Error("A pending purchase is incomplete.");
   const auth = item.event.authorization;
+  if (auth.authorization_id !== item.authorization_id || item.decision.authorization_id !== item.authorization_id || item.decision.decision !== "step_up") throw new Error("The pending purchase and its decision do not match.");
   const merchant = text(auth.merchant.merchant_name, "Pending merchant");
-  const issue = item.decision.evidence.find((check) => check.result === "uncertain" || check.result === "fail");
-  return `<button type="button" class="need-card uncertain-card" data-action="open-pending" data-id="${esc(item.authorization_id)}"><span class="section-kicker" aria-live="off">PURCHASE REVIEW · ${esc(pendingTimeLabel(item.expires_at))}</span><strong>One detail needs a decision</strong><span>${esc(merchant)} · ${esc(money(auth.billing_amount_chf, auth.currency))}</span><small>${esc(issue?.note || item.decision.customer_message)}</small><b aria-hidden="true">›</b></button>`;
+  return `<button type="button" class="need-card uncertain-card" data-action="open-pending" data-id="${esc(item.authorization_id)}"><span class="section-kicker" aria-live="off">PURCHASE REVIEW · ${esc(pendingTimeLabel(item.expires_at))}</span><strong>${esc(pendingTitle(item.decision.evidence))}</strong><span>${esc(merchant)} · ${esc(money(auth.billing_amount_chf, auth.currency))}</span><small>${esc(item.decision.customer_message)}</small><b aria-hidden="true">›</b></button>`;
 }
 
 async function refreshPending() {
@@ -451,7 +457,7 @@ async function rulesContent(serial) {
   if (serial !== state.serial) return "";
   state.mandate = payload;
   const { mandate, effective_policy } = payload;
-  return `<div class="wallet-section"><h2>Rules for this permission</h2><p class="calm-copy">These limits belong to the spending permission you confirmed. Account-wide defaults are not available in this demo.</p>${ruleGroups(effective_policy.rules)}<section class="rule-group"><h3>Missing information</h3><p>${esc(effective_policy.uncertainty_policy === "ask" ? "Ask me before buying" : effective_policy.uncertainty_policy === "decline" ? "Decline the purchase" : "Use the confirmed uncertainty setting")}</p></section><section class="rule-group"><h3>Security</h3><p>Purchase decisions and unfamiliar evidence are checked by the Wallet backend. Your agent cannot change these confirmed rules.</p></section><div class="rule-actions"><button type="button" class="outline-button" data-action="open-tighten" ${mandate.status !== "active" || effective_policy.uncertainty_policy === "decline" ? "disabled" : ""}>Decline uncertain purchases</button><button type="button" class="danger-link" data-action="open-revoke" ${mandate.status !== "active" ? "disabled" : ""}>Revoke this permission</button></div></div>`;
+  return `<div class="wallet-section"><h2>Rules for this permission</h2><p class="calm-copy">These limits belong to the spending permission you confirmed. Account-wide defaults are not available in this demo.</p>${ruleGroups(effective_policy.rules)}<section class="rule-group"><h3>Missing information</h3><p>${esc(effective_policy.uncertainty_policy === "ask" ? "Ask me before buying" : effective_policy.uncertainty_policy === "decline" ? "Decline the purchase" : "Allow the purchase when evidence is missing")}</p></section><section class="rule-group"><h3>Security</h3><p>Purchase decisions and unfamiliar evidence are checked by the Wallet backend. Your agent cannot change these confirmed rules.</p></section><div class="rule-actions"><button type="button" class="outline-button" data-action="open-tighten" ${mandate.status !== "active" || effective_policy.uncertainty_policy === "decline" ? "disabled" : ""}>Decline uncertain purchases</button><button type="button" class="danger-link" data-action="open-revoke" ${mandate.status !== "active" ? "disabled" : ""}>Revoke this permission</button></div></div>`;
 }
 
 async function renderReview(serial) {
@@ -472,6 +478,16 @@ async function renderReview(serial) {
     ${questions.length ? `<section class="questions"><h2>Confirm these details</h2>${questions.map((question) => { const selected = state.answers[question.question] ?? question.answer; return `<div class="question"><strong>${esc(question.question)}</strong><div class="choices">${question.options.map((option) => `<button type="button" class="${selected === option ? "selected" : ""}" aria-pressed="${selected === option}" data-action="answer-question" data-question="${esc(question.question)}" data-answer="${esc(option)}">${esc(option)}</button>`).join("")}</div></div>`; }).join("")}${needsRevision ? `<p class="uncertainty-note">Your selection requires a revised plan from the shopping agent before authorization.</p>` : ""}</section>` : ""}<div class="review-spacer"></div><div class="review-actions"><button type="button" class="outline-button" data-action="open-reject">Reject</button><button type="button" class="primary-button" data-action="confirm" ${ready ? "" : "disabled"}>Authorize agent</button></div></section>`);
 }
 
+function decisionLabel(decision) {
+  if (decision.decision === "approve") return decision.reason_codes.includes("customer_confirmation") ? "Approved after review" : "Approved";
+  if (decision.decision === "decline") {
+    if (decision.reason_codes.includes("customer_declined")) return "Declined after review";
+    if (decision.reason_codes.includes("step_up_timeout")) return "Timed out and declined";
+    return "Blocked";
+  }
+  return "Needs a decision";
+}
+
 function activityTabs() {
   return `<div class="activity-tabs" role="tablist" aria-label="Filter decisions">${[["all", "All"], ["purchases", "Purchases"], ["blocked", "Blocked"]].map(([id, label]) => `<button type="button" role="tab" tabindex="${state.activityFilter === id ? 0 : -1}" aria-selected="${state.activityFilter === id}" class="${state.activityFilter === id ? "selected" : ""}" data-action="activity-filter" data-filter="${id}">${label}</button>`).join("")}</div>`;
 }
@@ -489,7 +505,7 @@ function activityRows() {
     lastDay = day;
     const merchant = text(auth.merchant.merchant_name, "Merchant");
     const item = auth.items.map((entry) => text(entry.item_name, "Item")).join(" + ");
-    const label = decision.decision === "approve" ? decision.reason_codes.includes("customer_confirmation") ? "Approved after review" : "Approved" : decision.decision === "decline" ? "Blocked" : "Needs a decision";
+    const label = decisionLabel(decision);
     const kind = decision.decision === "approve" ? "approved" : decision.decision === "decline" ? "blocked" : "uncertain";
     return `${heading}<button type="button" class="activity-card" data-action="open-detail" data-id="${esc(decision.authorization_id)}"><span class="activity-card-top"><span class="outcome-icon ${kind}" aria-hidden="true">${decision.decision === "approve" ? "✓" : decision.decision === "decline" ? "×" : "?"}</span><strong>${esc(merchant)}</strong><b>${esc(money(auth.billing_amount_chf, auth.currency))}</b></span><span class="activity-product">${esc(item)}</span><span class="activity-card-bottom"><span class="${kind}">${esc(label)}</span><time datetime="${esc(decision.decided_at)}">${esc(new Date(decision.decided_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }))}</time></span></button>`;
   }).join("");
@@ -506,9 +522,13 @@ async function renderActivity(serial) {
     if (!entry?.decision || !entry.state_after) throw new Error("A history entry is incomplete.");
     text(entry.decision.authorization_id, "History authorization ID");
   });
+  if (new Set(history.map((entry) => entry.decision.authorization_id)).size !== history.length) throw new Error("The decision history contains duplicate purchase outcomes.");
   const details = await Promise.all(history.map(({ decision }) => walletApi.decision(decision.authorization_id).then(validateDecision)));
   if (serial !== state.serial) return;
-  state.history = history.map((entry, index) => ({ decision: details[index].decision, state_after: details[index].state_after }))
+  state.history = history.map((entry, index) => {
+    if (entry.decision.authorization_id !== details[index].decision.authorization_id) throw new Error("The decision history and transaction detail refer to different purchases.");
+    return { decision: details[index].decision, state_after: details[index].state_after };
+  })
     .sort((a, b) => new Date(b.decision.decided_at) - new Date(a.decision.decided_at));
   state.details = new Map(details.map((detail) => [detail.decision.authorization_id, detail]));
   setScreen(`<section class="activity-view"><div class="page-title"><h1>Activity</h1></div>${activityTabs()}<div id="activity-list">${activityRows()}</div><p class="activity-disclaimer">Recorded purchase decisions for the selected permission. Permission changes are not in this history.</p></section>`);
@@ -531,7 +551,7 @@ function openPending(id) {
   const auth = item.event.authorization;
   const issue = item.decision.evidence.filter((check) => check.result !== "pass");
   const remaining = new Date(item.expires_at).getTime() - Date.now();
-  openOverlay(`<span class="section-kicker amber-text">VISECA NEEDS YOU</span><h2>One detail needs a decision</h2><p class="overlay-intro">${esc(item.decision.customer_message)}</p><div class="purchase-highlight"><span>${esc(auth.merchant.merchant_name)}</span><strong>${esc(money(auth.billing_amount_chf, auth.currency))}</strong><p>${esc(auth.items.map((entry) => text(entry.item_name, "Item")).join(" + "))}</p></div><h3>Why you're seeing this</h3><div class="evidence-list">${issue.map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(check.name.replaceAll("_", " "))}</strong><p>${esc(check.note)}</p><small>Source: ${esc(check.source)}</small></div></div>`).join("")}</div><p class="calm-copy">This answer applies only to this purchase. It does not change your confirmed limits.</p><p id="pending-deadline" class="calm-copy">${remaining > 0 ? `Decision window: ${Math.floor(remaining / 60000)}m ${String(Math.floor(remaining / 1000) % 60).padStart(2, "0")}s left` : "The decision window has closed."}</p><div class="overlay-actions"><button class="outline-button" type="button" data-action="resolve" data-id="${esc(id)}" data-decision="decline" ${remaining <= 0 ? "disabled" : ""}>Don't buy</button><button class="primary-button" type="button" data-action="resolve" data-id="${esc(id)}" data-decision="approve" ${remaining <= 0 ? "disabled" : ""}>Buy anyway</button></div>${remaining <= 0 ? `<p class="uncertainty-note">The decision window has closed. Refresh Wallet for the final result.</p>` : ""}`, "Purchase review");
+  openOverlay(`<span class="section-kicker amber-text">VISECA NEEDS YOU</span><h2>${esc(pendingTitle(item.decision.evidence))}</h2><p class="overlay-intro">${esc(item.decision.customer_message)}</p><div class="purchase-highlight"><span>${esc(auth.merchant.merchant_name)}</span><strong>${esc(money(auth.billing_amount_chf, auth.currency))}</strong><p>${esc(auth.items.map((entry) => text(entry.item_name, "Item")).join(" + "))}</p></div><h3>Why you're seeing this</h3><div class="evidence-list">${issue.map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(check.name.replaceAll("_", " "))}</strong><p>${esc(check.note)}</p><small>Source: ${esc(check.source)}</small></div></div>`).join("")}</div><p class="calm-copy">This answer applies only to this purchase. It does not change your confirmed limits.</p><p id="pending-deadline" class="calm-copy">${remaining > 0 ? `Decision window: ${Math.floor(remaining / 60000)}m ${String(Math.floor(remaining / 1000) % 60).padStart(2, "0")}s left` : "The decision window has closed."}</p><div class="overlay-actions"><button class="outline-button" type="button" data-action="resolve" data-id="${esc(id)}" data-decision="decline" ${remaining <= 0 ? "disabled" : ""}>Don't buy</button><button class="primary-button" type="button" data-action="resolve" data-id="${esc(id)}" data-decision="approve" ${remaining <= 0 ? "disabled" : ""}>Buy anyway</button></div>${remaining <= 0 ? `<p class="uncertainty-note">The decision window has closed. Refresh Wallet for the final result.</p>` : ""}`, "Purchase review");
 }
 
 function openDetail(payload) {
@@ -540,15 +560,18 @@ function openDetail(payload) {
   const auth = event.authorization;
   const failed = decision.evidence.filter((check) => check.result === "fail");
   const uncertain = decision.evidence.filter((check) => check.result === "uncertain");
-  const outcome = decision.decision === "approve" ? "Approved" : decision.decision === "decline" ? "Blocked" : "Needs a decision";
-  openOverlay(`<span class="section-kicker">TRANSACTION</span><h2>${decision.decision === "decline" ? "Why was this blocked?" : "Why was this purchase " + outcome.toLowerCase() + "?"}</h2><div class="purchase-highlight"><span>${esc(auth.merchant.merchant_name)}</span><strong>${esc(money(auth.billing_amount_chf, auth.currency))}</strong><p>${esc(auth.items.map((entry) => text(entry.item_name, "Item")).join(" + "))}</p></div><p class="overlay-intro">${esc(decision.customer_message)}</p>${failed.length || uncertain.length ? `<div class="evidence-list">${[...failed, ...uncertain].slice(0, 4).map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(check.name.replaceAll("_", " "))}</strong><p>${esc(check.note)}</p></div></div>`).join("")}</div>` : ""}<button type="button" class="text-button" data-action="inspector" data-tab="summary">View technical details <span aria-hidden="true">→</span></button>`, "Transaction explanation");
+  const title = decision.decision === "approve" ? "Why was this approved?" :
+    decision.decision === "step_up" ? "Why does this need a decision?" :
+    decision.reason_codes.includes("customer_declined") ? "Why was this declined?" :
+    decision.reason_codes.includes("step_up_timeout") ? "Why did this purchase time out?" : "Why was this blocked?";
+  openOverlay(`<span class="section-kicker">TRANSACTION</span><h2>${esc(title)}</h2><div class="purchase-highlight"><span>${esc(auth.merchant.merchant_name)}</span><strong>${esc(money(auth.billing_amount_chf, auth.currency))}</strong><p>${esc(auth.items.map((entry) => text(entry.item_name, "Item")).join(" + "))}</p></div><p class="overlay-intro">${esc(decision.customer_message)}</p>${failed.length || uncertain.length ? `<div class="evidence-list">${[...failed, ...uncertain].slice(0, 4).map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(check.name.replaceAll("_", " "))}</strong><p>${esc(check.note)}</p></div></div>`).join("")}</div>` : ""}<button type="button" class="text-button" data-action="inspector" data-tab="summary">View technical details <span aria-hidden="true">→</span></button>`, "Transaction explanation");
 }
 
 function inspector(tab) {
   if (!state.detail) throw new Error("The transaction details are not loaded.");
   if (!["summary", "checks", "record"].includes(tab)) throw new Error("Unknown inspector section.");
   const { decision, event, state_before, state_after } = state.detail;
-  const status = decision.decision === "approve" ? "Approved" : decision.decision === "decline" ? "Blocked" : "Needs a decision";
+  const status = decisionLabel(decision);
   const content = tab === "summary"
     ? `<div class="inspector-outcome ${decision.decision}"><span>${esc(status.toUpperCase())}</span><h3>${esc(decision.customer_message)}</h3></div><h3>How the decision was made</h3><p>${esc(decision.explanation)}</p><p class="check-count">${decision.evidence.filter((check) => check.result === "pass").length} passed · ${decision.evidence.filter((check) => check.result === "fail").length} failed · ${decision.evidence.filter((check) => check.result === "uncertain").length} unknown</p>`
     : tab === "checks"
@@ -658,6 +681,7 @@ document.addEventListener("click", async (event) => {
         throw error;
       }
       if (request !== state.detailSerial || screenAtClick !== state.serial || state.route !== "activity") return;
+      if (detail.decision.authorization_id !== id) throw new Error("The transaction detail does not match the selected purchase.");
       state.details.set(id, detail);
       const entry = state.history.find((item) => item.decision.authorization_id === id);
       if (!entry) throw new Error("This purchase is no longer in the current history.");
