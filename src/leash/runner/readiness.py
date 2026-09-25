@@ -39,10 +39,10 @@ async def check_wallet(origin: str) -> None:
                 if response.headers.get("content-type", "").split(";", 1)[0] != "text/html":
                     raise ReadinessError("Wallet /app/ did not return HTML")
                 body = bytearray()
-                async for chunk in response.aiter_bytes():
-                    body.extend(chunk)
-                    if len(body) > len(expected):
+                async for chunk in response.aiter_bytes(chunk_size=16384):
+                    if len(body) + len(chunk) > len(expected):
                         raise ReadinessError("Wallet /app/ differs from this checkout's index.html")
+                    body.extend(chunk)
                 if body != expected:
                     raise ReadinessError("Wallet /app/ differs from this checkout's index.html")
 
