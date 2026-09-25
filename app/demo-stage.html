@@ -36,6 +36,8 @@
   .title p { margin: 22px 0 0; font-size: 34px; font-weight: 600; opacity: 0; transform: translateY(20px); transition: transform .6s cubic-bezier(.2,.9,.2,1) .25s, opacity .5s ease .25s; }
   .title.show h1, .title.show p { transform: none; opacity: 1; }
   .title.show p { opacity: .95; }
+  .title .credit { position: absolute; left: 0; right: 0; bottom: 34px; font-size: 16px; font-weight: 500; opacity: 0; transition: opacity .6s ease .5s; }
+  .title.show .credit { opacity: .75; }
 
   .headline { position: absolute; left: 80px; top: 52px; color: #fff; text-shadow: 0 2px 24px rgba(0,0,0,.18);
     transform: translateY(-30px); opacity: 0; transition: transform .6s cubic-bezier(.2,.9,.2,1), opacity .5s ease; }
@@ -128,7 +130,7 @@
     <div id="cursor"><svg viewBox="0 0 30 36" aria-hidden="true"><path d="M3 2 L3 28 L9.5 22 L14.5 33 L19.5 31 L14.5 20.5 L23 20.5 Z" fill="#fff" stroke="#111" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
   </div>
   <div class="caption" id="caption"></div>
-  <div class="title" id="title"><div><h1 id="title-h">Agent on a Leash</h1><p id="title-p">Your agent buys. Your Wallet decides.</p></div></div>
+  <div class="title" id="title"><div><h1 id="title-h">Agent on a Leash</h1><p id="title-p">Your agent buys. Your Wallet decides.</p></div><div class="credit" id="credit" hidden>Music: "Wallpaper" Kevin MacLeod (incompetech.com), CC BY 4.0</div></div>
   <script>
     const log = document.getElementById("log");
     const camera = document.getElementById("camera");
@@ -139,7 +141,7 @@
       if (name === "lead") { const l = document.getElementById("lead"); l.innerHTML = `${h}<small>${p || ""}</small>`; show("agent", false); show("lead", true); }
       if (name === "chips") { const l = document.getElementById("lead"); l.innerHTML = `${h}<small>${p || ""}</small><div class="chips"><span class="chip mcp">MCP</span><span class="chip">Claude Code</span><span class="chip">OpenCode</span><span class="chip">your own agent</span></div>`; show("agent", false); show("lead", true); }
       if (name === "agent") { show("lead", false); show("agent", true); }
-      if (name === "outro") { if (h) document.getElementById("title-h").textContent = h; if (p) document.getElementById("title-p").textContent = p; show("agent", false); show("lead", false); show("phone", false); show("headline", false); show("caption", false); setTimeout(() => show("title", true), 350); }
+      if (name === "outro") { document.getElementById("credit").hidden = false; if (h) document.getElementById("title-h").textContent = h; if (p) document.getElementById("title-p").textContent = p; show("agent", false); show("lead", false); show("phone", false); show("headline", false); show("caption", false); setTimeout(() => show("title", true), 350); }
     };
     window.say = (kind, html) => {
       const el = document.createElement("div"); el.className = "msg " + kind; el.innerHTML = html;
