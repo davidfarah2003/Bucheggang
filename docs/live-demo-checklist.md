@@ -29,7 +29,7 @@ For every item, record the command or UI action, HTTP status, authorization or d
 
 - [ ] Without login, customer API routes return 401. Logging in creates a session; logging out invalidates it.
 - [ ] The agent calls the real MCP authoring and proposal tools. Read-back through `get_policy_summary` matches the proposed instruction and customer-readable rules. `get_policy_status` says pending.
-- [ ] At `/app/?draft_id=<id>`, the customer sees the saved version, rules, examples and unanswered questions. An attempt using an obsolete version or hash returns 409 and creates no simulator mandate.
+- [ ] At `/app/?draft_id=<id>`, the customer sees the saved draft's rules, examples and unanswered questions. Confirmation sends the stored version and hash; an attempt using obsolete values returns 409 and creates no simulator mandate.
 - [ ] The customer answers the open questions and confirms in the Wallet. Record the actual submitted choices. The mandate ID displayed by the app matches the confirmed MCP status and live simulator record.
 - [ ] Launch the real engine worker with that confirmed draft and mandate. Use `--evaluate engine`, never a smoke evaluator. Save the run ID and log.
 - [ ] For an ordinary approval, verify the simulator accepted the exact authorization, the app shows its checks and the approved amount is counted once. If the system asks because card history is absent, record that result; do not claim an autonomous approval.
