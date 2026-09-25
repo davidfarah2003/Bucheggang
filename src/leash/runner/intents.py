@@ -15,9 +15,9 @@ from uuid import uuid4
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
-from leash.contracts import Decision, Event, MandateState
+from leash.contracts import Decision, Event, MandateState, StepUp
 
-from . import records
+from . import api, records
 
 INTENTS_DIR = records.DATA_DIR / "intents"
 Operation = Literal["submit", "resolve", "tighten", "revoke"]
@@ -40,9 +40,12 @@ class Intent(BaseModel):
     context: dict[str, Any]
     created_at: AwareDatetime
     deadline_at: AwareDatetime
-    status: Literal["prepared", "accepted", "recorded"]
+    status: Literal["prepared", "dispatched", "accepted", "recorded", "refused"]
     accepted_at: AwareDatetime | None = None
     accepted: Any = None
+    observed_decision: Decision | None = None
+    refusal: dict[str, Any] | None = None
+    refused_at: AwareDatetime | None = None
 
     @model_validator(mode="after")
     def consistent(self) -> "Intent":
@@ -65,6 +68,8 @@ class Intent(BaseModel):
             event = Event.model_validate(self.context["event"])
             decision = Decision.model_validate(self.context["decision"])
             before = MandateState.model_validate(self.context["state_before"])
+            if before.customer_approvals:
+                raise ValueError("intent state_before must contain only persistent mandate state")
             if (event.authorization.authorization_id != auth_id or decision.authorization_id != auth_id
                     or event.mandate.mandate_id != self.mandate_id
                     or event.authorization.mandate_id != self.mandate_id or before.mandate_id != self.mandate_id):
@@ -73,6 +78,10 @@ class Intent(BaseModel):
                 raise ValueError("intent decision differs from the dispatch payload")
             if not isinstance(self.context.get("run_id"), str) or not self.context["run_id"]:
                 raise ValueError("authorization intent requires the originating run_id")
+            if self.operation == "resolve":
+                step_up = StepUp.model_validate(self.context["step_up"])
+                if step_up.authorization_id != auth_id or step_up.event != event or step_up.decision.decision != "step_up":
+                    raise ValueError("resolution intent differs from its pending purchase")
         else:
             expected = f"/v1/mandates/{self.mandate_id}"
             before = self.context["remote_before"]
@@ -86,19 +95,68 @@ class Intent(BaseModel):
                 raise ValueError("tightening requires its request payload")
         if self.path != expected:
             raise ValueError("intent path differs from its bound operation")
-        if self.status == "prepared" and (self.accepted_at is not None or self.accepted is not None):
-            raise ValueError("prepared intent cannot contain an accepted response")
-        if self.status != "prepared":
+        if self.observed_decision is not None and (self.operation not in ("submit", "resolve") or self.status not in ("accepted", "recorded")):
+            raise ValueError("an observed platform decision requires an accepted authorization outcome")
+        if self.status in ("prepared", "dispatched") and (self.accepted_at is not None or self.accepted is not None):
+            raise ValueError("unresolved intent cannot contain an accepted response")
+        if self.status in ("accepted", "recorded"):
             if self.accepted_at is None:
                 raise ValueError("accepted intent must record its observation time")
             verify_response(self, self.accepted)
+        if self.status == "refused":
+            if (self.accepted is not None or self.accepted_at is not None or self.refused_at is None
+                    or not isinstance(self.refusal, dict)
+                    or not _known_refusal(self.operation, self.refusal.get("status"), self.refusal.get("body"))):
+                raise ValueError("refused intent requires a documented no-mutation response")
+        elif self.refusal is not None or self.refused_at is not None:
+            raise ValueError("only a refused intent can contain refusal evidence")
         return self
+
+
+def _known_refusal(operation: str, status: int, body: Any) -> bool:
+    error = body.get("error") if isinstance(body, dict) else None
+    return (operation == "tighten" and status == 409 and isinstance(error, dict)
+            and error.get("code") == "mandate_widening")
+
+
+def _platform_timeout(intent: Intent, accepted: dict) -> Decision:
+    from leash.contracts.event import Authorization
+
+    event = Event.model_validate(intent.context["event"])
+    auth_id = event.authorization.authorization_id
+    remote = accepted.get("decision")
+    reasons = accepted.get("reason_codes")
+    if (accepted.get("authorization_id") != auth_id or accepted.get("run_id") != intent.context["run_id"]
+            or accepted.get("status") != "declined" or accepted.get("decision_source") != "timeout"
+            or reasons not in (["timeout"], ["step_up_expired"])
+            or not isinstance(remote, dict) or remote.get("authorization_id") != auth_id
+            or remote.get("decision") != "decline" or remote.get("decision_source") != "timeout"
+            or remote.get("reason_codes") != reasons):
+        raise UnresolvedMutation(f"{intent.intent_id}: expected an authoritative platform timeout decline")
+    if Authorization.model_validate(accepted.get("authorization")) != event.authorization:
+        raise UnresolvedMutation(f"{intent.intent_id}: platform authorization differs from the intent")
+    finalized = datetime.fromisoformat(accepted["finalized_at"].replace("Z", "+00:00"))
+    if finalized.utcoffset() is None or finalized > datetime.now(UTC):
+        raise UnresolvedMutation(f"{intent.intent_id}: platform timeout has an invalid finalization time")
+    intended = Decision.model_validate(intent.context["decision"])
+    return Decision(
+        authorization_id=auth_id, decision="decline",
+        reason_codes=["step_up_timeout" if reasons == ["step_up_expired"] else "engine_timeout"],
+        customer_message=remote["customer_message"], evidence=remote["evidence"],
+        explanation="The simulator recorded a timeout decline. Reconciled its authoritative outcome without resubmitting.",
+        engine_version="simulator-timeout", mandate_version=intended.mandate_version,
+        elapsed_ms=0, decided_at=finalized,
+    )
 
 
 def verify_response(intent: Intent, accepted: Any) -> None:
     """Reject an unexpected result before recording any financial state."""
     if not isinstance(accepted, dict):
         raise UnresolvedMutation(f"{intent.intent_id}: mutation result must be an object")
+    if intent.observed_decision is not None:
+        if intent.observed_decision != _platform_timeout(intent, accepted) or intent.accepted_at != intent.observed_decision.decided_at:
+            raise UnresolvedMutation(f"{intent.intent_id}: recorded platform decision differs from the observed timeout")
+        return
     if intent.operation in ("submit", "resolve"):
         auth_id = intent.context["authorization_id"]
         expected = intent.body
@@ -114,6 +172,10 @@ def verify_response(intent: Intent, accepted: Any) -> None:
         fields = ("customer_message", "evidence", "reason_codes", "engine_version") if intent.operation == "submit" else ("customer_message", "evidence")
         if any(decision.get(key) != expected[key] for key in fields):
             raise UnresolvedMutation(f"{intent.intent_id}: observed decision payload differs")
+        if expected["decision"] == "step_up":
+            expiry = accepted.get("step_up_expires_at")
+            if not isinstance(expiry, str) or datetime.fromisoformat(expiry.replace("Z", "+00:00")).utcoffset() is None:
+                raise UnresolvedMutation(f"{intent.intent_id}: accepted step-up lacks an authoritative expiry")
     else:
         if accepted.get("mandate_id") != intent.mandate_id:
             raise UnresolvedMutation(f"{intent.intent_id}: observed mandate differs")
@@ -145,6 +207,7 @@ def _make_directories(path: Path) -> None:
     while not path.exists():
         missing.append(path)
         path = path.parent
+    _sync_directory(path.parent)
     for folder in reversed(missing):
         folder.mkdir(mode=0o700, exist_ok=True)
         _sync_directory(folder.parent)
@@ -187,7 +250,7 @@ class MutationJournal:
         if folder.exists() and not folder.is_dir():
             raise UnresolvedMutation(f"{folder}: intent store is not a directory")
         intents = [self.read(mandate_id, path.stem) for path in sorted(folder.glob("*.json"))]
-        return [intent for intent in intents if intent.status != "recorded"]
+        return [intent for intent in intents if intent.status not in ("recorded", "refused")]
 
     def require_clear(self, mandate_ids: list[str]) -> None:
         for mandate_id in sorted(set(mandate_ids)):
@@ -208,15 +271,69 @@ class MutationJournal:
         _persist(self._path(mandate_id, intent.intent_id), intent, exclusive=True)
         return intent
 
-    def accept(self, intent: Intent, accepted: Any, accepted_at: datetime) -> Intent:
+    def dispatch(self, intent: Intent) -> Intent:
+        """Send once after preparation. Failures leave an open intent and propagate."""
         current = self.read(intent.mandate_id, intent.intent_id)
         if current != intent or current.status != "prepared":
-            raise UnresolvedMutation(f"{intent.intent_id}: only the unchanged prepared mutation can be accepted")
+            raise UnresolvedMutation(f"{intent.intent_id}: dispatch requires the unchanged prepared intent")
+        current = Intent.model_validate({**current.model_dump(mode="python"), "status": "dispatched"})
+        _persist(self._path(current.mandate_id, current.intent_id), current, exclusive=False)
+        try:
+            response = api.call(current.method, current.path, json=current.body, deadline_at=current.deadline_at)
+        except api.ApiError as exc:
+            if _known_refusal(current.operation, exc.status, exc.body):
+                refused = Intent.model_validate({
+                    **current.model_dump(mode="python"), "status": "refused",
+                    "refusal": {"status": exc.status, "body": exc.body}, "refused_at": datetime.now(UTC),
+                })
+                _persist(self._path(current.mandate_id, current.intent_id), refused, exclusive=False)
+            raise
+        if current.operation == "revoke":
+            response = api.call("GET", current.path, deadline_at=current.deadline_at)
+        return self.accept(current, response, datetime.now(UTC))
+
+    def accept(self, intent: Intent, accepted: Any, accepted_at: datetime) -> Intent:
+        current = self.read(intent.mandate_id, intent.intent_id)
+        if current != intent or current.status not in ("prepared", "dispatched"):
+            raise UnresolvedMutation(f"{intent.intent_id}: only an unchanged unresolved mutation can be accepted")
         verify_response(current, accepted)
         updated = Intent.model_validate({**current.model_dump(mode="python"), "status": "accepted",
                                          "accepted": accepted, "accepted_at": accepted_at})
         _persist(self._path(intent.mandate_id, intent.intent_id), updated, exclusive=False)
         return updated
+
+    def reconcile(self, intent: Intent, *, deadline_at: datetime) -> Intent:
+        """Read one authoritative outcome. Never dispatch the pending mutation again."""
+        from leash.contracts.event import Authorization
+
+        current = self.read(intent.mandate_id, intent.intent_id)
+        if current != intent or current.status not in ("prepared", "dispatched", "accepted"):
+            raise UnresolvedMutation(f"{intent.intent_id}: reconciliation requires an unchanged open intent")
+        if current.status == "accepted":
+            return current
+        if current.operation in ("tighten", "revoke"):
+            response = api.call("GET", current.path, deadline_at=deadline_at)
+        else:
+            rows = api.call("GET", "/v1/authorizations", params={"run_id": current.context["run_id"]}, deadline_at=deadline_at)
+            if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+                raise UnresolvedMutation("authorization reconciliation requires an authoritative list")
+            found = [row for row in rows if row.get("authorization_id") == current.context["authorization_id"]]
+            if len(found) != 1:
+                raise UnresolvedMutation(f"{intent.intent_id}: expected one authoritative authorization, found {len(found)}")
+            response = found[0]
+            event = Event.model_validate(current.context["event"])
+            if (response.get("run_id") != current.context["run_id"]
+                    or Authorization.model_validate(response.get("authorization")) != event.authorization):
+                raise UnresolvedMutation(f"{intent.intent_id}: authoritative run or purchase binding differs")
+            if response.get("decision_source") == "timeout":
+                observed = _platform_timeout(current, response)
+                updated = Intent.model_validate({
+                    **current.model_dump(mode="python"), "status": "accepted", "accepted": response,
+                    "accepted_at": observed.decided_at, "observed_decision": observed,
+                })
+                _persist(self._path(current.mandate_id, current.intent_id), updated, exclusive=False)
+                return updated
+        return self.accept(current, response, datetime.now(UTC))
 
     def complete(self, intent: Intent) -> Intent:
         current = self.read(intent.mandate_id, intent.intent_id)
