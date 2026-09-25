@@ -1,21 +1,21 @@
 # Connect a shopping agent to the policy MCP server
 
-The policy MCP server is the only interface a shopping agent gets. It shares one draft directory with the Wallet API, so a draft the agent proposes is the draft the customer sees at `/app/?draft_id=<draft_id>`. The tools and their shapes are in `docs/contracts.md`, section "MCP tools".
+The policy MCP server shares its draft directory with the Wallet API. The customer pairs each agent in the Wallet before it can read or propose policies. The account ID and token records are server-side. The browser never sees the agent token. Tool shapes and authentication rules are in `docs/contracts.md`, sections "Identity source" and "MCP tools".
 
-It runs over stdio by default. For a client on another machine it can also serve streamable HTTP behind a shared bearer token (plan 01, Decisions, 2026-09-24 23:35).
+The local demo supports MCP stdio and streamable HTTP. Both transports use the same `LEASH_POLICY_STORE` as the Wallet. The challenge key is not used by the MCP server.
 
 ## Start it over stdio
 
-From the repository root, with the same `LEASH_POLICY_STORE` the Wallet API uses (`docs/run-wallet.md`):
+Set the same `LEASH_POLICY_STORE` that the Wallet API uses:
 
 ```sh
 export LEASH_POLICY_STORE="$PWD/data/policy"
 uv run python -m leash.policy.mcp_server
 ```
 
-The server reads and writes only that directory. It holds no simulator key and makes no network call.
+The agent calls `begin_pairing`, gives the customer the returned Wallet link, and keeps the returned verifier private. After the customer approves the labelled agent in the Wallet, the agent calls `complete_pairing` with the code and verifier. The MCP process keeps the resulting token in memory and authenticates later tools with it. Restarting the process requires pairing again, unless a valid `LEASH_AGENT_TOKEN` is provided at startup.
 
-For an MCP-compatible agent that takes a JSON server list (Claude Code, OpenCode, Codex and most others use this shape):
+An MCP client JSON server list can use this command:
 
 ```json
 {
@@ -23,7 +23,9 @@ For an MCP-compatible agent that takes a JSON server list (Claude Code, OpenCode
     "leash-policy": {
       "command": "uv",
       "args": ["run", "--project", "/absolute/path/to/Bucheggang", "python", "-m", "leash.policy.mcp_server"],
-      "env": { "LEASH_POLICY_STORE": "/absolute/path/to/Bucheggang/data/policy" }
+      "env": {
+        "LEASH_POLICY_STORE": "/absolute/path/to/Bucheggang/data/policy"
+      }
     }
   }
 }
@@ -35,66 +37,63 @@ Use absolute paths. If the store path differs from the Wallet's, the customer wi
 
 ```sh
 export LEASH_POLICY_STORE="$PWD/data/policy"
-export LEASH_MCP_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 uv run python -m leash.policy.mcp_server --transport streamable-http --port 8791
 ```
 
-The endpoint is `http://127.0.0.1:8791/mcp`. `--host` defaults to `127.0.0.1`. Every HTTP request must carry `Authorization: Bearer <LEASH_MCP_TOKEN>`; any other request gets `401`. Startup raises if `LEASH_MCP_TOKEN` is unset or `--port` is missing. The token lives only in the environment of the shell that starts the server and of the shell that starts the client. Hand it to a teammate out of band, never in a file, a commit or a channel message.
+The endpoint is `http://127.0.0.1:8791/mcp`. Unpaired clients can call only `begin_pairing` and `complete_pairing`. The first returns a pairing code and a private verifier. The agent sends the Wallet link containing the code to the customer and keeps the verifier. After Wallet approval, the agent completes pairing and receives a revocable token once. Later tool requests carry `Authorization: Bearer <agent token>`. Missing, invalid and revoked tokens all produce the same unauthorized tool error.
 
-### Demo day: David's machine behind cloudflared
-
-The hosted demo runs on David's machine only, for the length of the demo, through a Cloudflare quick tunnel. There is no cloud deployment, no OAuth and no per-user account; the one shared token is the whole access control.
-
-```sh
-cloudflared tunnel --url http://127.0.0.1:8791 --http-host-header 127.0.0.1:8791
-```
-
-cloudflared prints a `https://<name>.trycloudflare.com` URL. The client URL is that host plus `/mcp`. Keep `--http-host-header`: the MCP library's DNS rebinding check answers `421` to a request whose `Host` is the tunnel name, and `200` once cloudflared rewrites it to `127.0.0.1:8791`. Stop the tunnel and the server after the demo, and use a fresh token each time.
-
-Cloudflare documents that quick tunnels do not support Server-Sent Events. Checked on 2026-09-24 against this server through a quick tunnel with the `mcp` 2.2 `streamable_http_client`: the `initialize` POST, the `GET /mcp` event stream, `list_tools` and four tool calls all returned `200`, and a request without the header returned `401`. If the tunnel cannot carry the `GET /mcp` event stream, the client fails with its connection error. Investigate that error before the demo.
+The code is an identifier used in the Wallet link, not sufficient to complete pairing. The verifier and token must not appear in URLs, logs, browser storage, checked-in files or MCP configuration literals. The server stores only their digests.
 
 ### Claude Code as the client
 
-`claude mcp add --header "Authorization: Bearer ..."` writes the header value into `~/.claude.json`, so do not use it here. Register the server with a `headersHelper` instead. Claude Code runs the helper on every connection and merges its JSON output into the request headers. `scripts/leash_mcp_headers.sh` prints the header from `LEASH_MCP_TOKEN` in the environment that started Claude Code and stores nothing:
+Register the HTTP endpoint without a header helper for the initial pairing. This lets the agent call the two pairing tools:
 
 ```sh
 claude mcp add-json leash-policy \
-  '{"type":"http","url":"https://TUNNEL-HOST/mcp","headersHelper":"/absolute/path/to/Bucheggang/scripts/leash_mcp_headers.sh"}'
-claude
+  '{"type":"http","url":"http://127.0.0.1:8791/mcp"}'
 ```
 
-Run `claude` from the same shell that generated `LEASH_MCP_TOKEN` and started the server, so the token is never typed. A teammate on another machine gets it out of band and reads it with a silent prompt, which keeps it out of shell history:
+After pairing, provide the token to the client process through its secret environment, then register the helper-backed endpoint. The helper reads `LEASH_AGENT_TOKEN` and emits the Authorization header without storing it:
 
 ```sh
-read -rs LEASH_MCP_TOKEN && export LEASH_MCP_TOKEN
+claude mcp remove leash-policy
+claude mcp add-json leash-policy \
+  '{"type":"http","url":"http://127.0.0.1:8791/mcp","headersHelper":"/absolute/path/to/Bucheggang/scripts/leash_mcp_headers.sh"}'
+```
+
+Start Claude Code from the same shell that has `LEASH_AGENT_TOKEN` set. A silent prompt avoids shell history:
+
+```sh
+read -rs LEASH_AGENT_TOKEN && export LEASH_AGENT_TOKEN
 claude
 ```
 
-Never write `export LEASH_MCP_TOKEN=<value>` on a command line; the shell history file keeps it.
+Never put a token in a command argument, config literal, repository file or channel message. Revoking the agent in the Wallet invalidates its token.
 
-The single quotes keep the shell from expanding anything, and the stored entry holds only the URL and the helper path. The default local scope runs the helper only after you trust the project folder, so answer the trust dialog once. `claude mcp get leash-policy` then shows it connected, and `/mcp` lists six tools. If `LEASH_MCP_TOKEN` is unset, the helper exits non-zero with a message naming the variable, and the connection fails.
+## Demo host
 
-In a checked-out copy of this repository, a project `.mcp.json` can instead carry `"headers": {"Authorization": "Bearer ${LEASH_MCP_TOKEN}"}`. Claude Code expands `${VAR}` in `headers` of `.mcp.json` at connection time and stores only the reference. This variant was not tried.
+The customer Wallet remains on loopback. If the MCP endpoint is hosted remotely, expose only the MCP process over TLS and keep the Wallet API inaccessible through the tunnel. Pairing codes and verifiers are short-lived, and the token is returned only to the paired agent. Stop the tunnel and server after the demo.
 
 ## Tools the agent sees
 
 | Tool | What it does |
 | --- | --- |
-| `get_policy_authoring_instructions` | field vocabulary, rule format and the proposal shape for one cardholder instruction |
-| `propose_task_policy` | validates the agent's proposal and stores an immutable draft; returns the `draft_id`. An invalid proposal returns the `InvalidDraft` reason |
-| `get_policy_status` | read-only: `pending`, `confirmed` with the `mandate_id` and `confirmed_at`, or `rejected` with the reason. Unknown draft is an error |
-| `get_policy_summary` | read-only: the plain-English sentences, examples, open questions with any answers, and the uncertainty setting of the current version. No rule fields, no hash |
-| `buy` | declared with the contract input schema; returns the error `purchases arrive through the simulator in demo mode; see plan 01 step 12` |
-| `get_purchase_status` | declared with the contract input schema; parked with `buy`, same error |
+| `begin_pairing` | Starts a five-minute Wallet pairing and returns a code plus a private verifier |
+| `complete_pairing` | Returns one scoped, revocable token after the customer approves |
+| `get_policy_authoring_instructions` | Returns the field vocabulary, rule format and proposal shape for one cardholder instruction |
+| `propose_task_policy` | Validates and stores an immutable customer-owned draft |
+| `get_policy_status` | Reads the state of a draft owned by the paired account |
+| `get_policy_summary` | Reads the customer-facing sentences for a draft owned by the paired account |
+| `buy` | Parked. Purchases arrive through the simulator in demo mode |
+| `get_purchase_status` | Parked with `buy` |
 
-The resource `policy://authoring-guide` is the same guide without the per-instruction wrapper. No tool confirms, resolves, tightens or revokes.
+The resource `policy://authoring-guide` requires a paired agent with `policy:read`. No tool confirms, resolves, tightens or revokes a policy.
 
 ## The flow an agent runs
 
-1. Call `get_policy_authoring_instructions` with the customer's sentence.
-2. Draft the proposal with your own model and call `propose_task_policy`. Keep the `draft_id`.
-3. Give the customer the Wallet link `/app/?draft_id=<draft_id>` and wait.
-4. Poll `get_policy_status` until it is `confirmed`. Use the `mandate_id` it returns; you never see the rules again.
-5. A `rejected` status means the customer wants a different policy: start again from step 1 with what they said.
-
-A recorded session of this flow, with a live simulator mandate, is `docs/samples/mcp-transcript-scen0002.md`.
+1. Call `begin_pairing` and retain both returned values. Send the customer only the Wallet link containing the pairing code.
+2. The customer logs in, reviews the displayed agent label and scopes, then approves in the Wallet.
+3. Call `complete_pairing` with the code and private verifier. Securely provide the returned token to the MCP client for later requests.
+4. Call `get_policy_authoring_instructions` with the customer's sentence.
+5. Draft the proposal and call `propose_task_policy`. The customer-owned draft appears in the Wallet list and opens at `/app/?draft_id=<draft_id>`.
+6. Poll `get_policy_status` until the customer confirms or rejects it. Use the `mandate_id` only after confirmation. Then search and authorize a purchase. External search or browsing before confirmation is outside backend control; only authorization is governed. No agent purchase API is active; demo purchase authorizations still arrive from the simulator. Examples are agent-authored claims and are not evaluated by this backend. For an exact product request, match the requested model and size from known facts; if the final all-in total is unknown, surface it as an open question rather than treating an estimate as a fact.

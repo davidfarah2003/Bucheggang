@@ -94,6 +94,7 @@ class PolicyDraft(Contract):
     examples: list[Example]
     open_questions: list[OpenQuestion]
     uncertainty_policy: UncertaintyPolicy
+    created_for: NonEmpty | None = None
     created_at: Timestamp
 
 

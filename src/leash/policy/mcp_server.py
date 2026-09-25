@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import hmac
 import json
+import re
+from contextvars import ContextVar
 import os
 from pathlib import Path
 from typing import Annotated, Any
@@ -16,6 +18,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from leash.contracts import PurchaseFacts
 
+from .identity import IdentityStore, PairingPending, PairingUnknown, Unauthorized
 from .store import (
     BOOLEAN_STRING_FIELDS, CURRENCIES, EXAMPLE_ACTIONS, FIELDS,
     NUMBER_FIELDS, OPERATORS, RULE_KEYS, DraftConflict, DraftStore, InvalidDraft,
@@ -62,6 +65,8 @@ def authoring_guide() -> dict[str, Any]:
             "Use period scope and period_days only for authorization.billing_amount_chf or state.approvals_count. Currency applies only to money fields.",
             "Use <, <=, > or >= only on numeric fields; in and not_in require a string list, while = and != require one value.",
             "Include an allowed example, a forbidden boundary example, and an unknown-fact example.",
+            "Examples are agent-authored claims and are not evaluated by this backend.",
+            "For an exact product request, identify the requested model and size from known facts; if the final all-in total is unknown, state that as an open question rather than treating an estimate as a fact.",
             "Surface missing facts and semantic gaps as open_questions with answer null.",
             "For each open question, list confirming_answers as the subset of options that confirms the rules exactly as displayed. Use an empty list if every answer needs a revised draft.",
             "A broad merchant category does not prove a specialist retailer. A screen size does not identify a chosen model.",
@@ -70,18 +75,21 @@ def authoring_guide() -> dict[str, Any]:
             "Any expansion of allowed purchases needs a new reviewed draft and explicit customer confirmation.",
             "Do not use scenario IDs, authorization IDs, or replay order as policy conditions.",
             "The backend validates and stores the proposal. It never asks a model to write or repair it.",
+            "Pair first, propose the policy, wait for Wallet confirmation, then search and authorize a purchase.",
+            "External search or browsing before confirmation is outside backend control; only authorization is governed.",
+            "No agent purchase API is active. Demo purchase authorizations still arrive from the simulator.",
             "The customer confirms only in the authenticated app. This server cannot confirm, resolve, tighten, or revoke.",
         ],
     }
 
 
 def submit_policy_proposal(
-    store: DraftStore, instruction: str, proposal: dict[str, Any]
+    store: DraftStore, instruction: str, proposal: dict[str, Any], *, created_for: str
 ) -> dict[str, Any]:
     """Validate exactly one caller-supplied proposal and store an immutable draft."""
     if not isinstance(proposal, dict) or set(proposal) != PROPOSAL_KEYS:
         raise InvalidDraft("proposal must contain exactly rules, examples, open_questions and uncertainty_policy")
-    return store.create(instruction, **proposal)
+    return store.create(instruction, created_for=created_for, **proposal)
 
 
 PARKED_MESSAGE = "purchases arrive through the simulator in demo mode; see plan 01 step 12"
@@ -169,57 +177,101 @@ class CartMerchant(BaseModel):
     merchant_country: Annotated[str, Field(pattern=r"^[A-Z]{2}$")]
 
 
-class BearerAuth:
-    """ASGI middleware: every HTTP request needs `Authorization: Bearer <token>`, else 401."""
+_HTTP_BEARER: ContextVar[str | None] = ContextVar("leash_http_bearer", default=None)
 
-    def __init__(self, app: ASGIApp, token: str):
-        if not token:
-            raise RuntimeError("bearer token is empty")
+
+class BearerContext:
+    """Expose a well-formed bearer to tool handlers without logging or rejecting HTTP requests."""
+
+    def __init__(self, app: ASGIApp):
         self.app = app
-        self.expected = f"Bearer {token}".encode("utf-8")
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http":
-            supplied = dict(scope["headers"]).get(b"authorization", b"")
-            if not hmac.compare_digest(supplied, self.expected):
-                body = b'{"error":"unauthorized","detail":"Authorization: Bearer token required"}'
-                await send({
-                    "type": "http.response.start",
-                    "status": 401,
-                    "headers": [
-                        (b"content-type", b"application/json"),
-                        (b"content-length", str(len(body)).encode()),
-                        (b"www-authenticate", b"Bearer"),
-                    ],
-                })
-                await send({"type": "http.response.body", "body": body})
-                return
-        await self.app(scope, receive, send)
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = [value for name, value in scope["headers"] if name.lower() == b"authorization"]
+        token = None
+        if len(headers) == 1:
+            try:
+                value = headers[0].decode("ascii")
+            except UnicodeDecodeError:
+                value = ""
+            parts = value.split(" ")
+            if len(parts) == 2 and parts[0].lower() == "bearer" and re.fullmatch(r"[A-Za-z0-9_-]+", parts[1]):
+                token = parts[1]
+        marker = _HTTP_BEARER.set(token)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            _HTTP_BEARER.reset(marker)
 
 
 class PolicyMCPServer(MCPServer):
-    """MCPServer whose streamable-http app only answers holders of the shared bearer token."""
+    """Policy authoring MCP with per-agent authenticated tools."""
 
-    bearer_token: str | None = None
+    def __init__(self, identities: IdentityStore, stdio_agent_token: str | None = None):
+        super().__init__("Leash Policy Authoring")
+        self.identities = identities
+        self.stdio_agent_token = stdio_agent_token
+        self.http_transport = False
+        if stdio_agent_token is not None:
+            self.identities.authenticate_agent(stdio_agent_token)
 
     def streamable_http_app(self, **kwargs: Any):  # type: ignore[override]
-        if not self.bearer_token:
-            raise RuntimeError("the streamable-http transport needs LEASH_MCP_TOKEN")
-        return BearerAuth(super().streamable_http_app(**kwargs), self.bearer_token)
+        self.http_transport = True
+        return BearerContext(super().streamable_http_app(**kwargs))
+
+    def require_agent(self, scope: str) -> dict[str, Any]:
+        token = _HTTP_BEARER.get() if self.http_transport else self.stdio_agent_token
+        try:
+            agent = self.identities.authenticate_agent(token)
+        except Unauthorized as exc:
+            raise ToolError("Unauthorized: pair this agent in the Wallet first") from exc
+        if scope not in agent["scopes"]:
+            raise ToolError("Unauthorized: pair this agent in the Wallet first")
+        return agent
 
 
-def create_server(store: DraftStore, bearer_token: str | None = None) -> PolicyMCPServer:
-    server = PolicyMCPServer("Leash Policy Authoring")
-    server.bearer_token = bearer_token
+def create_server(
+    store: DraftStore,
+    identities: IdentityStore | None = None,
+    stdio_agent_token: str | None = None,
+) -> PolicyMCPServer:
+    identity_store = identities or IdentityStore(store.root)
+    server = PolicyMCPServer(identity_store, stdio_agent_token)
 
     @server.resource("policy://authoring-guide", mime_type="application/json")
     def policy_authoring_guide() -> dict[str, Any]:
         """Read the exact fields and restrictions for a customer policy proposal."""
+        server.require_agent("policy:read")
         return authoring_guide()
+
+    @server.tool()
+    def begin_pairing(agent_label: str) -> dict[str, Any]:
+        """Start a short-lived Wallet pairing for this MCP client."""
+        try:
+            return identity_store.begin_pairing(agent_label)
+        except ValueError as exc:
+            raise ToolError(f"InvalidPairing: {exc}") from exc
+
+    @server.tool()
+    def complete_pairing(pairing_code: str, verifier: str) -> dict[str, Any]:
+        """Exchange an approved pairing and private verifier for one agent token."""
+        try:
+            result = identity_store.complete_pairing(pairing_code, verifier)
+        except PairingPending as exc:
+            raise ToolError("PairingPending") from exc
+        except PairingUnknown as exc:
+            raise ToolError("PairingUnknown") from exc
+        if not server.http_transport:
+            server.stdio_agent_token = result["agent_token"]
+        return result
 
     @server.tool()
     def get_policy_authoring_instructions(instruction: str) -> dict[str, Any]:
         """Get the policy proposal format and request-specific drafting instructions."""
+        server.require_agent("policy:read")
         if not isinstance(instruction, str) or not instruction.strip():
             raise InvalidDraft("instruction is required")
         return {
@@ -234,14 +286,15 @@ def create_server(store: DraftStore, bearer_token: str | None = None) -> PolicyM
     @server.tool()
     def propose_task_policy(instruction: str, proposal: dict[str, Any]) -> dict[str, Any]:
         """Validate and store a policy JSON proposed by the calling agent for app review."""
+        agent = server.require_agent("policy:propose")
         try:
-            return submit_policy_proposal(store, instruction, proposal)
+            return submit_policy_proposal(store, instruction, proposal, created_for=agent["account_id"])
         except InvalidDraft as exc:
             raise ToolError(f"InvalidDraft: {exc}") from exc
 
-    def _known(draft_id: str) -> None:
+    def _known(draft_id: str, account_id: str) -> None:
         try:
-            store.get(draft_id)
+            store.get_owned(draft_id, account_id)
         except KeyError as exc:
             raise DraftNotFound(f"unknown draft_id: {draft_id}") from exc
         except (InvalidDraft, DraftConflict) as exc:
@@ -253,13 +306,15 @@ def create_server(store: DraftStore, bearer_token: str | None = None) -> PolicyM
 
         Read-only. Confirmation happens only in the customer's Wallet.
         """
-        _known(draft_id)
+        agent = server.require_agent("policy:read")
+        _known(draft_id, agent["account_id"])
         return policy_status(store, draft_id)
 
     @server.tool()
     def get_policy_summary(draft_id: str) -> dict[str, Any]:
         """Read back the plain-English rules, examples, open questions and uncertainty setting of a draft."""
-        _known(draft_id)
+        agent = server.require_agent("policy:read")
+        _known(draft_id, agent["account_id"])
         return policy_summary(store, draft_id)
 
     @server.tool()
@@ -267,11 +322,13 @@ def create_server(store: DraftStore, bearer_token: str | None = None) -> PolicyM
         mandate_id: str, cart: list[CartLine], merchant: CartMerchant, facts: list[PurchaseFacts]
     ) -> dict[str, Any]:
         """Ask for a purchase decision under a confirmed mandate. Parked: purchases arrive through the simulator."""
+        server.require_agent("policy:propose")
         raise PurchasesParked(PARKED_MESSAGE)
 
     @server.tool()
     def get_purchase_status(authorization_id: str) -> dict[str, Any]:
         """Read the decision and step-up resolution of one purchase. Parked with buy."""
+        server.require_agent("policy:read")
         raise PurchasesParked(PARKED_MESSAGE)
 
     return server
@@ -289,18 +346,17 @@ def main(argv: list[str] | None = None) -> None:
         raise RuntimeError("LEASH_POLICY_STORE is required for the policy MCP server")
     store = DraftStore(Path(root))
 
+    identities = IdentityStore(store.root)
     if args.transport == "stdio":
         if args.port is not None:
             raise RuntimeError("--port only applies to --transport streamable-http")
-        create_server(store).run(transport="stdio")
+        token = os.environ.get("LEASH_AGENT_TOKEN")
+        create_server(store, identities, stdio_agent_token=token).run(transport="stdio")
         return
 
     if args.port is None:
         raise RuntimeError("--transport streamable-http requires --port")
-    token = os.environ.get("LEASH_MCP_TOKEN")
-    if not token:
-        raise RuntimeError("LEASH_MCP_TOKEN is required for --transport streamable-http")
-    create_server(store, bearer_token=token).run(
+    create_server(store, identities).run(
         transport="streamable-http", host=args.host, port=args.port
     )
 

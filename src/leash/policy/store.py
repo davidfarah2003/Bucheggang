@@ -273,10 +273,13 @@ class DraftStore:
         instruction: str,
         rules: list[dict[str, Any]],
         *,
+        created_for: str,
         uncertainty_policy: str = "ask",
         examples: list[dict[str, Any]] | None = None,
         open_questions: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        if not isinstance(created_for, str) or not created_for:
+            raise InvalidDraft("created_for is required")
         examples = [] if examples is None else examples
         open_questions = [] if open_questions is None else open_questions
         _validate_draft(instruction, rules, uncertainty_policy, examples, open_questions)
@@ -295,6 +298,7 @@ class DraftStore:
             "examples": examples,
             "open_questions": open_questions,
             "uncertainty_policy": uncertainty_policy,
+            "created_for": created_for,
             "created_at": _now(),
         }
         self._write_exclusive(folder / "v1.json", draft)
@@ -310,6 +314,17 @@ class DraftStore:
         if draft["hash"] != draft_hash(draft["instruction"], draft["rules"], draft["uncertainty_policy"]):
             raise DraftConflict("stored draft hash does not match its contents")
         return draft
+
+    def get_owned(self, draft_id: str, created_for: str) -> dict[str, Any]:
+        """Read a draft while holding its lock and conceal cross-account IDs."""
+        with self._locked(draft_id):
+            draft = self.get(draft_id)
+            if not isinstance(created_for, str) or draft.get("created_for") != created_for:
+                raise KeyError(draft_id)
+            return draft
+
+    def assert_owner(self, draft_id: str, created_for: str) -> None:
+        self.get_owned(draft_id, created_for)
 
     def revise(
         self,
@@ -372,9 +387,11 @@ class DraftStore:
     ) -> str:
         """Reserve one draft before any external mandate call."""
         with self._locked(draft_id) as folder:
-            self.assert_current(draft_id, version, hash_value)
+            draft = self.assert_current(draft_id, version, hash_value)
             if not confirmed_by:
                 raise InvalidDraft("confirmer is required")
+            if draft.get("created_for") != confirmed_by:
+                raise KeyError(draft_id)
             attempt_id = str(uuid4())
             pending = {
                 "attempt_id": attempt_id,
@@ -438,7 +455,7 @@ class DraftStore:
                 raise InvalidDraft("simulator draft ID, mandate ID and confirmer are required")
             pending = json.loads((folder / "confirmation_pending.json").read_text())
             recorded_simulator = json.loads((folder / "simulator_draft.json").read_text())
-            if pending["confirmed_by"] != confirmed_by or recorded_simulator != {
+            if draft.get("created_for") != confirmed_by or pending["confirmed_by"] != confirmed_by or recorded_simulator != {
                 "attempt_id": attempt_id,
                 "simulator_draft_id": simulator_draft_id,
             }:
@@ -492,9 +509,11 @@ class DraftStore:
 
     def reject(self, draft_id: str, *, version: int, hash_value: str, rejected_by: str, reason: str) -> None:
         with self._locked(draft_id) as folder:
-            self.assert_current(draft_id, version, hash_value)
+            draft = self.assert_current(draft_id, version, hash_value)
             if not rejected_by:
                 raise InvalidDraft("rejecter is required")
+            if draft.get("created_for") != rejected_by:
+                raise KeyError(draft_id)
             record = {
                 "draft_id": draft_id,
                 "version": version,
