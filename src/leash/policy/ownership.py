@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+import time
 
 from .store import DraftStore, InvalidDraft
 
@@ -16,11 +17,12 @@ def customer_mandate_locks(store: DraftStore, customer: str) -> Iterator[dict[st
     """Lock a customer's owned set in the runner's customer-first order."""
     from leash.runner.records import customer_lock, mandate_locks
 
-    with customer_lock(customer):
+    deadline_at = datetime.now(UTC) + timedelta(seconds=30)
+    stop_at = time.monotonic() + 30
+    with customer_lock(customer, stop_at=stop_at):
         confirmations = owned_confirmations(store, customer)
         mandate_ids = sorted(confirmations)
-        deadline_at = datetime.now(UTC) + timedelta(seconds=30)
-        with mandate_locks(mandate_ids, deadline_at=deadline_at):
+        with mandate_locks(mandate_ids, deadline_at=deadline_at, stop_at=stop_at):
             if owned_confirmations(store, customer) != confirmations:
                 raise ConfirmationSetChanged("customer owned mandate set changed while acquiring locks")
             yield confirmations
