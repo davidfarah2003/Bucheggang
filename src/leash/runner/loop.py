@@ -208,8 +208,8 @@ def handle(
         raise RunLoopError(f"event mandate instruction differs from the confirmed draft {policy.draft_id}")
     coordinator = Coordinator(store, book)
     dispatch_deadline = event.deadline_at - timedelta(seconds=0.25)
-    recorded = auth_id in engine_state.load(mandate_id).handled
-    coordination_deadline = _now() + timedelta(seconds=30) if recorded else dispatch_deadline
+    coordination_deadline = (_now() + timedelta(seconds=30)
+                             if dispatch_deadline <= _now() else dispatch_deadline)
     with coordinator.locked(mandate_id, deadline_at=coordination_deadline) as mandate_ids:
         record, _ = policy_context.confirmation(store, mandate_id)
         if record["hash"] != policy.hash or record["version"] != policy.version:
@@ -221,7 +221,7 @@ def handle(
                 store, event, deadline_at=dispatch_deadline - timedelta(seconds=2),
             )
             effective_event.deadline_at = dispatch_deadline
-            before = engine_state.load(mandate_id)
+            before = state.model_copy(deep=True, update={"customer_approvals": []})
             t0 = time.monotonic()
             facts = extract_with_budget(effective_event, effective_policy, pool)
             extract_ms = int((time.monotonic() - t0) * 1000)

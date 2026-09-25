@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Iterator
@@ -11,7 +12,7 @@ from leash.policy.store import DraftStore
 
 from . import records
 from .intents import Intent, MutationJournal, UnresolvedMutation
-from .policy_context import confirmation
+from .policy_context import confirmation, confirmation_record
 
 if TYPE_CHECKING:
     from .stepups import StepUpBook
@@ -25,18 +26,25 @@ class Coordinator:
 
     @contextmanager
     def locked(self, mandate_id: str, *, deadline_at: datetime) -> Iterator[list[str]]:
-        record, mandate_ids = confirmation(self.store, mandate_id)
-        with records.mandate_locks(mandate_ids, deadline_at=deadline_at):
-            current, current_ids = confirmation(self.store, mandate_id)
-            if current != record or current_ids != mandate_ids:
-                raise UnresolvedMutation(f"{mandate_id}: customer confirmation set changed while acquiring locks")
-            for owned_id in mandate_ids:
-                for intent in self.journal.pending(owned_id):
-                    accepted = self.journal.reconcile(intent, deadline_at=deadline_at)
-                    self.record(accepted)
-                records.check_consistent(owned_id)
-            self.journal.require_clear(mandate_ids)
-            yield mandate_ids
+        if deadline_at.utcoffset() is None:
+            raise ValueError("coordination deadline must have a timezone")
+        stop_at = time.monotonic() + (deadline_at - datetime.now(UTC)).total_seconds()
+        owner_record = confirmation_record(self.store, mandate_id)
+        with records.customer_lock(owner_record["confirmed_by"], stop_at=stop_at):
+            record, mandate_ids = confirmation(self.store, mandate_id)
+            if record != owner_record:
+                raise UnresolvedMutation(f"{mandate_id}: confirmation owner changed while acquiring the customer guard")
+            with records.mandate_locks(mandate_ids, deadline_at=deadline_at, stop_at=stop_at):
+                current, current_ids = confirmation(self.store, mandate_id)
+                if current != record or current_ids != mandate_ids:
+                    raise UnresolvedMutation(f"{mandate_id}: customer confirmation set changed while acquiring locks")
+                for owned_id in mandate_ids:
+                    for intent in self.journal.pending(owned_id):
+                        accepted = self.journal.reconcile(intent, deadline_at=deadline_at)
+                        self.record(accepted)
+                    records.check_consistent(owned_id)
+                self.journal.require_clear(mandate_ids)
+                yield mandate_ids
 
     def record(self, intent: Intent) -> Decision | None:
         """Finish an accepted intent. Caller holds the complete owned mandate set."""
@@ -101,7 +109,7 @@ class Coordinator:
         current = edits_store.read(intent.mandate_id)
         if current != before and current != after:
             raise UnresolvedMutation(f"{intent.intent_id}: mandate edits changed outside the intent")
-        _effective(intent.accepted, intent.context["draft"], after)
+        _effective(intent.accepted, intent.context["draft"], after, intent.context["confirmation"])
         if current == before:
             edits_store.write(intent.mandate_id, after)
         records.sync_directory(edits_store.root)

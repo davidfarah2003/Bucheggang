@@ -46,7 +46,7 @@ Pending redelivery has a separate reconciliation budget from its expired automat
 
 On a customer approve, the pending marker is removed from an in-memory checking copy so evaluate cannot return its old idempotent step_up result. Current permissions and customer-wide spend are evaluated again. A current decline is sent through resolve instead of approving. Customer declines are preserved. The sweeper also checks withdrawn permissions while a step-up is pending, and reserves its final three local-window seconds for timeout resolution.
 
-These paths import successfully. The positive-owner remote paths have not run because live simulator calls remain paused. Global-policy PR #54 changes the private _effective helper to accept the confirmation record as a fourth argument; this branch still uses main's three-argument helper and needs that compatibility update after #54 merges.
+These paths import successfully. The positive-owner remote paths have not run because live simulator calls remain paused. After #54 merged, the runner adopted _effective(remote, draft, edits, record). Mandate response metadata is preserved, and a tighten patch includes the full current effective rule set before appending its new restrictions, so confirmed global rules cannot be dropped from the payload.
 
 ## Further actual execution
 
@@ -63,3 +63,13 @@ The new journal dispatch/reconciliation calls, current-policy refresh, genuine c
 Concurrent policy confirmation can also supersede a mandate. Its write path is owned by the policy lane and is not covered by this branch's tighten/revoke coordination yet. That ordering needs agreement before claiming every app permission mutation is serialized. Model startup, full absolute-budget composition and the classifier release holds remain separate gates.
 
 Live verification remains paused for challenge-key rotation. No test suite or linter was run.
+
+## Customer guard and global-policy integration
+
+The coordinator now takes a customer-scoped flock before enumerating owned mandates, then takes their sorted locks and rechecks the set. The initial immutable confirmation lookup only identifies the customer. The guard remains held through accepted writes and recovery. Lock filenames use SHA-256 of the UTF-8 customer value, so valid Unicode names fit the filesystem. The policy confirmation lane will use this helper after the runner change merges.
+
+A separate process held the customer guard with an empty owned-mandate set. A different customer acquired its own guard immediately; the same customer timed out after0.104s under a0.100s allowance. After the child exited0, an80-character Unicode customer acquired a guard and empty mandate set successfully. Every generated lock filename was69 bytes and mode0600. No confirmation was created.
+
+Actual global-policy HTTP calls on the rebased app passed anonymous401, first GET version0, PUT200/version1, exact read-back, stale409 and duplicate-control422. A second logged-in customer saw empty version0. No simulator settings were loaded.
+
+That exercise also found an upstream defect: an80-character Unicode username was accepted by login, but GET /global-policy returned500. Its quoted filename was725 bytes and GlobalPolicyStore.read raised macOS OSError errno63. The policy owner has the finding; this branch does not change global-policy storage. The healthy preferences were written only in an isolated temporary store, and that store and the owned server were removed.

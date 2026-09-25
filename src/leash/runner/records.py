@@ -20,6 +20,7 @@ malformed file raises.
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import math
 import os
@@ -51,12 +52,11 @@ def _safe(name: str, what: str) -> str:
 
 
 @contextmanager
-def mandate_lock(mandate_id: str, *, stop_at: float | None = None) -> Iterator[None]:
-    """Exclusive mandate lock, optionally bounded by a monotonic deadline."""
+def _file_lock(path: Path, *, stop_at: float | None = None) -> Iterator[None]:
     if stop_at is not None and not math.isfinite(stop_at):
-        raise ValueError("mandate lock deadline must be finite")
-    LOCKS_DIR.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(LOCKS_DIR / f"{_safe(mandate_id, 'mandate_id')}.lock", os.O_RDWR | os.O_CREAT, 0o600)
+        raise ValueError("lock deadline must be finite")
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
         if stop_at is None:
             fcntl.flock(descriptor, fcntl.LOCK_EX)
@@ -64,7 +64,7 @@ def mandate_lock(mandate_id: str, *, stop_at: float | None = None) -> Iterator[N
             while True:
                 remaining = stop_at - time.monotonic()
                 if remaining <= 0:
-                    raise TimeoutError(f"{mandate_id}: coordination deadline expired before acquiring the mandate lock")
+                    raise TimeoutError(f"{path.name}: coordination deadline expired before acquiring the lock")
                 try:
                     fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     break
@@ -77,13 +77,33 @@ def mandate_lock(mandate_id: str, *, stop_at: float | None = None) -> Iterator[N
 
 
 @contextmanager
-def mandate_locks(mandate_ids: list[str], *, deadline_at: datetime) -> Iterator[None]:
-    """Hold the owned mandate set in one stable order under a shared time budget."""
-    if not mandate_ids:
-        raise ValueError("coordination requires at least one owned mandate")
+def customer_lock(customer: str, *, stop_at: float | None = None) -> Iterator[None]:
+    """Guard owned-set enumeration, including a customer's first confirmation.
+
+    Acquire this before any mandate lock. The digest keeps Unicode customer
+    names within filesystem limits without placing raw names in lock paths.
+    """
+    if not isinstance(customer, str) or not customer:
+        raise ValueError("customer lock requires an authenticated customer identity")
+    name = hashlib.sha256(customer.encode("utf-8")).hexdigest()
+    with _file_lock(LOCKS_DIR / "customer" / f"{name}.lock", stop_at=stop_at):
+        yield
+
+
+@contextmanager
+def mandate_lock(mandate_id: str, *, stop_at: float | None = None) -> Iterator[None]:
+    """Exclusive mandate lock. Mutation callers already hold their customer guard."""
+    with _file_lock(LOCKS_DIR / f"{_safe(mandate_id, 'mandate_id')}.lock", stop_at=stop_at):
+        yield
+
+
+@contextmanager
+def mandate_locks(mandate_ids: list[str], *, deadline_at: datetime, stop_at: float | None = None) -> Iterator[None]:
+    """Nest the sorted owned set inside customer_lock. The first set may be empty."""
     if deadline_at.utcoffset() is None:
         raise ValueError("coordination deadline must have a timezone")
-    stop_at = time.monotonic() + (deadline_at - datetime.now(UTC)).total_seconds()
+    wall_stop = time.monotonic() + (deadline_at - datetime.now(UTC)).total_seconds()
+    stop_at = wall_stop if stop_at is None else min(stop_at, wall_stop)
     with ExitStack() as stack:
         for mandate_id in sorted(set(mandate_ids)):
             stack.enter_context(mandate_lock(mandate_id, stop_at=stop_at))

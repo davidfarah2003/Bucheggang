@@ -15,7 +15,7 @@ class PolicyContextError(RuntimeError):
     """The stored confirmation or effective permissions cannot be established."""
 
 
-def confirmation(store: DraftStore, mandate_id: str) -> tuple[dict, list[str]]:
+def confirmation_record(store: DraftStore, mandate_id: str) -> dict:
     matches = []
     for folder in store.root.iterdir():
         if folder.is_dir() and (folder / "confirmation.json").is_file():
@@ -25,6 +25,13 @@ def confirmation(store: DraftStore, mandate_id: str) -> tuple[dict, list[str]]:
     if len(matches) != 1:
         raise PolicyContextError(f"{mandate_id}: expected one stored customer confirmation, found {len(matches)}")
     record = matches[0]
+    if not isinstance(record.get("confirmed_by"), str) or not record["confirmed_by"]:
+        raise PolicyContextError(f"{mandate_id}: confirmation lacks its customer identity")
+    return record
+
+
+def confirmation(store: DraftStore, mandate_id: str) -> tuple[dict, list[str]]:
+    record = confirmation_record(store, mandate_id)
     owned = owned_confirmations(store, record["confirmed_by"])
     if mandate_id not in owned:
         raise PolicyContextError(f"{mandate_id}: confirmation owner does not own the mandate")
@@ -53,7 +60,7 @@ def refresh(
             or remote.get("instruction") != draft["instruction"]):
         raise PolicyContextError(f"{mandate_id}: simulator mandate differs from its confirmation")
     edits = MandateEdits(store).read(mandate_id)
-    effective = _effective(remote, draft, edits)
+    effective = _effective(remote, draft, edits, record)
     effective_draft = {
         **draft,
         "rules": effective["rules"],
