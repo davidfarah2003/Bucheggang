@@ -45,6 +45,19 @@ Out:
 
 - No model at purchase time: the shopping agent fills the `PurchaseFacts` form and the backend checks it deterministically. Owner ruling on the spine, 2026-09-24 20:14. This replaces the Apertus pass and its latency question.
 
+## Open gaps
+
+Observed with `extract_item` and `extract_event` on 2026-09-25. None of these changes before noon without an agreement on `team.zurichbuchegg.contracts`.
+
+- Paraphrased product names do not match. `matches_request` compares normalized names exactly, so `Weekly grocery basket` against `weekly groceries` and `Hotel room` against `hotel night` are both false. A looser match needs a contract rule for what counts as the same product.
+- No cancellation fact. "Free cancellation until 48 hours before arrival" on a hotel line produces no field. Travel purchases need a cancellation-window field in `PurchaseFacts`.
+- "Non-refundable" is not read as `return_days: 0`. Refund and return are different terms. Mapping one to the other is a contract decision.
+- Conflicts and unparsed claims look the same. Conflicting return terms, or two sizes, give unknown with `sources.<field> = merchant_text`. That is also what a claim seen but not parsed gives. Telling the two apart needs a closed-enum marker in the contract.
+- Negation is not handled. "Not a subscription, one-off payment" gives `is_subscription: true` from the word "subscription".
+- The catalogue silently overrides the event. When a catalogue entry exists, its name and category replace the event's, and no mismatch is flagged. The live runner (`src/leash/runner/loop.py`, `extract_with_budget`) passes no catalogue, so live `product_type` is always `merchant_text`.
+- Quarantine drops structured facts. The engine's `_quarantine` (`src/leash/engine/evaluate.py`) clears every fact on a line with `contains_instructions`, including catalogue-sourced ones. Keeping them is an engine change.
+- The subscription check declines wording in any category. Since PR #59, recurring wording in any category sets `is_subscription`. The engine's global subscription check then declines it whatever the policy says. The public 45 are unchanged.
+
 ## Log
 
 (one line per finished task: date time, who, what, how it was tried, sha)
