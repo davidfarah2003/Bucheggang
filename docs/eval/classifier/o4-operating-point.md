@@ -1,6 +1,6 @@
 # O4 operating point
 
-Status: manager-selected O4 cut. Runtime activation and release clearance remain unverified.
+Status: selected O4 cut, merged to main on 2026-09-25 as a SHA-pinned overlay (`model-o4-1pct.json`). The demo scripts keep the explicit 0.498 threshold on the plain manifest; the overlay is loaded by naming it in `LEASH_MODEL_MANIFEST`. Evidence for the merged code is in the plan 02 Log entry of 2026-09-25 13:25.
 
 David's direct response on 2026-09-25 approved enabling behavioural escalation and left the numeric choice to this feature manager. I select the most conservative of the four frozen June proposals: calibrated score at least `0.8950478918645203`. The fitting and calibration periods are unchanged. This is a review signal for a customer step-up, never an automatic decline, approval or fraud finding. Deterministic failures remain authoritative.
 
