@@ -553,10 +553,17 @@ pre { max-height: 260px; overflow: auto; margin: 0 0 15px; padding: 14px; border
   .activity-card-top { gap: 7px; }
   .activity-card-top strong, .activity-card-top b { font-size: 14px; }
 }
+.identity-card p.expiry { color: var(--amber); }
+
 @media (max-height: 740px) {
   .shop-view { padding-top: 12px; padding-bottom: 110px; }
   .shop-intro { padding-top: 0; }
   .orbit { height: 110px; margin: 8px auto; }
+}
+@media (max-height: 700px) {
+  .app-shell .identity-view { gap: 14px; padding-top: 20px; padding-bottom: 105px; }
+  .app-shell .identity-intro { gap: 6px; }
+  .app-shell .auth-fields { gap: 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }

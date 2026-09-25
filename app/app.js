@@ -3,6 +3,7 @@
 const MANDATE_KEY = "viseca.demo.mandateId";
 const MANDATE_OWNER_KEY = "viseca.demo.mandateOwner";
 class DraftLinkError extends Error {}
+class PairLinkError extends Error {}
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const screen = document.querySelector("#screen");
 const overlayRoot = document.querySelector("#overlay-root");
@@ -17,6 +18,8 @@ const examples = [
 ];
 const state = {
   user: null,
+  accountId: null,
+  authMode: "login",
   route: "shop",
   walletTab: "needs",
   activityFilter: "all",
@@ -25,6 +28,9 @@ const state = {
   answers: {},
   mandate: null,
   ownedMandates: [],
+  agents: [],
+  pairing: null,
+  pairingCode: null,
   pending: [],
   history: [],
   details: new Map(),
@@ -35,6 +41,7 @@ const state = {
   pendingSerial: 0,
   detailSerial: 0,
   timer: null,
+  pairTimer: null,
   exampleTimer: null,
   overlayTrigger: null,
   pendingTabFocus: null,
@@ -43,6 +50,48 @@ const state = {
 function text(value, label) {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is missing.`);
   return value;
+}
+
+function validTime(value, label) {
+  const time = new Date(text(value, label)).getTime();
+  if (!Number.isFinite(time)) throw new Error(`${label} is invalid.`);
+  return time;
+}
+
+function validateSession(payload) {
+  const accountId = text(payload?.account_id, "Account ID");
+  if (!/^[0-9a-f]{32}$/.test(accountId)) throw new Error("The account ID is invalid.");
+  return { accountId, username: text(payload.username, "Session username") };
+}
+
+function validateScopes(scopes) {
+  if (!Array.isArray(scopes) || scopes.length !== 2 || new Set(scopes).size !== 2 || !scopes.includes("policy:propose") || !scopes.includes("policy:read")) throw new Error("The agent requests unsupported access.");
+  return scopes;
+}
+
+function validatePairing(payload) {
+  if (!payload || Object.hasOwn(payload, "agent_token")) throw new Error("The agent connection response is invalid.");
+  text(payload.agent_label, "Agent name");
+  validateScopes(payload.scopes);
+  validTime(payload.expires_at, "Connection expiry");
+  return payload;
+}
+
+function validateAgentList(payload) {
+  if (!Array.isArray(payload)) throw new Error("The Wallet did not return a list of connected agents.");
+  const seen = new Set();
+  return payload.map((agent) => {
+    if (!agent || Object.hasOwn(agent, "agent_token")) throw new Error("An agent record contains a credential or is incomplete.");
+    const id = text(agent.agent_id, "Agent ID");
+    if (seen.has(id)) throw new Error(`Agent ${id} appears twice.`);
+    seen.add(id);
+    text(agent.agent_label, "Agent name");
+    validateScopes(agent.scopes);
+    validTime(agent.created_at, "Agent connection time");
+    if (agent.last_used_at !== null) validTime(agent.last_used_at, "Agent last use");
+    if (agent.revoked_at !== null) validTime(agent.revoked_at, "Agent revocation time");
+    return agent;
+  });
 }
 
 function esc(value) {
@@ -105,15 +154,38 @@ function clearDraftLink() {
   document.querySelector("#wallet-indicator").hidden = true;
 }
 
+function hasPairLink() {
+  return new URLSearchParams(window.location.search).has("pair");
+}
+
+function pairingCode() {
+  const code = new URLSearchParams(window.location.search).get("pair");
+  if (code === "") throw new PairLinkError("The agent connection link has an empty pairing code.");
+  return text(code, "Agent connection link");
+}
+
+function clearPairLink() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("pair");
+  window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+}
+
+function requestedRoute(hash = window.location.hash.slice(1)) {
+  if (hasPairLink()) return "pair";
+  if (hasDraftLink()) return "review";
+  return hash || "shop";
+}
+
 function mandateId() {
   const owner = window.sessionStorage.getItem(MANDATE_OWNER_KEY);
-  if (owner && owner !== state.user) return null;
+  if (owner && owner !== state.accountId) return null;
   return window.sessionStorage.getItem(MANDATE_KEY);
 }
 
 function validateDraft(draft) {
   if (!draft || typeof draft !== "object" || !Array.isArray(draft.rules) || !Array.isArray(draft.open_questions) || !Array.isArray(draft.examples)) throw new Error("The saved spending plan is incomplete.");
   text(draft.draft_id, "Draft ID");
+  if (text(draft.created_for, "Draft owner") !== state.accountId) throw new Error("The spending request belongs to another account.");
   text(draft.hash, "Draft hash");
   text(draft.instruction, "Original request");
   if (!Number.isInteger(draft.version)) throw new Error("The saved spending plan has no valid version.");
@@ -135,7 +207,7 @@ function validateDraftList(items) {
     if (!Number.isInteger(item.version) || !Number.isInteger(item.open_questions) || item.open_questions < 0) throw new Error("A spending request has invalid counts or version.");
     text(item.hash, "Spending request hash");
     text(item.instruction, "Spending request");
-    if (!["confirming", "confirmed", "rejected"].includes(item.state) || !["ask", "decline", "approve"].includes(item.uncertainty_policy)) throw new Error("A spending request has an unknown state.");
+    if (!["proposed", "confirming", "confirmed", "rejected"].includes(item.state) || !["ask", "decline", "approve"].includes(item.uncertainty_policy)) throw new Error("A spending request has an unknown state.");
     if (!Array.isArray(item.plain_english)) throw new Error("A spending request has no rule summaries.");
     item.plain_english.forEach((rule) => text(rule, "Rule summary"));
     if (!Number.isFinite(new Date(text(item.created_at, "Request time")).getTime())) throw new Error("A spending request has an invalid time.");
@@ -165,7 +237,7 @@ function validateMandateList(items) {
 }
 
 function validateGlobalPolicy(payload) {
-  if (!payload || payload.customer !== state.user || !Number.isInteger(payload.version) || payload.version < 0 || !Array.isArray(payload.rules)) throw new Error("The account-wide rule record is incomplete or belongs to another customer.");
+  if (!payload || payload.customer !== state.accountId || !Number.isInteger(payload.version) || payload.version < 0 || !Array.isArray(payload.rules)) throw new Error("The account-wide rule record is incomplete or belongs to another customer.");
   text(payload.hash, "Account-wide rule hash");
   payload.rules.forEach((rule) => { text(rule.field, "Account-wide rule field"); text(rule.plain_english, "Account-wide rule description"); });
   if (payload.updated_at !== null && !Number.isFinite(new Date(text(payload.updated_at, "Account-wide rule update time")).getTime())) throw new Error("The account-wide rule update time is invalid.");
@@ -183,7 +255,7 @@ function validateMandate(payload) {
   validateDraft(draft);
   if (!Array.isArray(effective_policy.rules) || !Array.isArray(usage.approvals) || usage.mandate_id !== mandate.mandate_id) throw new Error("The permission and its purchase state do not match.");
   effective_policy.rules.forEach((rule) => { text(rule.field, "Current rule field"); text(rule.plain_english, "Current rule description"); });
-  window.sessionStorage.setItem(MANDATE_OWNER_KEY, text(state.user, "Current customer"));
+  window.sessionStorage.setItem(MANDATE_OWNER_KEY, text(state.accountId, "Current account ID"));
   return payload;
 }
 
@@ -215,22 +287,27 @@ function normalRoute(route) {
 
 function navigate(route, { keepScroll = false } = {}) {
   route = normalRoute(route);
-  if (!["shop", "wallet", "activity", "review"].includes(route)) {
+  if (!["shop", "wallet", "activity", "review", "pair", "agents"].includes(route)) {
     setScreen(errorPanel("This page is unavailable", new Error(`Unknown page: ${route}`)));
     return;
   }
+  if (state.route === "pair" && route !== "pair") clearPairLink();
   state.route = route;
   state.serial += 1;
   state.pendingSerial += 1;
   state.detailSerial += 1;
   window.clearTimeout(state.timer);
+  window.clearInterval(state.pairTimer);
   window.clearTimeout(state.exampleTimer);
   state.timer = null;
+  state.pairTimer = null;
   state.exampleTimer = null;
+  state.pairing = null;
+  state.pairingCode = null;
   closeOverlay();
   if (window.location.hash !== `#${route}`) window.history.replaceState(null, "", `#${route}`);
   document.querySelectorAll(".nav-button").forEach((button) => {
-    const selected = button.dataset.route === (route === "review" ? "wallet" : route);
+    const selected = button.dataset.route === (["review", "pair", "agents"].includes(route) ? "wallet" : route);
     button.classList.toggle("is-active", selected);
     if (selected) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
@@ -243,12 +320,19 @@ function sessionExpired(error) {
   state.serial += 1;
   state.pendingSerial += 1;
   window.clearTimeout(state.timer);
+  window.clearInterval(state.pairTimer);
   window.clearTimeout(state.exampleTimer);
   state.detailSerial += 1;
   state.timer = null;
+  state.pairTimer = null;
   state.user = null;
+  state.accountId = null;
+  state.authMode = "login";
   state.mandate = null;
   state.ownedMandates = [];
+  state.agents = [];
+  state.pairing = null;
+  state.pairingCode = null;
   state.pending = [];
   state.draft = null;
   state.ownedDrafts = [];
@@ -272,25 +356,71 @@ async function render() {
     if (state.route === "shop") await renderShop(serial);
     else if (state.route === "wallet") await renderWallet(serial);
     else if (state.route === "review") await renderReview(serial);
+    else if (state.route === "pair") await renderPair(serial);
+    else if (state.route === "agents") await renderAgents(serial);
     else await renderActivity(serial);
   } catch (error) {
     if (serial !== state.serial) return;
     if (error.status === 401) { sessionExpired(error); return; }
-    const linkAction = error instanceof DraftLinkError ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this link</button>` : "";
-    setScreen(`<div class="page-title"><h1>${esc(state.route === "review" ? "Review spending permission" : state.route)}</h1></div>${errorPanel("This screen could not be loaded", error)}${linkAction}`);
+    const linkAction = state.route === "pair" && (error instanceof PairLinkError || error.status === 404) ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Continue without this agent link</button>` : error instanceof DraftLinkError ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this link</button>` : "";
+    const title = state.route === "review" ? "Review spending permission" : state.route === "pair" ? "Connect a shopping agent" : state.route;
+    setScreen(`<div class="page-title"><h1>${esc(title)}</h1></div>${errorPanel("This screen could not be loaded", error)}${linkAction}`);
   }
 }
 
 function renderLogin() {
-  setScreen(`<section class="login-view"><span class="section-kicker">LOCAL DEMO ACCOUNT</span><h1>Welcome to your Wallet.</h1><p>Sign in to review spending permissions sent by your shopping agent. This demo uses a local username, not a Viseca account.</p><label for="username">Username</label><input id="username" maxlength="80" autocomplete="username" placeholder="Your name" /><button class="primary-button" type="button" data-action="login">Continue</button></section>`);
+  const registering = state.authMode === "register";
+  const context = hasPairLink() ? `${registering ? "Create an account" : "Sign in"} to review an agent connection request.` : `${registering ? "Create an account" : "Sign in"} to review spending permissions sent by your shopping agent.`;
+  setScreen(`<section class="identity-view"><div class="identity-intro"><span class="section-kicker">LOCAL DEMO ACCOUNT</span><h1>${registering ? "Create your account" : "Welcome to your Wallet."}</h1><p>${context} This uses a local account, not a Viseca banking login.</p></div><div class="auth-fields"><label for="username">Username</label><input id="username" maxlength="80" autocomplete="username" placeholder="Your username" /><label for="password">Password</label><input id="password" type="password" minlength="8" maxlength="256" autocomplete="${registering ? "new-password" : "current-password"}" /><p class="auth-error" role="alert" hidden></p><button class="primary-button" type="button" data-action="${registering ? "register" : "login"}">${registering ? "Create account" : "Sign in"}</button></div><div class="auth-switch"><span>${registering ? "Already have an account?" : "New here?"}</span><button type="button" class="text-button" data-action="auth-mode" data-mode="${registering ? "login" : "register"}">${registering ? "Sign in" : "Create an account"}</button></div></section>`);
+}
+
+function setSession(payload) {
+  const { accountId, username } = validateSession(payload);
+  const previousOwner = window.sessionStorage.getItem(MANDATE_OWNER_KEY);
+  if (previousOwner && previousOwner !== accountId) {
+    window.sessionStorage.removeItem(MANDATE_KEY);
+    window.sessionStorage.removeItem(MANDATE_OWNER_KEY);
+  }
+  state.accountId = accountId;
+  state.user = username;
+}
+
+async function renderPair(serial) {
+  const code = pairingCode();
+  loading("Checking agent connection…");
+  const pairing = validatePairing(await walletApi.pairing(code));
+  if (serial !== state.serial) return;
+  state.pairing = pairing;
+  state.pairingCode = code;
+  setScreen(`<section class="identity-view"><button type="button" class="back-button" data-route="shop">‹ Shop</button><div class="identity-intro"><span class="section-kicker">AGENT CONNECTION</span><h1>Connect this agent?</h1><p>Approving pairs this agent to your local account, ${esc(state.user)}. Only you can approve access in the Wallet.</p></div><section class="identity-card"><h2>${esc(pairing.agent_label)}</h2><p>This agent will be able to:</p><ul class="scope-list"><li>Propose spending plans for you to review (policy:propose)</li><li>Read the status and summary of its plans (policy:read)</li></ul><p>It cannot authorize a plan, answer a purchase review or change your rules.</p><p class="expiry"><span id="pair-remaining"></span><time datetime="${esc(pairing.expires_at)}">${esc(new Date(pairing.expires_at).toLocaleString("en-CH"))}</time></p><div class="agent-actions"><button type="button" class="outline-button" data-action="decline-pair">Not now</button><button type="button" class="primary-button" data-action="approve-pair">Approve connection</button></div></section></section>`);
+  const expiry = validTime(pairing.expires_at, "Connection expiry");
+  function updateExpiry() {
+    if (serial !== state.serial) return;
+    const remaining = Math.max(0, Math.ceil((expiry - Date.now()) / 1000));
+    const label = document.querySelector("#pair-remaining");
+    const approve = document.querySelector('[data-action="approve-pair"]');
+    if (!label || !approve) return;
+    label.textContent = remaining ? `Expires in ${Math.floor(remaining / 60)}m ${String(remaining % 60).padStart(2, "0")}s · ` : "This connection link has expired. ";
+    approve.disabled = remaining === 0;
+    if (!remaining) window.clearInterval(state.pairTimer);
+  }
+  updateExpiry();
+  if (expiry > Date.now()) state.pairTimer = window.setInterval(updateExpiry, 1000);
+}
+
+async function renderAgents(serial) {
+  loading("Loading connected agents…");
+  const agents = validateAgentList(await walletApi.agents());
+  if (serial !== state.serial) return;
+  state.agents = agents;
+  const cards = agents.map((agent) => `<article class="identity-card agent-card"><span class="section-kicker">${agent.revoked_at ? "REVOKED" : "CONNECTED"}</span><h2>${esc(agent.agent_label)}</h2><dl class="agent-meta"><div><dt>Access</dt><dd>${esc(agent.scopes.join(" · "))}</dd></div><div><dt>Connected</dt><dd>${esc(new Date(agent.created_at).toLocaleString("en-CH"))}</dd></div><div><dt>Last used</dt><dd>${agent.last_used_at === null ? "Never" : esc(new Date(agent.last_used_at).toLocaleString("en-CH"))}</dd></div></dl>${agent.revoked_at ? `<p>Access revoked ${esc(new Date(agent.revoked_at).toLocaleString("en-CH"))}.</p>` : `<div class="agent-actions"><button type="button" class="outline-button" data-action="open-agent-revoke" data-id="${esc(agent.agent_id)}">Revoke access</button></div>`}</article>`).join("");
+  setScreen(`<section class="identity-view"><button type="button" class="back-button" data-route="wallet">‹ Wallet</button><div class="identity-intro"><span class="section-kicker">YOUR ACCOUNT</span><h1>Connected agents</h1><p>Review which shopping agents can propose plans. Revoking an agent stops future tool calls; it does not change your confirmed permissions.</p></div><div class="agents-list">${cards || `<section class="identity-card"><h2>No connected agents</h2><p>Ask an agent to begin pairing, then open its Wallet link to approve access. An approved agent appears here after it finishes pairing.</p></section>`}</div><div class="agent-actions"><button type="button" class="text-button" data-action="refresh-agents">Refresh list</button></div></section>`);
 }
 
 async function initialize() {
   try {
-    const session = await walletApi.session();
-    state.user = text(session.username, "Session username");
-    const hash = window.location.hash.slice(1);
-    navigate(hash || (hasDraftLink() ? "review" : "shop"));
+    setSession(await walletApi.session());
+    navigate(requestedRoute());
   } catch (error) {
     if (error.status === 401) { renderLogin(); return; }
     setScreen(errorPanel("Your session could not be checked", error));
@@ -358,13 +488,10 @@ function walletTabs() {
   ].map(([id, label]) => `<button type="button" role="tab" aria-selected="${state.walletTab === id}" tabindex="${state.walletTab === id ? 0 : -1}" class="${state.walletTab === id ? "selected" : ""}" data-action="wallet-tab" data-tab="${id}">${label}</button>`).join("")}</div>`;
 }
 
-function linkedDraftNeedsDecision() {
-  return Boolean(state.draft && !state.ownedDrafts.some((item) => item.draft_id === state.draft.draft_id));
-}
-
 function ownedRequestCard(item) {
-  const label = item.state === "confirming" ? "Confirmation in progress" : item.state === "confirmed" ? "Confirmed" : "Rejected";
+  const label = item.state === "proposed" ? "Ready for review" : item.state === "confirming" ? "Confirmation in progress" : item.state === "confirmed" ? "Confirmed" : "Rejected";
   const body = `<span class="section-kicker">${esc(label.toUpperCase())}</span><strong>${esc(item.instruction)}</strong>${item.plain_english.length ? `<small>${esc(item.plain_english[0])}</small>` : ""}`;
+  if (item.state === "proposed") return `<button type="button" class="request-record request-button" data-action="open-draft" data-id="${esc(item.draft_id)}">${body}<span>Review spending plan <span aria-hidden="true">→</span></span></button>`;
   return item.state === "confirmed"
     ? `<button type="button" class="request-record request-button" data-action="select-mandate" data-id="${esc(item.mandate_id)}" data-tab="active">${body}<span>View permission <span aria-hidden="true">→</span></span></button>`
     : `<article class="request-record">${body}</article>`;
@@ -412,16 +539,16 @@ async function needsContent(serial) {
   ]);
   if (serial !== state.serial) return "";
   if (!Array.isArray(pending)) throw new Error("The Wallet did not return a list of pending purchases.");
+  if (draft && !ownedDrafts.some((item) => item.draft_id === draft.draft_id)) throw new Error("The linked spending request is missing from your account's list.");
   state.pending = pending;
   state.draft = draft;
   state.ownedDrafts = ownedDrafts;
-  const count = pending.length + (linkedDraftNeedsDecision() ? 1 : 0);
+  const count = pending.length + ownedDrafts.filter((item) => item.state === "proposed").length;
   document.querySelector("#wallet-indicator").hidden = !count;
   return `<div class="wallet-section"><h2 id="needs-heading">${esc(needsHeading(count))}</h2>
-    ${linkedDraftNeedsDecision() ? `<button type="button" class="need-card" data-route="review"><span class="section-kicker">SPENDING REQUEST</span><strong>Review shopping plan</strong><span>${esc(productName(draft))}${purchaseCap(draft.rules) ? ` · ${esc(money(purchaseCap(draft.rules).amount))}` : ""}</span><b aria-hidden="true">›</b></button>` : ""}
     <div id="pending-list">${pending.map(pendingCard).join("")}</div>
-    ${count ? "" : `<p class="calm-copy">${ownedDrafts.some((item) => item.state === "confirming") ? "Your confirmation is being checked. It will appear as confirmed when the backend accepts it." : "Spending requests and purchases that need a decision will appear here."}</p>`}
-    ${ownedDrafts.length ? `<section class="request-history"><h3>Recent spending requests</h3>${ownedDrafts.map(ownedRequestCard).join("")}</section>` : ""}</div>`;
+    <p class="calm-copy" id="needs-empty" ${count ? "hidden" : ""}>${ownedDrafts.some((item) => item.state === "confirming") ? "Your confirmation is being checked. It will appear as confirmed when the backend accepts it." : "Spending requests and purchases that need a decision will appear here."}</p>
+    <div id="request-history">${ownedDrafts.length ? `<section class="request-history"><h3>Recent spending requests</h3>${ownedDrafts.map(ownedRequestCard).join("")}</section>` : ""}</div></div>`;
 }
 
 function pendingTimeLabel(expiresAt) {
@@ -453,7 +580,7 @@ async function refreshPending() {
   const route = state.serial;
   const id = mandateId();
   try {
-    const pending = await walletApi.pending();
+    const [pending, ownedDrafts] = await Promise.all([walletApi.pending(), walletApi.drafts().then(validateDraftList)]);
     if (!Array.isArray(pending)) throw new Error("Pending purchases must be a list.");
     if (request !== state.pendingSerial || route !== state.serial || id !== mandateId() || !container.isConnected) return;
     const markup = pending.map(pendingCard).join("");
@@ -482,6 +609,24 @@ async function refreshPending() {
       }
     }
     state.pending = pending;
+    const requests = document.querySelector("#request-history");
+    if (!requests) throw new Error("The spending request list is missing from the Wallet.");
+    const draftsChanged = ownedDrafts.length !== state.ownedDrafts.length || ownedDrafts.some((item, index) =>
+      item.draft_id !== state.ownedDrafts[index].draft_id || item.version !== state.ownedDrafts[index].version || item.hash !== state.ownedDrafts[index].hash || item.state !== state.ownedDrafts[index].state);
+    if (draftsChanged) {
+      const focusedId = requests.contains(document.activeElement) ? document.activeElement.closest('[data-action="open-draft"]')?.dataset.id : null;
+      requests.innerHTML = ownedDrafts.length ? `<section class="request-history"><h3>Recent spending requests</h3>${ownedDrafts.map(ownedRequestCard).join("")}</section>` : "";
+      if (focusedId) {
+        const card = [...requests.querySelectorAll('[data-action="open-draft"]')].find((item) => item.dataset.id === focusedId);
+        if (card) card.focus();
+        else {
+          const heading = document.querySelector("#needs-heading");
+          heading.tabIndex = -1;
+          heading.focus();
+        }
+      }
+    }
+    state.ownedDrafts = ownedDrafts;
     const openAnswer = overlayRoot.querySelector('[data-action="resolve"]');
     if (openAnswer) {
       const current = pending.find((item) => item.authorization_id === openAnswer.dataset.id);
@@ -491,10 +636,14 @@ async function refreshPending() {
         if (deadline) deadline.textContent = "This decision window has closed. Refresh Wallet for the final outcome.";
       }
     }
-    const count = pending.length + (linkedDraftNeedsDecision() ? 1 : 0);
+    const count = pending.length + ownedDrafts.filter((item) => item.state === "proposed").length;
     const heading = document.querySelector("#needs-heading");
     const title = needsHeading(count);
     if (heading.textContent !== title) heading.textContent = title;
+    const empty = document.querySelector("#needs-empty");
+    if (!empty) throw new Error("The Wallet inbox summary is missing.");
+    empty.hidden = Boolean(count);
+    empty.textContent = ownedDrafts.some((item) => item.state === "confirming") ? "Your confirmation is being checked. It will appear as confirmed when the backend accepts it." : "Spending requests and purchases that need a decision will appear here.";
     document.querySelector("#wallet-indicator").hidden = !count;
     return true;
   } catch (error) {
@@ -557,7 +706,7 @@ function globalPolicyCard(policy, savedGlobal) {
   else if (savedGlobal.version < policy.version) notice = `This permission uses version ${savedGlobal.version}. Version ${policy.version} will apply to your next confirmed permission.`;
   else if (savedGlobal.version > policy.version) notice = `This permission was confirmed with version ${savedGlobal.version}, but the current account-wide record reports version ${policy.version}. Check the saved rules before another confirmation.`;
   else if (savedGlobal.hash !== policy.hash) notice = `This permission and the current account-wide record both report version ${policy.version}, but their rule hashes differ. Check the saved rules before another confirmation.`;
-  return `<section class="rule-group"><h3>Account-wide rules · version ${policy.version}</h3>${policy.rules.length ? policy.rules.map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("") : `<p>No account-wide rules are saved for this local customer.</p>`}<p>${notice ? `${esc(notice)} ` : ""}Account-wide editing is not available in this Wallet view. Spending caps shared across permissions are not active in this demo yet.</p></section>`;
+  return `<section class="rule-group"><h3>Account-wide rules · version ${policy.version}</h3>${policy.rules.length ? policy.rules.map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("") : `<p>No account-wide rules are saved for this local customer.</p>`}<p>${notice ? `${esc(notice)} ` : ""}Account-wide editing is not available in this Wallet view. Saved period limits count approved purchases across your confirmed permissions.</p></section>`;
 }
 
 async function rulesContent(serial) {
@@ -597,7 +746,8 @@ async function renderReview(serial) {
   state.draft = draft;
   state.ownedDrafts = ownedDrafts;
   const recorded = ownedDrafts.find((item) => item.draft_id === id);
-  if (recorded) {
+  if (!recorded || recorded.version !== draft.version || recorded.hash !== draft.hash) throw new Error("The spending request does not match your account's saved list.");
+  if (recorded.state !== "proposed") {
     const message = recorded.state === "confirmed" ? "This request was confirmed. Review its current permission in Wallet." : recorded.state === "rejected" ? "This request was rejected and cannot be authorized." : "Confirmation is in progress. The Wallet will show the result when the backend accepts it.";
     setScreen(`<section class="review-view"><button class="back-button" type="button" data-route="wallet">‹ Wallet</button><div class="page-title"><h1>Spending request ${esc(recorded.state)}</h1></div><p class="review-subtitle">${esc(message)}</p>${recorded.state === "confirmed" ? `<button class="outline-button" type="button" data-action="select-mandate" data-id="${esc(recorded.mandate_id)}" data-tab="active">View permission</button>` : ""}</section>`);
     return;
@@ -730,7 +880,7 @@ async function performConfirm() {
   const mandate = await walletApi.confirm(draft.draft_id, draft.version, draft.hash, answers);
   text(mandate?.mandate_id, "Confirmed permission ID");
   window.sessionStorage.setItem(MANDATE_KEY, mandate.mandate_id);
-  window.sessionStorage.setItem(MANDATE_OWNER_KEY, text(state.user, "Current customer"));
+  window.sessionStorage.setItem(MANDATE_OWNER_KEY, text(state.accountId, "Current account ID"));
   clearDraftLink();
   state.walletTab = "active";
   setScreen(`<section class="confirmed-state" role="status"><span aria-hidden="true">✓</span><h1>Agent authorized</h1><p>Your spending limits are active. Return to your shopping agent to continue.</p></section>`);
@@ -799,8 +949,28 @@ document.addEventListener("click", async (event) => {
     }
     if (action === "wallet-tab") { state.walletTab = button.dataset.tab; navigate("wallet", { keepScroll: true }); return; }
     if (action === "activity-filter") { state.activityFilter = button.dataset.filter; document.querySelector("#activity-list").innerHTML = activityRows(); document.querySelectorAll(".activity-tabs [role=tab]").forEach((tab) => { const active = tab === button; tab.classList.toggle("selected", active); tab.setAttribute("aria-selected", String(active)); tab.tabIndex = active ? 0 : -1; }); return; }
+    if (action === "auth-mode") { if (!["login", "register"].includes(button.dataset.mode)) throw new Error("Unknown account action."); state.authMode = button.dataset.mode; renderLogin(); return; }
+    if (action === "decline-pair") { clearPairLink(); navigate(requestedRoute("")); return; }
+    if (action === "refresh-agents") { void render(); return; }
+    if (action === "open-draft") {
+      const id = text(button.dataset.id, "Spending request ID");
+      if (!state.ownedDrafts.some((item) => item.draft_id === id && item.state === "proposed")) throw new Error("This spending request is no longer ready for review.");
+      const url = new URL(window.location.href);
+      url.searchParams.delete("draft");
+      url.searchParams.delete("pair");
+      url.searchParams.set("draft_id", id);
+      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+      navigate("review");
+      return;
+    }
+    if (action === "open-agent-revoke") {
+      const agent = state.agents.find((item) => item.agent_id === button.dataset.id && item.revoked_at === null);
+      if (!agent) throw new Error("This connected agent is no longer available to revoke.");
+      openOverlay(`<span class="section-kicker">CONNECTED AGENT</span><h2>Revoke ${esc(agent.agent_label)}?</h2><p class="overlay-intro">This stops future tool calls from this agent. It does not change permissions you have already confirmed.</p><div class="overlay-actions"><button type="button" class="outline-button" data-action="close-overlay">Cancel</button><button type="button" class="primary-button" data-action="revoke-agent" data-id="${esc(agent.agent_id)}">Revoke access</button></div>`, "Revoke agent access");
+      return;
+    }
     if (action === "use-example") { const composer = document.querySelector("#shop-prompt"); composer.value = text(button.dataset.example, "Example request"); state.prompt = composer.value; composer.focus(); composer.dispatchEvent(new Event("input", { bubbles: true })); return; }
-    if (action === "account") { openOverlay(`<span class="section-kicker">LOCAL DEMO ACCOUNT</span><h2>${esc(state.user || "Sign in")}</h2><p class="calm-copy">This demo uses a local username and session cookie. It is not a Viseca banking login.</p>${state.user ? `<button type="button" class="outline-button" data-action="logout">Sign out</button>` : `<button type="button" class="outline-button" data-action="close-overlay">Close</button>`}`, "Account"); return; }
+    if (action === "account") { openOverlay(`<span class="section-kicker">LOCAL DEMO ACCOUNT</span><h2>${esc(state.user || "Sign in")}</h2><p class="calm-copy">This demo uses a local password account and session cookie. It is not a Viseca banking login.</p>${state.user ? `<div class="agent-actions"><button type="button" class="outline-button" data-route="agents">Connected agents</button><button type="button" class="outline-button" data-action="logout">Sign out</button></div>` : `<button type="button" class="outline-button" data-action="close-overlay">Close</button>`}`, "Account"); return; }
     if (action === "open-pending") { openPending(button.dataset.id); return; }
     if (action === "inspector") { inspector(button.dataset.tab); return; }
     if (action === "open-reject") { confirmDialog("Reject this spending plan?", "Your agent will not receive authority from this request.", "reject", "Reject request"); return; }
@@ -835,8 +1005,8 @@ document.addEventListener("click", async (event) => {
       openDetail(detail);
       return;
     }
-    if (action === "reload") { void render(); return; }
-    if (action === "clear-invalid-link") { clearDraftLink(); navigate("shop"); return; }
+    if (action === "reload") { if (state.user) void render(); else void initialize(); return; }
+    if (action === "clear-invalid-link") { if (state.route === "pair") clearPairLink(); else clearDraftLink(); navigate(requestedRoute("")); return; }
     button.disabled = true;
     if (action === "select-mandate") {
       const id = text(button.dataset.id, "Selected permission ID");
@@ -848,31 +1018,34 @@ document.addEventListener("click", async (event) => {
       const payload = validateMandate(response);
       if (payload.mandate.mandate_id !== id) throw new Error("The selected permission does not match the Wallet response.");
       window.sessionStorage.setItem(MANDATE_KEY, id);
-      window.sessionStorage.setItem(MANDATE_OWNER_KEY, state.user);
+      window.sessionStorage.setItem(MANDATE_OWNER_KEY, text(state.accountId, "Current account ID"));
       state.mandate = payload;
       state.walletTab = tab;
       navigate("wallet");
-    } else if (action === "login") {
+    } else if (action === "login" || action === "register") {
       const username = text(document.querySelector("#username").value.trim(), "Username");
-      const session = await walletApi.login(username);
-      state.user = text(session.username, "Session username");
-      const previousOwner = window.sessionStorage.getItem(MANDATE_OWNER_KEY);
-      if (previousOwner && previousOwner !== state.user) {
-        window.sessionStorage.removeItem(MANDATE_KEY);
-        window.sessionStorage.removeItem(MANDATE_OWNER_KEY);
-      }
-      navigate(hasDraftLink() ? "review" : "shop");
+      const password = document.querySelector("#password").value;
+      if (password.length < 8 || password.length > 256) throw new Error("Password must have 8 to 256 characters.");
+      setSession(action === "register" ? await walletApi.register(username, password) : await walletApi.login(username, password));
+      navigate(requestedRoute());
     } else if (action === "logout") {
       await walletApi.logout();
       window.sessionStorage.removeItem(MANDATE_KEY);
       window.sessionStorage.removeItem(MANDATE_OWNER_KEY);
       state.pendingSerial += 1;
       window.clearTimeout(state.timer);
+      window.clearInterval(state.pairTimer);
       window.clearTimeout(state.exampleTimer);
+      state.pairTimer = null;
       state.serial += 1;
       state.user = null;
+      state.accountId = null;
+      state.authMode = "login";
       state.mandate = null;
       state.ownedMandates = [];
+      state.agents = [];
+      state.pairing = null;
+      state.pairingCode = null;
       state.pending = [];
       state.draft = null;
       state.ownedDrafts = [];
@@ -885,6 +1058,21 @@ document.addEventListener("click", async (event) => {
       document.querySelector("#wallet-indicator").hidden = true;
       closeOverlay();
       renderLogin();
+    } else if (action === "approve-pair") {
+      const code = pairingCode();
+      if (code !== state.pairingCode || !state.pairing || validTime(state.pairing.expires_at, "Connection expiry") <= Date.now()) throw new Error("The agent connection link has expired or changed. Reload it before approving.");
+      await walletApi.approvePairing(code);
+      clearPairLink();
+      navigate(requestedRoute(""));
+      toast("Connection approved. Return to your agent to finish pairing.", "success");
+    } else if (action === "revoke-agent") {
+      const id = text(button.dataset.id, "Agent ID");
+      if (!state.agents.some((agent) => agent.agent_id === id && agent.revoked_at === null)) throw new Error("This agent is no longer active in your Wallet.");
+      const updated = validateAgentList([await walletApi.revokeAgent(id)])[0];
+      if (updated.agent_id !== id || updated.revoked_at === null) throw new Error("The agent revocation response did not confirm this agent was revoked.");
+      closeOverlay();
+      navigate("agents");
+      toast("Agent access revoked.", "success");
     } else if (action === "confirm") await performConfirm();
     else if (action === "reject") await performReject();
     else if (action === "resolve") await performResolution(button);
@@ -900,7 +1088,16 @@ document.addEventListener("click", async (event) => {
       toast("Request copied. Paste it into your connected shopping agent.", "success");
     }
   } catch (error) {
+    if (action === "login" || action === "register") {
+      const message = error.status === 401 && action === "login" ? "Username or password is wrong." : error.status === 409 && action === "register" ? "That username is already taken." : error.status === 429 ? "Too many sign-in attempts. Wait a minute and try again." : error.status === 422 ? "Check the username and password length, then try again." : error.message;
+      const field = document.querySelector(".auth-error");
+      if (field) { field.textContent = message; field.hidden = false; }
+      else toast(message);
+      if (button.isConnected) button.disabled = false;
+      return;
+    }
     if (error.status === 401) { sessionExpired(error); return; }
+    if (error.status === 404 && action === "approve-pair") { void render(); return; }
     if (error.status === 409 && state.route === "review") { state.draft = null; state.answers = {}; void render(); }
     toast(error.message);
     if (action === "resolve") { navigate("wallet"); return; }
@@ -976,13 +1173,13 @@ window.addEventListener("keydown", (event) => {
       window.queueMicrotask(() => document.querySelector('.inspector-tabs [aria-selected="true"], .activity-tabs [aria-selected="true"]')?.focus());
     }
   }
-  if (event.key === "Enter" && event.target.id === "username") {
+  if (event.key === "Enter" && ["username", "password"].includes(event.target.id)) {
     event.preventDefault();
-    document.querySelector('[data-action="login"]').click();
+    document.querySelector('[data-action="login"], [data-action="register"]').click();
   }
 });
 
-window.addEventListener("hashchange", () => navigate(window.location.hash.slice(1) || (hasDraftLink() ? "review" : "shop")));
+window.addEventListener("hashchange", () => navigate(requestedRoute()));
 reducedMotion.addEventListener("change", () => {
   window.clearTimeout(state.exampleTimer);
   const example = document.querySelector("#animated-example");
