@@ -90,6 +90,8 @@ Local-buy evidence reliance, 2026-09-25 10:30 CEST: main #128 accepts agent-auth
 
 Contract text mismatch, 2026-09-25 10:32 CEST: main #128's `JevAnswer` and provider adapter permit absolute sum drift up to 0.015. `docs/contracts.md` still specifies 1e-6, and the reviewed classifier design still specifies 0.000001 with malformed-response rejection. The direct owner-approved rounding adjustment was not recorded in the shared contract text. Keep M3 unapproved until a reviewed amendment names the exact finite, two-decimal, three-option shape and the implementation matches it.
 
+Current-main check, 2026-09-25 10:40 CEST: commit `6528dfa` changed local-buy device identity to the unique paired `agent_id`, and the shared contract and classifier-design text now state 0.015 tolerance. The off-grid three-option sum of 1.014 still passes the adapter and shared type at #128; the change remains broader than David's direct grid-limited rounding choice. Main #128 model-off replay was run in a clean detached checkout: 45 attempts, 11 approve, 32 decline, two step-up, with all decisions and reasons matching the checked-in CSV. No provider or simulator call was made by that replay. `scripts/flow_sim.py` still supplies a scripted customer answer. The local O4 overlay and rescoring branch remains separate, with no attempted merge over the other owner's overlapping files. The checkout kept only its pre-existing untracked review report after this evidence was recorded.
+
 ## Open items after M0
 
 The open items from startup are answered in [02-classifier-m0.md](02-classifier-m0.md):
