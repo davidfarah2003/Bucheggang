@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, StrictInt
 
 from .confirmation import MandateClient, confirm_policy
 from .ownership import owned_drafts
+from .global_policy import GlobalPolicyConflict, GlobalPolicyStore, validate_rules
 from .store import DraftConflict, DraftStore, InvalidDraft
 
 
@@ -17,6 +19,14 @@ class ConfirmBody(BaseModel):
     version: StrictInt
     hash: str
     answers: dict[str, str]
+
+
+class GlobalPolicyBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: StrictInt
+    expected_hash: str
+    rules: list[dict[str, Any]]
 
 
 class RejectBody(BaseModel):
@@ -34,6 +44,27 @@ def policy_router(
 ) -> APIRouter:
     """Mount these routes only behind the app's customer login dependency."""
     router = APIRouter()
+    global_policies = GlobalPolicyStore(store)
+
+    @router.get("/global-policy")
+    def get_global_policy(customer: str = Depends(authenticated_customer)) -> dict:
+        if not customer:
+            raise HTTPException(status_code=401, detail="customer login is required")
+        return global_policies.read(customer)
+
+    @router.put("/global-policy")
+    def put_global_policy(body: GlobalPolicyBody, customer: str = Depends(authenticated_customer)) -> dict:
+        if not customer:
+            raise HTTPException(status_code=401, detail="customer login is required")
+        if not body.expected_hash:
+            raise HTTPException(status_code=422, detail="expected_hash is required")
+        try:
+            rules = validate_rules(body.rules)
+            return global_policies.replace(customer, body.expected_version, body.expected_hash, rules)
+        except GlobalPolicyConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (InvalidDraft, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @router.get("/drafts")
     def list_drafts(
@@ -90,6 +121,7 @@ def policy_router(
                 hash_value=body.hash,
                 answers=body.answers,
                 confirmed_by=customer,
+                global_policy=global_policies.read(customer),
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="draft was not found") from exc

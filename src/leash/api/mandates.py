@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from leash.contracts import Mandate, MandateState, PolicyDraft, Rule
+from leash.policy.global_policy import rules_hash
 from leash.policy.ownership import owned_confirmations
 from leash.policy.store import DraftStore
 from leash.runner import mandates
@@ -118,8 +119,14 @@ def _remote(mandate_id: str, record: dict, draft: dict) -> dict:
     return remote
 
 
-def _effective(remote: dict, draft: dict, edits: dict) -> dict:
-    rules = [Rule.model_validate(rule) for rule in [*draft["rules"], *edits["rules"]]]
+def _effective(remote: dict, draft: dict, edits: dict, record: dict) -> dict:
+    global_rules = record.get("global_rules", [])
+    if not isinstance(global_rules, list):
+        raise RuntimeError("confirmation record has invalid global_rules")
+    expected_hash = record.get("global_hash", rules_hash(global_rules))
+    if expected_hash != rules_hash(global_rules):
+        raise RuntimeError("confirmation record global policy hash mismatch")
+    rules = [Rule.model_validate(rule) for rule in [*global_rules, *draft["rules"], *edits["rules"]]]
     expected = [rule.simulator_rule() for rule in rules]
     actual = remote.get("hard_rules")
     if not isinstance(actual, list) or not all(isinstance(rule, dict) for rule in actual):
@@ -170,7 +177,7 @@ def mandate_router(
                 raise RuntimeError(f"confirmed draft for mandate {mandate_id} has changed")
             remote = _remote(mandate_id, record, draft)
             edits = edits_store.read(mandate_id)
-            _effective(remote, draft, edits)
+            _effective(remote, draft, edits, record)
             mandate = _mandate(mandate_id, record, remote, edits)
             if status != "all" and mandate["status"] != status:
                 continue
@@ -182,6 +189,8 @@ def mandate_router(
                 "instruction": draft["instruction"],
                 "approvals_count": len(state_value.approvals),
                 "pending_step_ups": len(state_value.pending_step_ups),
+                "global_policy_version": record.get("global_version", 0),
+                "global_policy_hash": record.get("global_hash", rules_hash([])),
             })
         return sorted(items, key=lambda item: (item["confirmed_at"], item["mandate_id"]), reverse=True)
 
@@ -193,11 +202,11 @@ def mandate_router(
             raise HTTPException(status_code=503, detail="mandate state reader is not available")
         remote = _remote(mandate_id, record, draft)
         edits = edits_store.read(mandate_id)
-        policy = _effective(remote, draft, edits)
+        policy = _effective(remote, draft, edits, record)
         state = MandateState.model_validate(load_state(mandate_id)).model_dump(mode="json")
         if state["mandate_id"] != mandate_id:
             raise RuntimeError(f"state reader returned a different mandate for {mandate_id}")
-        return {"mandate": _mandate(mandate_id, record, remote, edits), "draft": PolicyDraft.model_validate(draft).model_dump(mode="json"), "effective_policy": policy, "state": state}
+        return {"mandate": _mandate(mandate_id, record, remote, edits), "draft": PolicyDraft.model_validate(draft).model_dump(mode="json"), "effective_policy": policy, "state": state, "global_policy_version": record.get("global_version", 0), "global_policy_hash": record.get("global_hash", rules_hash([]))}
 
     @router.post("/mandates/{mandate_id}/tighten")
     def tighten_mandate(mandate_id: str, body: TightenBody, customer: str = Depends(authenticated_customer)) -> dict:
@@ -206,7 +215,7 @@ def mandate_router(
         with edits_store.locked(mandate_id):
             edits = edits_store.read(mandate_id)
             remote = _remote(mandate_id, record, draft)
-            _effective(remote, draft, edits)
+            _effective(remote, draft, edits, record)
             if remote["status"] != "active":
                 raise HTTPException(status_code=409, detail="only an active mandate can be tightened")
             updated = dict(edits)
@@ -221,7 +230,7 @@ def mandate_router(
                 updated["uncertainty_policy"] = "decline"
             result = _simulator_call(mandates.tighten, mandate_id, patch)
             updated["revision"] += 1
-            _effective(result, draft, updated)
+            _effective(result, draft, updated, record)
             edits_store.write(mandate_id, updated)
             return _mandate(mandate_id, record, result, updated)
 
@@ -232,7 +241,7 @@ def mandate_router(
         with edits_store.locked(mandate_id):
             edits = edits_store.read(mandate_id)
             remote = _remote(mandate_id, record, draft)
-            _effective(remote, draft, edits)
+            _effective(remote, draft, edits, record)
             if remote["status"] != "active":
                 raise HTTPException(status_code=409, detail="only an active mandate can be revoked")
             _simulator_call(mandates.revoke, mandate_id)
