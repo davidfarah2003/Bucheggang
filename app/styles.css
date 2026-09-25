@@ -553,6 +553,20 @@ pre { max-height: 260px; overflow: auto; margin: 0 0 15px; padding: 14px; border
 [hidden] { display: none !important; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes screen-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes bar-grow { from { transform: scaleX(0); } to { transform: none; } }
+#screen > * { animation: screen-in .34s cubic-bezier(.2,.8,.2,1) both; }
+.model-bar i { transform-origin: left center; animation: bar-grow .7s cubic-bezier(.2,.9,.2,1) both; }
+.model-detail .model-row:nth-child(2) .model-bar i { animation-delay: .12s; }
+.model-opt:nth-child(3) .model-bar i { animation-delay: .08s; }
+.model-opt:nth-child(4) .model-bar i { animation-delay: .16s; }
+.model-opt:nth-child(5) .model-bar i { animation-delay: .24s; }
+.stage { animation: screen-in .4s cubic-bezier(.2,.8,.2,1) both; }
+.stage:nth-child(3) { animation-delay: .08s; } .stage:nth-child(5) { animation-delay: .16s; } .stage:nth-child(7) { animation-delay: .24s; } .stage:nth-child(9) { animation-delay: .32s; }
+.evidence-card { animation: screen-in .36s cubic-bezier(.2,.8,.2,1) both; }
+.evidence-card:nth-child(2) { animation-delay: .08s; } .evidence-card:nth-child(3) { animation-delay: .16s; }
+.activity-card { animation: screen-in .36s cubic-bezier(.2,.8,.2,1) both; }
+.wallet-tabs button, .inspector-tabs button { transition: background .2s ease, color .2s ease, box-shadow .2s ease; }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes sheet-in { from { transform: translateY(20px); opacity: .65; } to { transform: translateY(0); opacity: 1; } }
 

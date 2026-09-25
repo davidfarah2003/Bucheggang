@@ -6,7 +6,7 @@
 <style>
   :root { --ink: #101418; --red: #c8102e; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; overflow: hidden; }
+  html, body { margin: 0; height: 100%; overflow: clip; }
   body {
     width: 1600px; height: 900px; position: relative;
     font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -21,6 +21,9 @@
   .glow.b { width: 600px; height: 600px; right: -140px; bottom: -240px; background: #4dd0ff; animation: floatB 17s ease-in-out infinite alternate; }
   @keyframes floatA { to { transform: translate(80px, 60px) scale(1.1); } }
   @keyframes floatB { to { transform: translate(-70px, -40px) scale(1.06); } }
+
+  /* Camera: everything on the stage lives inside it so a zoom moves the whole composition. */
+  #camera { position: absolute; inset: 0; transform-origin: 0 0; will-change: transform; transition: transform .9s cubic-bezier(.2,.8,.2,1); }
 
   /* Scenes */
   .title {
@@ -41,19 +44,26 @@
   .headline p { margin: 6px 0 0; font-size: 19px; font-weight: 500; opacity: .92; }
 
   .lead {
-    position: absolute; left: 80px; top: 300px; width: 640px; color: #fff; z-index: 30;
+    position: absolute; left: 80px; top: 300px; width: 660px; color: #fff; z-index: 30;
     font-size: 64px; font-weight: 800; letter-spacing: -.04em; line-height: 1.02; text-shadow: 0 6px 40px rgba(0,0,0,.25);
     opacity: 0; transform: translateY(28px); transition: opacity .45s ease, transform .6s cubic-bezier(.2,.9,.2,1);
   }
   .lead.show { opacity: 1; transform: none; }
   .lead small { display: block; margin-top: 18px; font-size: 26px; font-weight: 600; letter-spacing: -.01em; opacity: .92; line-height: 1.25; }
+  .lead .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+  .lead .chip { font-size: 20px; font-weight: 700; letter-spacing: -.01em; padding: 10px 18px; border-radius: 999px; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.45); backdrop-filter: blur(6px);
+    opacity: 0; transform: translateY(14px); transition: opacity .35s ease, transform .45s cubic-bezier(.2,.9,.2,1); }
+  .lead.show .chip { opacity: 1; transform: none; }
+  .lead.show .chip:nth-child(1) { transition-delay: .25s; } .lead.show .chip:nth-child(2) { transition-delay: .4s; } .lead.show .chip:nth-child(3) { transition-delay: .55s; } .lead.show .chip:nth-child(4) { transition-delay: .7s; }
+  .lead .chip.mcp { background: #fff; color: var(--red); border-color: #fff; }
 
   .caption {
-    position: absolute; left: 60px; right: 60px; bottom: 44px; text-align: center; color: #fff;
+    position: absolute; left: 60px; right: 60px; bottom: 44px; text-align: center; color: #fff; z-index: 35;
     font-size: 34px; font-weight: 800; letter-spacing: -.025em; text-shadow: 0 4px 28px rgba(0,0,0,.28);
     opacity: 0; transform: translateY(16px) scale(.97); transition: opacity .32s ease, transform .4s cubic-bezier(.2,.9,.2,1);
   }
   .caption.show { opacity: 1; transform: none; }
+  .caption.side { left: 60px; right: auto; bottom: auto; top: 300px; width: 520px; text-align: left; font-size: 38px; line-height: 1.12; }
 
   /* Agent panel (left) */
   .agent-panel {
@@ -61,12 +71,14 @@
     border-radius: 30px; background: rgba(16, 20, 26, .78);
     border: 1px solid rgba(255,255,255,.22); box-shadow: 0 30px 80px rgba(0,0,0,.35);
     padding: 24px 26px; display: flex; flex-direction: column; gap: 12px; color: #fff; overflow: hidden;
-    transform: translateX(-120%) rotate(-3deg); opacity: 0; transition: transform .75s cubic-bezier(.2,.9,.2,1), opacity .5s ease;
+    transform: translateX(-120%) rotate(-3deg); opacity: 0; transition: transform .75s cubic-bezier(.2,.9,.2,1), opacity .5s ease, box-shadow .4s ease;
   }
   .agent-panel.show { transform: none; opacity: 1; }
+  .agent-panel.show.dim { opacity: .12; }
+  .agent-panel.flash { box-shadow: 0 30px 80px rgba(0,0,0,.35), 0 0 0 4px rgba(72,240,160,.55); }
   .agent-panel header { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 18px; letter-spacing: -.01em; flex: none; }
   .agent-panel header .dot { width: 12px; height: 12px; border-radius: 50%; background: #48f0a0; box-shadow: 0 0 0 4px rgba(72,240,160,.25); }
-  .agent-panel header small { margin-left: auto; font-weight: 500; opacity: .7; font-size: 14px; }
+  .agent-panel header .mcp { margin-left: auto; font-weight: 700; font-size: 13px; letter-spacing: .04em; padding: 5px 10px; border-radius: 999px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.3); }
   .log { display: flex; flex-direction: column; gap: 10px; justify-content: flex-end; flex: 1 1 auto; min-height: 0; overflow: hidden; }
   .msg {
     flex: 0 0 auto; max-width: 92%; padding: 13px 17px; border-radius: 20px; font-size: 19px; line-height: 1.32; font-weight: 500;
@@ -77,6 +89,7 @@
   .msg.agent { align-self: flex-start; background: rgba(255,255,255,.14); color: #fff; border-bottom-left-radius: 6px; }
   .msg.tool { align-self: flex-start; background: rgba(0,0,0,.5); color: #d9fbe8; font: 500 15px/1.4 "SF Mono", Menlo, Consolas, monospace; padding: 9px 13px; border-radius: 12px; }
   .msg.tool b { color: #fff; font-weight: 700; }
+  .msg.tool .tag { display: inline-block; margin-right: 8px; padding: 1px 6px; border-radius: 6px; background: rgba(255,255,255,.16); color: #fff; font-size: 11px; letter-spacing: .06em; vertical-align: 1px; }
   .msg.tool .wait { display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: #ffd166; animation: pulse .9s ease-in-out infinite; vertical-align: middle; }
   @keyframes pulse { 50% { opacity: .25; transform: scale(.7); } }
   .msg.tool.done .wait { display: none; }
@@ -92,36 +105,39 @@
   .phone::before { content: ""; position: absolute; left: 50%; top: 14px; width: 120px; height: 30px; margin-left: -60px; background: #0b0d10; border-radius: 0 0 20px 20px; z-index: 2; }
   .phone iframe { width: 100%; height: 100%; border: 0; border-radius: 42px; background: #fff; display: block; }
 
-  #cursor {
-    position: absolute; width: 36px; height: 36px; border-radius: 50%; z-index: 50; pointer-events: none;
-    background: rgba(255,255,255,.35); border: 2px solid #fff; box-shadow: 0 4px 16px rgba(0,0,0,.25);
-    transform: translate(-50%,-50%); left: 1200px; top: 700px;
-    transition: left .42s cubic-bezier(.2,.8,.2,1), top .42s cubic-bezier(.2,.8,.2,1), transform .1s ease, opacity .25s ease; opacity: 0;
-  }
-  #cursor::after { content: ""; position: absolute; inset: -14px; border-radius: 50%; border: 2px solid rgba(255,255,255,.7); opacity: 0; }
-  #cursor.tap::after { animation: ring .45s ease-out; }
-  @keyframes ring { from { transform: scale(.5); opacity: .9; } to { transform: scale(1.3); opacity: 0; } }
+  /* Pointer: a macOS-style arrow with a tap ring. Lives in stage coordinates inside the camera. */
+  #cursor { position: absolute; width: 0; height: 0; z-index: 50; pointer-events: none; left: 1200px; top: 700px; opacity: 0;
+    transition: left .5s cubic-bezier(.2,.8,.2,1), top .5s cubic-bezier(.2,.8,.2,1), opacity .25s ease; }
+  #cursor svg { position: absolute; left: -3px; top: -2px; width: 30px; height: 36px; filter: drop-shadow(0 3px 6px rgba(0,0,0,.35)); transition: transform .1s ease; }
+  #cursor.press svg { transform: scale(.86); }
+  #cursor::after { content: ""; position: absolute; left: -22px; top: -22px; width: 44px; height: 44px; border-radius: 50%; border: 3px solid #fff; background: rgba(255,255,255,.25); opacity: 0; }
+  #cursor.tap::after { animation: ring .5s ease-out; }
+  @keyframes ring { from { transform: scale(.4); opacity: .95; } to { transform: scale(1.5); opacity: 0; } }
 </style>
 </head>
 <body>
   <div class="glow a"></div><div class="glow b"></div>
-  <div class="title" id="title"><div><h1 id="title-h">Agent on a Leash</h1><p id="title-p">Your agent buys. Your Wallet decides.</p></div></div>
   <div class="headline" id="headline"><h1>Agent on a Leash</h1><p>Your shopping agent buys. Your Wallet decides.</p></div>
   <div class="lead" id="lead"></div>
-  <section class="agent-panel" id="agent">
-    <header><span class="dot"></span>Grocery helper<small>MCP · leash-policy</small></header>
-    <div class="log" id="log"></div>
-  </section>
-  <div class="phone" id="phone"><iframe id="wallet" name="wallet" src="/app/" title="Viseca Wallet"></iframe></div>
+  <div id="camera">
+    <section class="agent-panel" id="agent">
+      <header><span class="dot"></span>Grocery helper<span class="mcp">MCP client</span></header>
+      <div class="log" id="log"></div>
+    </section>
+    <div class="phone" id="phone"><iframe id="wallet" name="wallet" src="/app/" title="Viseca Wallet"></iframe></div>
+    <div id="cursor"><svg viewBox="0 0 30 36" aria-hidden="true"><path d="M3 2 L3 28 L9.5 22 L14.5 33 L19.5 31 L14.5 20.5 L23 20.5 Z" fill="#fff" stroke="#111" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
+  </div>
   <div class="caption" id="caption"></div>
-  <div id="cursor"></div>
+  <div class="title" id="title"><div><h1 id="title-h">Agent on a Leash</h1><p id="title-p">Your agent buys. Your Wallet decides.</p></div></div>
   <script>
     const log = document.getElementById("log");
+    const camera = document.getElementById("camera");
     const show = (id, on) => document.getElementById(id).classList.toggle("show", on);
     window.scene = (name, h, p) => {
       if (name === "title") { if (h) document.getElementById("title-h").textContent = h; if (p) document.getElementById("title-p").textContent = p; show("title", true); show("headline", false); show("agent", false); show("phone", false); }
       if (name === "stage") { show("title", false); show("headline", true); show("phone", true); }
       if (name === "lead") { const l = document.getElementById("lead"); l.innerHTML = `${h}<small>${p || ""}</small>`; show("agent", false); show("lead", true); }
+      if (name === "chips") { const l = document.getElementById("lead"); l.innerHTML = `${h}<small>${p || ""}</small><div class="chips"><span class="chip mcp">MCP</span><span class="chip">Claude Code</span><span class="chip">OpenCode</span><span class="chip">your own agent</span></div>`; show("agent", false); show("lead", true); }
       if (name === "agent") { show("lead", false); show("agent", true); }
       if (name === "outro") { if (h) document.getElementById("title-h").textContent = h; if (p) document.getElementById("title-p").textContent = p; show("agent", false); show("lead", false); show("phone", false); show("headline", false); show("caption", false); setTimeout(() => show("title", true), 350); }
     };
@@ -130,11 +146,23 @@
       log.appendChild(el); requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("show")));
       while (log.children.length > 6) log.removeChild(log.firstChild);
     };
-    window.tool = (name, args) => say("tool", `<b>${name}</b>(${args})<span class="wait"></span>`);
-    window.done = () => { const t = [...log.querySelectorAll(".msg.tool:not(.done)")].pop(); if (t) t.classList.add("done"); };
-    window.caption = (text) => { const c = document.getElementById("caption"); c.classList.remove("show"); setTimeout(() => { c.textContent = text; if (text) c.classList.add("show"); }, 180); };
+    window.tool = (name, args) => say("tool", `<span class="tag">MCP</span><b>${name}</b>(${args})<span class="wait"></span>`);
+    window.done = () => { const t = [...log.querySelectorAll(".msg.tool:not(.done)")].pop(); if (t) t.classList.add("done"); const a = document.getElementById("agent"); a.classList.add("flash"); setTimeout(() => a.classList.remove("flash"), 500); };
+    window.caption = (text, side) => { const c = document.getElementById("caption"); c.classList.remove("show"); document.getElementById("agent").classList.toggle("dim", !!(text && side)); setTimeout(() => { c.textContent = text; c.classList.toggle("side", !!side); if (text) c.classList.add("show"); }, 180); };
+    // Camera. cam holds the target transform so points can be mapped back to stage coordinates while zoomed.
+    const cam = { tx: 0, ty: 0, s: 1 };
+    window.zoom = (x, y, s, ms) => {
+      s = s || 1; ms = ms == null ? 900 : ms;
+      let tx = 800 - x * s, ty = 450 - y * s;
+      tx = Math.min(0, Math.max(1600 * (1 - s), tx)); ty = Math.min(0, Math.max(900 * (1 - s), ty));
+      if (s === 1) { tx = 0; ty = 0; }
+      Object.assign(cam, { tx, ty, s });
+      camera.style.transition = `transform ${ms}ms cubic-bezier(.2,.8,.2,1)`;
+      camera.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+    };
+    window.toStage = (cx, cy) => [(cx - cam.tx) / cam.s, (cy - cam.ty) / cam.s];
     const cur = document.getElementById("cursor");
-    window.cursor = (x, y, press) => { cur.style.opacity = "1"; cur.style.left = x + "px"; cur.style.top = y + "px"; cur.style.transform = press ? "translate(-50%,-50%) scale(.72)" : "translate(-50%,-50%)"; if (press) { cur.classList.remove("tap"); void cur.offsetWidth; cur.classList.add("tap"); } };
+    window.cursor = (x, y, press) => { cur.style.opacity = "1"; cur.style.left = x + "px"; cur.style.top = y + "px"; cur.classList.toggle("press", !!press); if (press) { cur.classList.remove("tap"); void cur.offsetWidth; cur.classList.add("tap"); } };
     window.hideCursor = () => { cur.style.opacity = "0"; };
   </script>
 </body>
