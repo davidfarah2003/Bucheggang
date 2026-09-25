@@ -3,7 +3,6 @@
 const MANDATE_KEY = "viseca.demo.mandateId";
 const MANDATE_OWNER_KEY = "viseca.demo.mandateOwner";
 class DraftLinkError extends Error {}
-class PairLinkError extends Error {}
 class PurchaseLinkError extends Error {}
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const screen = document.querySelector("#screen");
@@ -425,7 +424,7 @@ async function render() {
   } catch (error) {
     if (serial !== state.serial) return;
     if (error.status === 401) { sessionExpired(error); return; }
-    const linkAction = state.route === "purchase" ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this purchase link</button>` : state.route === "pair" && (error instanceof PairLinkError || error.status === 404) ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Continue without this agent link</button>` : error instanceof DraftLinkError ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this link</button>` : "";
+    const linkAction = state.route === "purchase" ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this purchase link</button>` : state.route === "pair" ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Continue without this agent link</button>` : error instanceof DraftLinkError ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this link</button>` : "";
     const title = state.route === "review" ? "Review spending permission" : state.route === "purchase" ? "Review pending purchase" : state.route === "pair" ? "Connect a shopping agent" : state.route;
     setScreen(`<div class="page-title"><h1>${esc(title)}</h1></div>${errorPanel("This screen could not be loaded", error)}${linkAction}`);
     if (state.route === "purchase") {
