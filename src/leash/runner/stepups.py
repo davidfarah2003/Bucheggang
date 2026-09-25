@@ -37,11 +37,12 @@ from typing import Any
 
 from leash.contracts import Decision, Event, MandateState, StepUp, StepUpAnswer
 from leash.engine import state as engine_state
-from leash.engine.evaluate import evaluate
 from leash.policy.store import DraftStore
 
 from . import api, records, policy_context
+from .budget import DecisionBudget
 from .coordinator import Coordinator
+from .evaluation import ModelEvaluator, MODEL_CAP_S, MODEL_RESERVE_S, load_evaluator
 
 EXPIRY_MARGIN_S = 5.0
 SWEEP_INTERVAL_S = 1.0
@@ -96,6 +97,7 @@ class StepUpBook:
 
     def __init__(self, root: Path = STEPUPS_DIR):
         self.root = Path(root)
+        self.evaluator = load_evaluator()
         self._stop = threading.Event()
         self._sweeper: threading.Thread | None = None
         self.failure: BaseException | None = None
@@ -160,20 +162,23 @@ class StepUpBook:
 
     def _checked_decision(
         self, step_up: StepUp, store: DraftStore, mandate_ids: list[str], deadline_at: datetime,
+        *, budget: DecisionBudget | None = None,
     ) -> tuple[Decision, MandateState, dict]:
-        from .loop import extract_with_budget, decide_with_guard
+        from .loop import EXTRACT_RESERVE_S, extract_with_budget, decide_with_guard
 
+        operation = DecisionBudget.until(deadline_at) if budget is None else budget
         state = engine_state.load(step_up.event.mandate.mandate_id, customer_mandates=mandate_ids)
         if state.handled.get(step_up.authorization_id) != step_up.decision:
             raise StepUpError(f"{step_up.authorization_id}: saved state differs from the pending decision")
         unchecked = state.model_copy(deep=True)
         del unchecked.handled[step_up.authorization_id]
         unchecked.pending_step_ups.remove(step_up.authorization_id)
-        event, policy = policy_context.refresh(store, step_up.event, deadline_at=deadline_at - timedelta(seconds=2))
-        event.deadline_at = deadline_at
+        event, policy = policy_context.refresh(store, step_up.event, deadline_at=operation.wall_deadline(reserve_s=2))
+        event.deadline_at = operation.wall_deadline()
         with ThreadPoolExecutor(max_workers=1) as pool:
-            facts = extract_with_budget(event, policy, pool)
-            checked = decide_with_guard(evaluate, event, policy, unchecked, facts, pool)
+            reserve = MODEL_CAP_S + MODEL_RESERVE_S if isinstance(self.evaluator, ModelEvaluator) else EXTRACT_RESERVE_S
+            facts = extract_with_budget(event, policy, pool, budget=operation, reserve_s=reserve)
+            checked = decide_with_guard(self.evaluator, event, policy, unchecked, facts, pool, budget=operation)
         return checked, state, policy.model_dump(mode="json")
 
     def _finish(
@@ -207,18 +212,21 @@ class StepUpBook:
         step_up = self.get(answer.authorization_id)
         mandate_id = step_up.event.mandate.mandate_id
         coordinator = Coordinator(store, self)
-        with coordinator.locked(mandate_id, deadline_at=step_up.expires_at) as mandate_ids:
+        budget = DecisionBudget.until(step_up.expires_at)
+        with coordinator.locked(mandate_id, deadline_at=budget.wall_deadline()) as mandate_ids:
             record = self._read(self._path(mandate_id, answer.authorization_id))
             if record["status"] != "pending":
                 raise StepUpError(f"step-up {answer.authorization_id} is already resolved")
-            if _now() >= step_up.expires_at:
+            if budget.remaining() <= 0:
                 raise StepUpError(f"step-up {answer.authorization_id} expired at {step_up.expires_at.isoformat()}")
             run_id = record.get("run_id")
             if not isinstance(run_id, str) or not run_id:
                 raise StepUpError(f"step-up {answer.authorization_id} lacks its recorded run identity")
             checked_state, policy = None, None
             if answer.decision == "approve":
-                checked, checked_state, policy = self._checked_decision(step_up, store, mandate_ids, step_up.expires_at)
+                checked, checked_state, policy = self._checked_decision(
+                    step_up, store, mandate_ids, step_up.expires_at, budget=budget,
+                )
                 if checked.decision == "decline":
                     final = checked
                 elif checked.decision == "step_up" and not set(checked.reason_codes) <= set(step_up.decision.reason_codes):
@@ -239,7 +247,7 @@ class StepUpBook:
                     "The customer declined this purchase.",
                 )
             return self._finish(
-                step_up, final, coordinator, run_id=run_id, mandate_ids=mandate_ids, deadline_at=step_up.expires_at,
+                step_up, final, coordinator, run_id=run_id, mandate_ids=mandate_ids, deadline_at=budget.wall_deadline(),
                 evaluated_state=checked_state, policy=policy,
             )
 
