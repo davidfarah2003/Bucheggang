@@ -34,6 +34,17 @@ def _note(freq: float, seconds: float, gain: float, harmonics=(1.0, 0.35, 0.12))
     return gain * y * _env(n, 0.02, seconds * 0.6)
 
 
+def _seq(parts: list[tuple[float, float]], seconds: float, gain: float, harmonics=(1.0, 0.3)) -> np.ndarray:
+    """Notes at offsets, each played to the end of its own envelope so nothing is cut mid-ring."""
+    n = int((max(off for _, off in parts) + seconds) * SR)
+    y = np.zeros(n)
+    for f, off in parts:
+        note = _note(f, seconds, gain, harmonics)
+        s0 = int(off * SR)
+        y[s0:s0 + len(note)] += note[: n - s0]
+    return y
+
+
 def cue(kind: str) -> np.ndarray:
     if kind == "tap":
         n = int(0.06 * SR)
@@ -47,31 +58,19 @@ def cue(kind: str) -> np.ndarray:
         f = 520 + 260 * t / 0.3
         return 0.035 * np.sin(2 * np.pi * f * t) * _env(n, 0.05, 0.22)
     if kind == "chime":
-        return _note(1174.66, 0.5, 0.35, (1.0, 0.3)) + np.pad(_note(1567.98, 0.45, 0.28, (1.0, 0.3)), (int(0.07 * SR), 0))[: int(0.5 * SR)]
+        return _seq([(1174.66, 0.0), (1567.98, 0.07)], 0.5, 0.3)
     if kind == "deny":
-        return _note(392.0, 0.35, 0.3) + np.pad(_note(349.23, 0.3, 0.3), (int(0.09 * SR), 0))[: int(0.35 * SR)]
+        return _seq([(392.0, 0.0), (349.23, 0.09)], 0.35, 0.28, (1.0, 0.35, 0.12))
     if kind == "connect":
         # Soft two-note pop: the agent is paired.
-        return _note(783.99, 0.22, 0.3, (1.0, 0.25)) + np.pad(_note(1046.5, 0.3, 0.3, (1.0, 0.25)), (int(0.09 * SR), 0))[: int(0.22 * SR)]
+        return _seq([(783.99, 0.0), (1046.5, 0.09)], 0.3, 0.28, (1.0, 0.25))
     if kind == "confirm":
         # Three-note rise: the plan is authorized.
-        parts = [(659.25, 0.0), (830.61, 0.11), (1046.5, 0.22)]
-        n = int(0.7 * SR)
-        y = np.zeros(n)
-        for f, off in parts:
-            note = _note(f, 0.45, 0.32, (1.0, 0.3, 0.08))
-            s0 = int(off * SR)
-            y[s0:s0 + len(note)] += note[: n - s0]
-        return y
+        return _seq([(659.25, 0.0), (830.61, 0.11), (1046.5, 0.22)], 0.45, 0.3, (1.0, 0.3, 0.08))
     if kind == "approve":
         # The reward: a bright major arpeggio with a shimmer on top, purchase approved.
-        parts = [(523.25, 0.0), (659.25, 0.09), (783.99, 0.18), (1046.5, 0.27), (1318.5, 0.42)]
-        n = int(1.1 * SR)
-        y = np.zeros(n)
-        for f, off in parts:
-            note = _note(f, 0.7, 0.22, (1.0, 0.35, 0.1))
-            s0 = int(off * SR)
-            y[s0:s0 + len(note)] += note[: n - s0]
+        y = _seq([(523.25, 0.0), (659.25, 0.09), (783.99, 0.18), (1046.5, 0.27), (1318.5, 0.42)], 0.7, 0.2, (1.0, 0.35, 0.1))
+        n = len(y)
         t = np.arange(n) / SR
         shimmer = 0.06 * np.sin(2 * np.pi * 2093.0 * t) * np.sin(2 * np.pi * 6 * t) * _env(n, 0.4, 0.5)
         return y + shimmer

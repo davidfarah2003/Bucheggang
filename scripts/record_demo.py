@@ -16,6 +16,7 @@ http://127.0.0.1:8000 started by scripts/wallet.sh on a wiped data/.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import shutil
@@ -32,6 +33,8 @@ INSTRUCTION = ("Do the weekly grocery shopping online at supermarkets I already 
                "CHF 100 per order or CHF 250 in any 7-day window; groceries and household basics only. If unsure, ask.")
 W, H = 1600, 900
 FPS = 30
+SCALE = 2          # the stage renders at 3200x1800 and the video is scaled to 1920x1080
+OUT_W, OUT_H = 1920, 1080
 PHONE_CX = 1305   # centre x of the phone on the stage
 MUSIC = ROOT / "docs" / "demo" / "music" / "wallpaper.mp3"   # Kevin MacLeod, CC BY 4.0, credit in docs/demo/music/README.md
 MUSIC_GAIN = 0.15
@@ -42,6 +45,7 @@ class Stage:
         self.page = page
         self.frame = None
         self.t0 = time.monotonic()
+        self.t0_wall = time.time()   # the screencast frames carry wall-clock timestamps
         self.cues: list[dict] = []
 
     def cue(self, kind: str):
@@ -129,9 +133,9 @@ async def main() -> None:
     out = ROOT / "docs" / "demo"
     out.mkdir(parents=True, exist_ok=True)
     work = ROOT / ".cotal" / "gif"
-    video_dir = work / "video"
-    shutil.rmtree(video_dir, ignore_errors=True)
-    video_dir.mkdir(parents=True)
+    frames_dir = work / "frames"
+    shutil.rmtree(frames_dir, ignore_errors=True)
+    frames_dir.mkdir(parents=True)
     log = work / "agent.log"
     log.unlink(missing_ok=True)
 
@@ -140,18 +144,17 @@ async def main() -> None:
         cwd=ROOT, env={**os.environ}, stdout=log.open("w"), stderr=subprocess.STDOUT,
     )
     s: Stage | None = None
-    record_started = 0.0
+    frames: list[tuple[float, Path]] = []   # (wall-clock seconds, png)
+    end_wall = 0.0
     try:
         # The agent boots the MCP server and the models before any frame is recorded; its connect
         # call then sits pending in the Wallet until Alex opens the tab.
         await wait_for_agent(log, "connection request is waiting")
         async with async_playwright() as pw:
             browser = await pw.chromium.launch()
-            context = await browser.new_context(
-                viewport={"width": W, "height": H}, device_scale_factor=1,
-                record_video_dir=str(video_dir), record_video_size={"width": W, "height": H},
-            )
-            record_started = time.monotonic()
+            # Playwright's own recorder writes 1 Mbps VP8 at scale 1, which is where the blur came
+            # from. Frames are pulled straight from Chrome's screencast at 2x instead.
+            context = await browser.new_context(viewport={"width": W, "height": H}, device_scale_factor=SCALE)
             page = await context.new_page()
             await page.goto(f"{ORIGIN}/app/demo-stage.html")
             frame = page.frame(name="wallet") or next(f for f in page.frames if f.url.endswith("/app/"))
@@ -169,6 +172,20 @@ async def main() -> None:
             await asyncio.sleep(0.3)
             s = Stage(page)
             s.frame = frame
+            cdp = await context.new_cdp_session(page)
+
+            def on_frame(params: dict) -> None:
+                path = frames_dir / f"{len(frames):05d}.png"
+                frames.append((params["metadata"]["timestamp"], path))
+                data = base64.b64decode(params["data"])
+
+                async def store() -> None:
+                    await asyncio.to_thread(path.write_bytes, data)
+                    await cdp.send("Page.screencastFrameAck", {"sessionId": params["sessionId"]})
+                asyncio.ensure_future(store())
+
+            cdp.on("Page.screencastFrame", on_frame)
+            await cdp.send("Page.startScreencast", {"format": "png", "maxWidth": W * SCALE, "maxHeight": H * SCALE, "everyNthFrame": 1})
             await page.evaluate("() => window.scene('title')")
             await asyncio.sleep(1.0)
             await page.evaluate("() => window.scene('stage')")
@@ -251,22 +268,30 @@ async def main() -> None:
             s.cue("swell")
             await page.evaluate("() => window.scene('outro', 'Agent on a Leash', 'Your agent buys. Your Wallet decides.')")
             await asyncio.sleep(1.4)
+            end_wall = time.time()
+            await cdp.send("Page.stopScreencast")
+            await asyncio.sleep(0.3)
             await context.close()
             await browser.close()
     finally:
         if agent.poll() is None:
             agent.terminate()
 
-    videos = list(video_dir.glob("*.webm"))
-    if len(videos) != 1:
-        raise RuntimeError(f"expected one recording, found {videos}")
-    probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(videos[0])],
-                           capture_output=True, text=True, check=True).stdout.strip()
-    seconds = float(probe)
-    if s is None:
-        raise RuntimeError("stage never started")
-    # The recording clock starts at the context, the stage clock at the first cue; shift cues onto the video.
-    lead = s.t0 - record_started
+    if s is None or len(frames) < 10:
+        raise RuntimeError(f"stage never started or screencast produced {len(frames)} frames")
+    frames.sort()
+    first = frames[0][0]
+    seconds = end_wall - first
+    # Variable-rate frame list for ffmpeg's concat demuxer; static holds simply keep their frame.
+    lines = ["ffconcat version 1.0"]
+    for i, (ts, path) in enumerate(frames):
+        nxt = frames[i + 1][0] if i + 1 < len(frames) else end_wall
+        lines.append(f"file '{path.name}'\nduration {max(nxt - ts, 1 / 120):.4f}")
+    lines.append(f"file '{frames[-1][1].name}'")
+    concat = frames_dir / "frames.txt"
+    concat.write_text("\n".join(lines) + "\n")
+    # Cues are stage-clock seconds; the video starts at the first screencast frame's wall time.
+    lead = s.t0_wall - first
     cues = [{"t": max(0.0, c["t"] + lead), "kind": c["kind"]} for c in s.cues]
     cues_file = work / "cues.json"
     cues_file.write_text(json.dumps(cues))
@@ -275,21 +300,23 @@ async def main() -> None:
                    cwd=ROOT, check=True)
     mp4 = out / "leash-user-flow.mp4"
     fade_out = max(0.0, seconds - 2.5)
-    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(videos[0]), "-i", str(audio), "-i", str(MUSIC),
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat),
+                    "-i", str(audio), "-i", str(MUSIC),
                     "-filter_complex",
-                    f"[2:a]atrim=0:{seconds:.3f},volume={MUSIC_GAIN},afade=t=in:d=1.2,afade=t=out:st={fade_out:.3f}:d=2.5[m];"
-                    f"[1:a][m]amix=inputs=2:duration=first:normalize=0[a]",
+                    f"[2:a]aresample=48000,atrim=0:{seconds:.3f},volume={MUSIC_GAIN},afade=t=in:d=1.2,afade=t=out:st={fade_out:.3f}:d=2.5[m];"
+                    f"[1:a][m]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=false[a]",
                     "-map", "0:v", "-map", "[a]",
-                    "-vf", f"fps={FPS},format=yuv420p", "-c:v", "libx264", "-preset", "slow", "-crf", "17",
-                    "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", str(mp4)], check=True)
+                    "-vf", f"fps={FPS},scale={OUT_W}:{OUT_H}:flags=lanczos,format=yuv420p",
+                    "-c:v", "libx264", "-preset", "slow", "-crf", "16", "-profile:v", "high",
+                    "-c:a", "aac_at", "-b:a", "256k", "-ar", "48000", "-t", f"{seconds:.3f}", "-movflags", "+faststart", str(mp4)], check=True)
     gif = out / "leash-user-flow.gif"
-    palette = video_dir / "palette.png"
+    palette = work / "palette.png"
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(mp4), "-vf",
                     "fps=15,scale=1280:-1:flags=lanczos,palettegen=max_colors=256:stats_mode=diff", str(palette)], check=True)
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(mp4), "-i", str(palette), "-lavfi",
                     "fps=15,scale=1280:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle",
                     str(gif)], check=True)
-    print(f"mp4: {mp4} {mp4.stat().st_size // 1024} KB, {seconds:.0f} s, {len(cues)} sound cues")
+    print(f"mp4: {mp4} {mp4.stat().st_size // 1024} KB, {seconds:.0f} s, {len(frames)} frames, {len(cues)} sound cues")
     print(f"gif: {gif} {gif.stat().st_size // 1024} KB")
 
 
