@@ -21,10 +21,12 @@ from __future__ import annotations
 
 import fcntl
 import json
+import math
 import os
+import time
 from collections.abc import Iterator
-from contextlib import contextmanager
-from datetime import datetime
+from contextlib import ExitStack, contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -48,16 +50,45 @@ def _safe(name: str, what: str) -> str:
 
 
 @contextmanager
-def mandate_lock(mandate_id: str) -> Iterator[None]:
-    """Exclusive lock for every state, decision and step-up write of one mandate."""
+def mandate_lock(mandate_id: str, *, stop_at: float | None = None) -> Iterator[None]:
+    """Exclusive mandate lock, optionally bounded by a monotonic deadline."""
+    if stop_at is not None and not math.isfinite(stop_at):
+        raise ValueError("mandate lock deadline must be finite")
     LOCKS_DIR.mkdir(parents=True, exist_ok=True)
     descriptor = os.open(LOCKS_DIR / f"{_safe(mandate_id, 'mandate_id')}.lock", os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        if stop_at is None:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+        else:
+            while True:
+                remaining = stop_at - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(f"{mandate_id}: coordination deadline expired before acquiring the mandate lock")
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    time.sleep(min(0.01, remaining))
         yield
     finally:
         fcntl.flock(descriptor, fcntl.LOCK_UN)
         os.close(descriptor)
+
+
+@contextmanager
+def mandate_locks(mandate_ids: list[str], *, deadline_at: datetime) -> Iterator[None]:
+    """Hold the owned mandate set in one stable order under a shared time budget."""
+    if not mandate_ids:
+        raise ValueError("coordination requires at least one owned mandate")
+    if deadline_at.utcoffset() is None:
+        raise ValueError("coordination deadline must have a timezone")
+    stop_at = time.monotonic() + (deadline_at - datetime.now(UTC)).total_seconds()
+    with ExitStack() as stack:
+        for mandate_id in sorted(set(mandate_ids)):
+            stack.enter_context(mandate_lock(mandate_id, stop_at=stop_at))
+        if time.monotonic() >= stop_at:
+            raise TimeoutError("coordination deadline expired after acquiring mandate locks")
+        yield
 
 
 def write_exclusive(path: Path, value: dict[str, Any]) -> None:
@@ -110,6 +141,54 @@ def record_accepted(
         })
     except FileExistsError as exc:
         raise RecordError(f"{path} already exists; an accepted result is written once") from exc
+    return state_after
+
+
+def recover_accepted(
+    event: Event, decision: Decision, accepted_at: datetime, accepted: Any,
+    *, resolution: bool, state_before: MandateState,
+) -> MandateState:
+    """Finish a journaled accepted write once, including a crash after state.record.
+
+    The caller holds all affected mandate locks and has verified the remote
+    outcome. state_before is the persistent snapshot saved before dispatch.
+    No new mutation may run until the journal has been completed.
+    """
+    mandate_id = event.mandate.mandate_id
+    auth_id = _safe(event.authorization.authorization_id, "authorization_id")
+    if state_before.mandate_id != mandate_id or event.authorization.mandate_id != mandate_id:
+        raise RecordError(f"{auth_id}: journal event and state mandate differ")
+    state_after = engine_state.apply(state_before, event, decision)
+    expected = {
+        "decision": decision.model_dump(mode="json"),
+        "event": event.model_dump(mode="json"),
+        "state_before": state_before.model_dump(mode="json"),
+        "state_after": state_after.model_dump(mode="json"),
+        "accepted_at": accepted_at.isoformat(),
+        "accepted": accepted,
+    }
+    name = f"{auth_id}{RESOLVE_SUFFIX}" if resolution else f"{auth_id}.json"
+    path = DECISIONS_DIR / _safe(mandate_id, "mandate_id") / name
+    if path.exists() and _read(path) != expected:
+        raise RecordError(f"{path}: saved outcome differs from the accepted intent")
+    current = engine_state.load(mandate_id)
+    if current != state_before and current != state_after:
+        raise RecordError(f"{mandate_id}: state changed outside the unresolved intent")
+    if current == state_before:
+        current = engine_state.record(mandate_id, event, decision)
+    if current != state_after:
+        raise RecordError(f"{mandate_id}: recorded state differs from the intended transition")
+    state_path = engine_state.STATE_DIR / f"{mandate_id}.json"
+    with state_path.open("rb") as stream:
+        os.fsync(stream.fileno())
+    if not path.exists():
+        write_exclusive(path, expected)
+    for folder in (state_path.parent, state_path.parent.parent, path.parent, path.parent.parent):
+        descriptor = os.open(folder, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
     return state_after
 
 
