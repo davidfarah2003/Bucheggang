@@ -4,6 +4,7 @@ The key is read from the `.env` file at the repository root. It is never
 printed, logged, or included in an error message.
 """
 
+import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -41,6 +42,28 @@ def _parse_env(path: Path) -> dict[str, str]:
             value = value[1:-1]
         values[key.strip()] = value
     return values
+
+
+@dataclass(frozen=True)
+class EvaluationSettings:
+    models_enabled: bool
+    model_manifest: Path | None
+
+
+def load_evaluation() -> EvaluationSettings:
+    """Read the process's explicit opt-in without reading either credential."""
+    flag = os.environ.get("LEASH_ENABLE_MODELS", "0")
+    if flag not in {"0", "1"}:
+        raise SettingsError("LEASH_ENABLE_MODELS must be 0 or 1")
+    if flag == "0":
+        return EvaluationSettings(models_enabled=False, model_manifest=None)
+    manifest = os.environ.get("LEASH_MODEL_MANIFEST")
+    if not manifest:
+        raise SettingsError("LEASH_MODEL_MANIFEST is required when LEASH_ENABLE_MODELS=1")
+    path = Path(manifest).expanduser().resolve()
+    if not path.is_file():
+        raise SettingsError(f"configured model manifest does not exist: {path}")
+    return EvaluationSettings(models_enabled=True, model_manifest=path)
 
 
 @dataclass(frozen=True)

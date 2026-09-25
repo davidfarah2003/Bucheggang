@@ -36,25 +36,18 @@ Use absolute paths. If the store path differs from the Wallet's, the customer wi
 
 ### OpenCode as the client
 
-OpenCode spawns local MCP servers with a reduced environment. `scripts/mcp-stdio.sh` sets the two variables and executes the server with an absolute `uv` path, so the entry in `~/.config/opencode/opencode.json` is one command:
+The repo's `opencode.json` registers the server for any OpenCode session started in the checkout:
 
 ```json
 {
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "leash-policy": {
-      "type": "local",
-      "enabled": true,
-      "command": ["/absolute/path/to/Bucheggang/scripts/mcp-stdio.sh"],
-      "env": {
-        "LEASH_POLICY_STORE": "/absolute/path/to/Bucheggang/data/policy",
-        "LEASH_APP_ORIGIN": "http://127.0.0.1:8000"
-      }
-    }
+    "leash-policy": { "type": "local", "enabled": true, "command": ["./scripts/mcp-stdio.sh"] }
   }
 }
 ```
 
-`opencode mcp list` shows `leash-policy connected` when the entry works. Checked on 2026-09-25 with OpenCode spawning the raw `uv run` command, which closed the connection; the wrapper script connects.
+`scripts/mcp-stdio.sh` resolves the repo from its own path, defaults `LEASH_POLICY_STORE` to `data/policy` and `LEASH_APP_ORIGIN` to `http://127.0.0.1:8000`, and executes the server with `uv`. Set either variable in the shell that starts OpenCode to override. OpenCode spawns local servers with a reduced environment, so the raw `uv run` command closed the connection; the wrapper connects. `opencode mcp list` shows `leash-policy connected` when it works. Servers go directly under `mcp`, not under `mcp.servers`.
 
 ## What the agent is told
 
