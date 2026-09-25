@@ -222,7 +222,7 @@ def handle(
             raise RunLoopError(f"{mandate_id}: supplied draft differs from the saved confirmation")
         from leash.policy.purchases import write_identity
 
-        write_identity(store, record["draft_id"], event.mandate.model_dump(mode="json"))
+        write_identity(store, record["draft_id"], event.mandate.model_dump(mode="json"), source="simulator_event")
         state = engine_state.load(mandate_id, customer_mandates=mandate_ids)
         seen = state.handled.get(auth_id)
         if seen is None:

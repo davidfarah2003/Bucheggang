@@ -101,13 +101,29 @@ def demo_identity() -> dict[str, str] | None:
     return {"customer_id": customer_id, "card_id": card_id, "profile_id": f"local-profile-{customer_id}"}
 
 
-def write_identity(store: DraftStore, draft_id: str, identity: dict[str, str]) -> None:
-    """Write the mandate's card identity once. A differing second write raises."""
+def write_identity(store: DraftStore, draft_id: str, identity: dict[str, str], *, source: str) -> None:
+    """Record the mandate's card identity.
+
+    source is "simulator_event" (authoritative, from the first Event the runner accepts) or
+    "demo_card" (provisional, from LEASH_LOCAL_CARD_ID at confirmation). A simulator identity
+    replaces a provisional one; two simulator identities that differ raise; a provisional write
+    never replaces anything.
+    """
+    if source not in ("simulator_event", "demo_card"):
+        raise ValueError(f"unknown identity source {source!r}")
     path = store.root / draft_id / "identity.json"
     wanted = {key: identity[key] for key in ("customer_id", "card_id", "profile_id")}
+    wanted["source"] = source
     if path.exists():
-        if json.loads(path.read_text()) != wanted:
-            raise InvalidPurchase("mandate identity record differs from the delivered event")
+        current = json.loads(path.read_text())
+        same = {key: current.get(key) for key in ("customer_id", "card_id", "profile_id")} == {k: wanted[k] for k in ("customer_id", "card_id", "profile_id")}
+        if current.get("source") == "simulator_event":
+            if source == "simulator_event" and not same:
+                raise InvalidPurchase("mandate identity record differs from the delivered event")
+            return
+        if source == "demo_card":
+            return
+        records.write_atomic(path, wanted)
         return
     records.write_exclusive(path, wanted)
 
@@ -220,7 +236,7 @@ def _effective_policy(store: DraftStore, record: dict) -> PolicyDraft:
     return PolicyDraft.model_validate(effective)
 
 
-def _build_event(validated: dict, *, agent_id: str, identity: dict, policy: PolicyDraft,
+def _build_event(validated: dict, *, device_id: str, identity: dict, policy: PolicyDraft,
                  mandate_status: str, now: datetime, budget_s: float, earlier: list[dict]) -> tuple[Event, str]:
     auth_id = _mint_id()
     ten_minutes = now - timedelta(minutes=10)
@@ -258,7 +274,7 @@ def _build_event(validated: dict, *, agent_id: str, identity: dict, policy: Poli
             "timestamp": now.isoformat(), "amount": validated["total_chf"], "currency": "CHF",
             "billing_amount_chf": validated["total_chf"], "items_subtotal": validated["items_subtotal"],
             "delivery_fee": validated["delivery_fee_chf"], "channel": "ecommerce",
-            "customer_device_id": agent_id, "authority_status": "active",
+            "customer_device_id": device_id, "authority_status": "active",
             "card_status_at_attempt": "active", "spend_in_period_before_chf": None,
             "recent_attempt_count_10m": recent_count, "fulfillment_method": "delivery",
             "delivery_by": None, "order_returnable": "unknown", "order_cancellable": "unknown",
@@ -332,7 +348,9 @@ class PurchaseDesk:
             if remote.get("status") != "active":
                 raise InvalidPurchase(f"mandate is {remote.get('status')}")
             earlier = _purchase_files(mandate_id)
-            event, auth_id = _build_event(validated, agent_id=agent_id, identity=identity, policy=policy,
+            # The agent is the device. Its label is what the customer recognises in a check note.
+            device_id = f"agent:{agent['agent_label']}"
+            event, auth_id = _build_event(validated, device_id=device_id, identity=identity, policy=policy,
                                           mandate_status="active", now=now, budget_s=budget_s, earlier=earlier)
             records.write_exclusive(path, {
                 "purchase_key_file": digest, "agent_id": agent_id, "mandate_id": mandate_id,

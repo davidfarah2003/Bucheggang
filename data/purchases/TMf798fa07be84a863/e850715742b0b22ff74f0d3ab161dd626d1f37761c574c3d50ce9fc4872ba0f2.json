@@ -1,0 +1,141 @@
+{
+ "purchase_key_file": "e850715742b0b22ff74f0d3ab161dd626d1f37761c574c3d50ce9fc4872ba0f2",
+ "agent_id": "6bccf1f2-3695-407b-972a-613d21ca72a8",
+ "mandate_id": "TMf798fa07be84a863",
+ "input_hash": "7a74ad991ffb19970364765b3f3a1f76cab581dc7aa38341f2af1af1303e05b1",
+ "timestamp": "2026-09-25T08:19:30.275566+00:00",
+ "authorization_id": "AGTEDI6YJBVOTXYC",
+ "decision": "decline",
+ "event": {
+  "type": "authorization.request",
+  "request_id": "local-e850715742b0b22ff74f0d3ab161dd626d1f37761c574c3d50ce9fc4872ba0f2",
+  "deadline_at": "2026-09-25T08:19:50.275566Z",
+  "authorization": {
+   "authorization_id": "AGTEDI6YJBVOTXYC",
+   "source_authorization_id": "AGTEDI6YJBVOTXYC",
+   "scenario_id": "SCEN0000",
+   "replay_order": 1,
+   "mandate_id": "TMf798fa07be84a863",
+   "profile_id": "local-profile-CU0001",
+   "card_id": "CA0001",
+   "initiator_type": "agent",
+   "merchant": {
+    "merchant_id": "ME9999",
+    "merchant_name": "Fresh Corner Market",
+    "merchant_category": "groceries",
+    "merchant_mcc": "5411",
+    "merchant_country": "CH",
+    "merchant_city": "Basel",
+    "availability": "online",
+    "recurring_capable": "false"
+   },
+   "timestamp": "2026-09-25T08:19:30.275566Z",
+   "amount": 35.0,
+   "currency": "CHF",
+   "billing_amount_chf": 35.0,
+   "items_subtotal": 28.0,
+   "delivery_fee": 7.0,
+   "channel": "ecommerce",
+   "customer_device_id": "agent:Grocery helper",
+   "authority_status": "active",
+   "card_status_at_attempt": "active",
+   "spend_in_period_before_chf": null,
+   "recent_attempt_count_10m": 1,
+   "fulfillment_method": "delivery",
+   "delivery_by": null,
+   "order_returnable": "unknown",
+   "order_cancellable": "unknown",
+   "related_authorization_id": null,
+   "related_authorization_status": null,
+   "purchase_description": "Do the weekly grocery shopping online at supermarkets I already use. Never spend more than CHF 100 per order or CHF 250 in any 7-day window; groceries and household basics only. If unsure, ask.",
+   "items": [
+    {
+     "line_no": 1,
+     "item_id": "IT0001",
+     "item_name": "Fresh produce selection",
+     "item_category": "groceries",
+     "quantity": 1,
+     "unit_price": 28.0,
+     "currency": "CHF",
+     "item_details": "Seasonal fruit and vegetables; a typical weekly produce basket."
+    }
+   ]
+  },
+  "mandate": {
+   "mandate_id": "TMf798fa07be84a863",
+   "status": "active",
+   "customer_id": "CU0001",
+   "card_id": "CA0001",
+   "instruction": "Do the weekly grocery shopping online at supermarkets I already use. Never spend more than CHF 100 per order or CHF 250 in any 7-day window; groceries and household basics only. If unsure, ask.",
+   "hard_rules": [
+    {
+     "field": "authorization.billing_amount_chf",
+     "operator": "<=",
+     "value": 100,
+     "currency": "CHF",
+     "scope": "purchase",
+     "period_days": null
+    },
+    {
+     "field": "authorization.billing_amount_chf",
+     "operator": "<=",
+     "value": 250,
+     "currency": "CHF",
+     "scope": "period",
+     "period_days": 7
+    },
+    {
+     "field": "authorization.channel",
+     "operator": "=",
+     "value": "ecommerce",
+     "currency": null,
+     "scope": "purchase",
+     "period_days": null
+    },
+    {
+     "field": "authorization.merchant.merchant_category",
+     "operator": "=",
+     "value": "groceries",
+     "currency": null,
+     "scope": "purchase",
+     "period_days": null
+    },
+    {
+     "field": "items.category",
+     "operator": "=",
+     "value": "groceries",
+     "currency": null,
+     "scope": "purchase",
+     "period_days": null
+    },
+    {
+     "field": "history.merchant_seen_on_card",
+     "operator": "=",
+     "value": "true",
+     "currency": null,
+     "scope": "purchase",
+     "period_days": null
+    }
+   ],
+   "uncertainty_policy": "ask",
+   "profile_id": "local-profile-CU0001"
+  },
+  "context": {
+   "approved_spend_in_period_chf": null,
+   "recent_authorizations": [
+    {
+     "authorization_id": "AGTLAUYWMVNSMAF4",
+     "timestamp": "2026-09-25T08:19:29.326695Z",
+     "merchant_id": "ME0001",
+     "billing_amount_chf": 35.0,
+     "status": "pending"
+    }
+   ]
+  },
+  "runtime": {
+   "received_at": "2026-09-25T08:19:30.275566Z",
+   "history_window_minutes": 1440,
+   "context_basis": "run_decisions_and_scenario_timestamps"
+  }
+ }
+}

@@ -100,14 +100,14 @@ async def run(origin: str) -> None:
     async with stdio_client(server) as (read, write):
         async with ClientSession(read, write) as session:
             init = await session.initialize()
-            step("MCP server", {"name": init.serverInfo.name, "instructions_chars": len(init.instructions or "")})
+            step("MCP server", {"name": init.server_info.name, "instructions_chars": len(init.instructions or "")})
             tools = await session.list_tools()
             step("tools", [t.name for t in tools.tools])
 
             async def tool(name: str, **args):
                 result = await session.call_tool(name, args)
                 text = "".join(c.text for c in result.content if getattr(c, "text", None))
-                if result.isError:
+                if result.is_error:
                     raise RuntimeError(f"{name}: {text}")
                 return json.loads(text) if text else None
 
@@ -181,6 +181,13 @@ async def run(origin: str) -> None:
                 step("customer answered in the Wallet", answer)
                 final = await waiter
                 step("agent received the answer", {k: final[k] for k in ("decision", "reason_codes", "customer_message")})
+
+            # 7. a second order from the same agent at the known shop: the agent is now a known device
+            fourth = await tool("buy", mandate_id=mandate_id, purchase_key=secrets.token_hex(12),
+                                cart=[{**GROCERY_CART[0], "item_id": "IT0002", "item_name": "Dairy and bread basket", "unit_price_chf": 22.5}],
+                                merchant=KNOWN_SHOP, delivery_fee_chf=7.0, total_chf=29.5,
+                                facts=[facts_for("IT0002", "groceries")])
+            step("buy #4, same agent again", {k: fourth[k] for k in ("decision", "reason_codes", "customer_message")})
 
             history = wallet.call("GET", f"/mandates/{mandate_id}/decisions")
             step("Wallet history", [{"id": h["decision"]["authorization_id"], "decision": h["decision"]["decision"],

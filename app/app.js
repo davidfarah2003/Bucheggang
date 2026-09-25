@@ -660,6 +660,24 @@ function pendingTimeLabel(expiresAt) {
   return remaining > 0 ? `${Math.floor(remaining / 60000)}m ${String(Math.floor(remaining / 1000) % 60).padStart(2, "0")}s left` : "Deadline reached";
 }
 
+const CHECK_TITLES = {
+  "mandate active": "Permission active",
+  "familiarity": "Known device and shop",
+  "velocity": "Purchase pace",
+  "country": "Shop country",
+  "duplicate and re-quote": "Duplicate order",
+  "model.behaviour": "Risk model: history score",
+  "model.jev.spend_pattern": "Risk model: amount pattern",
+  "model.jev.activity_pattern": "Risk model: activity pattern",
+};
+const SOURCE_LABELS = { event: "this purchase", history: "card history", agent_form: "agent's form", merchant_text: "merchant text", state: "this permission", model: "risk model" };
+function checkTitle(check) {
+  if (CHECK_TITLES[check.name]) return CHECK_TITLES[check.name];
+  if (check.name.startsWith("rule ")) return "Your rule: " + check.name.slice(5).replace(/^(authorization|facts|items|history|state)\./, "").replaceAll("_", " ");
+  return check.name.replaceAll("_", " ").replaceAll(".", " ");
+}
+function sourceLabel(source) { return SOURCE_LABELS[source] || source; }
+
 function pendingTitle(evidence) {
   const count = evidence.filter((check) => check.result !== "pass").length;
   return count === 1 ? "One detail needs a decision" : count ? `${count} details need a decision` : "Review this purchase";
@@ -1057,7 +1075,7 @@ function openPending(id) {
   const auth = item.event.authorization;
   const issue = item.decision.evidence.filter((check) => check.result !== "pass");
   const remaining = new Date(item.expires_at).getTime() - Date.now();
-  openOverlay(`<span class="section-kicker amber-text">VISECA NEEDS YOU</span><h2>${esc(pendingTitle(item.decision.evidence))}</h2><p class="overlay-intro">${esc(item.decision.customer_message)}</p><div class="purchase-highlight"><span>${esc(auth.merchant.merchant_name)}</span><strong>${esc(money(auth.billing_amount_chf, auth.currency))}</strong><p>${esc(auth.items.map((entry) => text(entry.item_name, "Item")).join(" + "))}</p></div><h3>Why you're seeing this</h3><div class="evidence-list">${issue.map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(check.name.replaceAll("_", " "))}</strong><p>${esc(check.note)}</p><small>Source: ${esc(check.source)}</small></div></div>`).join("")}</div><p class="calm-copy">This answer applies only to this purchase. It does not change your confirmed limits.</p><p id="pending-deadline" class="calm-copy">${remaining > 0 ? `Decision window: ${Math.floor(remaining / 60000)}m ${String(Math.floor(remaining / 1000) % 60).padStart(2, "0")}s left` : "The decision window has closed."}</p><div class="overlay-actions"><button class="outline-button" type="button" data-action="resolve" data-id="${esc(id)}" data-decision="decline" ${remaining <= 0 ? "disabled" : ""}>Don't buy</button><button class="primary-button" type="button" data-action="resolve" data-id="${esc(id)}" data-decision="approve" ${remaining <= 0 ? "disabled" : ""}>Buy anyway</button></div>${remaining <= 0 ? `<p class="uncertainty-note">The decision window has closed. Refresh Wallet for the final result.</p>` : ""}`, "Purchase review");
+  openOverlay(`<span class="section-kicker amber-text">VISECA NEEDS YOU</span><h2>${esc(pendingTitle(item.decision.evidence))}</h2><p class="overlay-intro">${esc(item.decision.customer_message)}</p><div class="purchase-highlight"><span>${esc(auth.merchant.merchant_name)}</span><strong>${esc(money(auth.billing_amount_chf, auth.currency))}</strong><p>${esc(auth.items.map((entry) => text(entry.item_name, "Item")).join(" + "))}</p></div><h3>Why you're seeing this</h3><div class="evidence-list">${issue.map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(checkTitle(check))}</strong><p>${esc(check.note)}</p><small>Source: ${esc(sourceLabel(check.source))}</small></div></div>`).join("")}</div><p class="calm-copy">This answer applies only to this purchase. It does not change your confirmed limits.</p><p id="pending-deadline" class="calm-copy">${remaining > 0 ? `Decision window: ${Math.floor(remaining / 60000)}m ${String(Math.floor(remaining / 1000) % 60).padStart(2, "0")}s left` : "The decision window has closed."}</p><div class="overlay-actions"><button class="outline-button" type="button" data-action="resolve" data-id="${esc(id)}" data-decision="decline" ${remaining <= 0 ? "disabled" : ""}>Don't buy</button><button class="primary-button" type="button" data-action="resolve" data-id="${esc(id)}" data-decision="approve" ${remaining <= 0 ? "disabled" : ""}>Buy anyway</button></div>${remaining <= 0 ? `<p class="uncertainty-note">The decision window has closed. Refresh Wallet for the final result.</p>` : ""}`, "Purchase review");
 }
 
 function openDetail(payload) {
@@ -1070,7 +1088,7 @@ function openDetail(payload) {
     decision.decision === "step_up" ? "Why does this need a decision?" :
     decision.reason_codes.includes("customer_declined") ? "Why was this declined?" :
     decision.reason_codes.includes("step_up_timeout") ? "Why did this purchase time out?" : "Why was this blocked?";
-  openOverlay(`<span class="section-kicker">TRANSACTION</span><h2>${esc(title)}</h2><div class="purchase-highlight"><span>${esc(auth.merchant.merchant_name)}</span><strong>${esc(money(auth.billing_amount_chf, auth.currency))}</strong><p>${esc(auth.items.map((entry) => text(entry.item_name, "Item")).join(" + "))}</p></div><p class="overlay-intro">${esc(decision.customer_message)}</p>${failed.length || uncertain.length ? `<div class="evidence-list">${[...failed, ...uncertain].slice(0, 4).map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(check.name.replaceAll("_", " "))}</strong><p>${esc(check.note)}</p></div></div>`).join("")}</div>` : ""}<button type="button" class="text-button" data-action="inspector" data-tab="summary">View technical details <span aria-hidden="true">→</span></button>`, "Transaction explanation");
+  openOverlay(`<span class="section-kicker">TRANSACTION</span><h2>${esc(title)}</h2><div class="purchase-highlight"><span>${esc(auth.merchant.merchant_name)}</span><strong>${esc(money(auth.billing_amount_chf, auth.currency))}</strong><p>${esc(auth.items.map((entry) => text(entry.item_name, "Item")).join(" + "))}</p></div><p class="overlay-intro">${esc(decision.customer_message)}</p>${failed.length || uncertain.length ? `<div class="evidence-list">${[...failed, ...uncertain].slice(0, 4).map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(checkTitle(check))}</strong><p>${esc(check.note)}</p></div></div>`).join("")}</div>` : ""}<button type="button" class="text-button" data-action="inspector" data-tab="summary">View technical details <span aria-hidden="true">→</span></button>`, "Transaction explanation");
 }
 
 function inspector(tab) {
@@ -1081,7 +1099,7 @@ function inspector(tab) {
   const content = tab === "summary"
     ? `<div class="inspector-outcome ${decision.decision}"><span>${esc(status.toUpperCase())}</span><h3>${esc(decision.customer_message)}</h3></div><h3>How the decision was made</h3><p>${esc(decision.explanation)}</p><p class="check-count">${decision.evidence.filter((check) => check.result === "pass").length} passed · ${decision.evidence.filter((check) => check.result === "fail").length} failed · ${decision.evidence.filter((check) => check.result === "uncertain").length} unknown</p>`
     : tab === "checks"
-      ? `<div class="evidence-list">${decision.evidence.map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "pass" ? "✓" : check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(check.name.replaceAll("_", " "))}</strong><p>${esc(check.note)}</p><small>${check.value === null ? "Value unknown" : `Value: ${esc(check.value)}`} · Source: ${esc(check.source)}</small></div></div>`).join("")}</div>`
+      ? `<div class="evidence-list">${decision.evidence.map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "pass" ? "✓" : check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(checkTitle(check))}</strong><p>${esc(check.note)}</p><small>${check.value === null ? "Value unknown" : check.source === "model" ? "" : `Value: ${esc(check.value)}`}${check.source === "model" ? "" : " · "}Source: ${esc(sourceLabel(check.source))}</small></div></div>`).join("")}</div>`
       : `<div class="record-grid"><span>Authorization</span><strong>${esc(decision.authorization_id)}</strong><span>Engine</span><strong>${esc(decision.engine_version)}</strong><span>Version</span><strong>${esc(decision.mandate_version)}</strong><span>Time</span><strong>${esc(decision.elapsed_ms)} ms</strong></div><details><summary>Original payment event and merchant text</summary><p class="calm-copy">Merchant-provided item details are untrusted evidence. They cannot grant spending authority.</p><pre>${esc(JSON.stringify(event, null, 2))}</pre></details><details><summary>Decision and state</summary><pre>${esc(JSON.stringify({ decision, state_before, state_after }, null, 2))}</pre></details>`;
   openOverlay(`<span class="section-kicker">ADVANCED DETAILS</span><h2>Decision details</h2><p class="overlay-intro">${esc(event.authorization.merchant.merchant_name)} · ${esc(money(event.authorization.billing_amount_chf, event.authorization.currency))}</p><div class="inspector-tabs" role="tablist" aria-label="Decision sections">${["summary", "checks", "record"].map((name) => `<button type="button" role="tab" aria-selected="${tab === name}" tabindex="${tab === name ? 0 : -1}" data-action="inspector" data-tab="${name}" class="${tab === name ? "selected" : ""}">${name[0].toUpperCase() + name.slice(1)}</button>`).join("")}</div><div class="inspector-body" role="tabpanel" tabindex="0">${content}</div>`, "Decision details");
 }
