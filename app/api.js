@@ -32,6 +32,7 @@ const walletApi = (() => {
     agents: () => request("/agents"),
     revokeAgent: (id) => request(`/agents/${encodeURIComponent(id)}/revoke`, { method: "POST" }),
     draft: (id) => request(`/drafts/${encodeURIComponent(id)}`),
+    boundaryResults: (id) => request(`/drafts/${encodeURIComponent(id)}/boundary-results`),
     drafts: () => request("/drafts?state=all"),
     confirm: (id, version, hash, answers) => request(`/drafts/${encodeURIComponent(id)}/confirm`, {
       method: "POST", body: JSON.stringify({ version, hash, answers }),
