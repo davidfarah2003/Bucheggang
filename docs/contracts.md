@@ -204,9 +204,11 @@ Served by `leash.api`. Paths and shapes are what the app lane codes against.
 | `POST /session` | `{ username: str }` with 1 to 80 non-whitespace characters → `{ username }` and an HttpOnly `leash_session` cookie for the local demo login |
 | `GET /session` | `{ username }` for the current cookie, or 401 if no valid session exists |
 | `DELETE /session` | 204 and clears the current cookie, or 401 if no valid session exists |
+| `GET /drafts?state=pending|confirmed|rejected|all` | Defaults to `all`; returns customer-owned draft summaries `{ draft_id, version, hash, state: confirming|confirmed|rejected, instruction, plain_english: [str], uncertainty_policy, open_questions: int, created_at, mandate_id: str|null }`. With `state=pending`, only this customer's in-flight confirmations are returned. Drafts without an owner remain available through `GET /drafts/{draft_id}` when the customer already has its URL. Newest first. |
 | `GET /drafts/{draft_id}` | `PolicyDraft` |
 | `POST /drafts/{draft_id}/confirm` | `{ version, hash, answers: { question: answer } }` → `Mandate`, or 409 on hash or version mismatch |
 | `POST /drafts/{draft_id}/reject` | `{ version, hash, reason }` → 204, or 409 on hash or version mismatch |
+| `GET /mandates?status=active|superseded|revoked|expired|all` | Defaults to `all`; returns customer-owned mandate summaries `{ mandate_id, draft_id, version, hash, status, confirmed_at, instruction, approvals_count, pending_step_ups }`, newest first. Status is read from the simulator; a simulator error is returned to the caller. |
 | `GET /mandates/{mandate_id}` | `{ mandate: Mandate, draft: PolicyDraft, effective_policy: { rules: [Rule], uncertainty_policy }, state: MandateState }`. `draft` is the confirmed draft and never changes; `effective_policy` is what the simulator holds now, read back after a tighten |
 | `POST /mandates/{mandate_id}/tighten` | `{ rules: [Rule] }` appends to the rule list, or `{ uncertainty_policy: "decline" }`; existing rules are never removed or replaced (the simulator's PATCH rules) → `Mandate` |
 | `POST /mandates/{mandate_id}/revoke` | → `Mandate` (DELETE on the simulator) |

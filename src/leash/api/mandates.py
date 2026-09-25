@@ -10,7 +10,7 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from leash.contracts import Mandate, MandateState, PolicyDraft, Rule
@@ -152,6 +152,38 @@ def mandate_router(
     """Mount beside the policy router, with the shell's session dependency."""
     router = APIRouter()
     edits_store = MandateEdits(store)
+
+    @router.get("/mandates")
+    def list_mandates(
+        status: str = Query(default="all"), customer: str = Depends(authenticated_customer)
+    ) -> list[dict]:
+        if not customer:
+            raise HTTPException(status_code=401, detail="customer login is required")
+        if status not in {"active", "superseded", "revoked", "expired", "all"}:
+            raise HTTPException(status_code=422, detail="status must be active, superseded, revoked, expired or all")
+        if load_state is None:
+            raise HTTPException(status_code=503, detail="mandate state reader is not available")
+        items = []
+        for mandate_id, record in owned_confirmations(store, customer).items():
+            draft = store.get(record["draft_id"])
+            if draft["version"] != record["version"] or draft["hash"] != record["hash"]:
+                raise RuntimeError(f"confirmed draft for mandate {mandate_id} has changed")
+            remote = _remote(mandate_id, record, draft)
+            edits = edits_store.read(mandate_id)
+            _effective(remote, draft, edits)
+            mandate = _mandate(mandate_id, record, remote, edits)
+            if status != "all" and mandate["status"] != status:
+                continue
+            state_value = MandateState.model_validate(load_state(mandate_id))
+            if state_value.mandate_id != mandate_id:
+                raise RuntimeError(f"state reader returned a different mandate for {mandate_id}")
+            items.append({
+                **mandate,
+                "instruction": draft["instruction"],
+                "approvals_count": len(state_value.approvals),
+                "pending_step_ups": len(state_value.pending_step_ups),
+            })
+        return sorted(items, key=lambda item: (item["confirmed_at"], item["mandate_id"]), reverse=True)
 
     @router.get("/mandates/{mandate_id}")
     def get_mandate(mandate_id: str, customer: str = Depends(authenticated_customer)) -> dict:
