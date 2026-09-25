@@ -258,18 +258,9 @@ class StepUpBook:
                     )
                     done.append(step_up.authorization_id)
                     continue
-                if now >= step_up.expires_at - timedelta(seconds=3):
-                    continue  # Keep the remaining window for the scheduled timeout resolution.
-                event, _ = policy_context.refresh(store, step_up.event, deadline_at=step_up.expires_at - timedelta(seconds=2))
-                if event.mandate.status != "active":
-                    checked, state, policy = self._checked_decision(step_up, store, mandate_ids, step_up.expires_at)
-                    if checked.decision != "decline":
-                        raise StepUpError(f"{step_up.authorization_id}: inactive mandate did not produce a decline")
-                    self._finish(
-                        step_up, checked, coordinator, run_id=run_id, mandate_ids=mandate_ids, deadline_at=step_up.expires_at,
-                        evaluated_state=state, policy=policy,
-                    )
-                    done.append(step_up.authorization_id)
+                # A pending step_up is resolved only by the customer's answer through the app
+                # route or by the timeout above. A mandate that turns inactive meanwhile waits
+                # for one of those two; the answer path re-evaluates against the inactive mandate.
         return done
 
     # sweeper thread (run loop process only)

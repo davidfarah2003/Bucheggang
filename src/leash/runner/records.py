@@ -149,34 +149,6 @@ def write_atomic(path: Path, value: dict[str, Any]) -> None:
     sync_directory(path.parent.parent)
 
 
-def record_accepted(
-    event: Event, decision: Decision, accepted_at: datetime, accepted: Any, *, resolution: bool
-) -> MandateState:
-    """Record an accepted submit (resolution=False) or /resolve (resolution=True).
-
-    The caller holds mandate_lock(event.mandate.mandate_id). Calls
-    leash.engine.state.record, then writes the decision file. Returns the state after.
-    """
-    mandate_id = event.mandate.mandate_id
-    auth_id = _safe(event.authorization.authorization_id, "authorization_id")
-    state_before = engine_state.load(mandate_id)
-    state_after = engine_state.record(mandate_id, event, decision)
-    name = f"{auth_id}{RESOLVE_SUFFIX}" if resolution else f"{auth_id}.json"
-    path = DECISIONS_DIR / _safe(mandate_id, "mandate_id") / name
-    try:
-        write_exclusive(path, {
-            "decision": decision.model_dump(mode="json"),
-            "event": event.model_dump(mode="json"),
-            "state_before": state_before.model_dump(mode="json"),
-            "state_after": state_after.model_dump(mode="json"),
-            "accepted_at": accepted_at.isoformat(),
-            "accepted": accepted,
-        })
-    except FileExistsError as exc:
-        raise RecordError(f"{path} already exists; an accepted result is written once") from exc
-    return state_after
-
-
 def recover_accepted(
     event: Event, decision: Decision, accepted_at: datetime, accepted: Any,
     *, resolution: bool, state_before: MandateState,
