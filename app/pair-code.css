@@ -64,6 +64,11 @@
   outline-offset: 3px;
 }
 
+.identity-view .pair-code-fields .pair-code-input:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
 @media (max-width: 359px) {
   .pair-code-entry { padding: 16px; }
 }
