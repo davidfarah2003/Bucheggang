@@ -31,6 +31,7 @@ const state = {
   ownedMandates: [],
   agents: [],
   pairing: null,
+  pairings: null,
   pairingCode: null,
   pairCode: null,
   pairLinkError: null,
@@ -620,20 +621,24 @@ function needsHeading(count) {
 
 async function needsContent(serial) {
   const linked = linkedDraftId();
-  const [draft, pending, ownedDrafts] = await Promise.all([
+  const [draft, pending, ownedDrafts, pairings] = await Promise.all([
     linked ? walletApi.draft(linked).then(validateDraft) : Promise.resolve(null),
     walletApi.pending(),
     walletApi.drafts().then(validateDraftList),
+    walletApi.pendingPairings(),
   ]);
   if (serial !== state.serial) return "";
   if (!Array.isArray(pending)) throw new Error("The Wallet did not return a list of pending purchases.");
+  if (!Array.isArray(pairings)) throw new Error("The Wallet did not return a list of pending agent connections.");
+  state.pairings = pairings;
   if (draft && !ownedDrafts.some((item) => item.draft_id === draft.draft_id)) throw new Error("The linked spending request is missing from your account's list.");
   state.pending = pending;
   state.draft = draft;
   state.ownedDrafts = ownedDrafts;
-  const count = pending.length + ownedDrafts.filter((item) => item.state === "proposed").length;
+  const count = pending.length + ownedDrafts.filter((item) => item.state === "proposed").length + pairings.length;
   document.querySelector("#wallet-indicator").hidden = !count;
   return `<div class="wallet-section"><h2 id="needs-heading">${esc(needsHeading(count))}</h2>
+    <div id="pairing-list">${pairings.map(pairingCard).join("")}</div>
     <div id="pending-list">${pending.map(pendingCard).join("")}</div>
     <p class="calm-copy" id="needs-empty" ${count ? "hidden" : ""}>${ownedDrafts.some((item) => item.state === "confirming") ? "Your confirmation is being checked. It will appear as confirmed when the backend accepts it." : "Spending requests and purchases that need a decision will appear here."}</p>
     <div id="request-history">${ownedDrafts.length ? `<section class="request-history"><h3>Recent spending requests</h3>${ownedDrafts.map(ownedRequestCard).join("")}</section>` : ""}</div></div>`;
@@ -659,6 +664,16 @@ function pendingPurchase(item) {
   text(auth.merchant.merchant_name, "Pending merchant");
   text(item.decision.customer_message, "Purchase review message");
   return auth;
+}
+
+function pairingCard(item) {
+  const label = text(item.agent_label, "Agent label");
+  const scopes = Array.isArray(item.scopes) ? item.scopes.map((scope) => text(scope, "Scope")) : [];
+  return `<div class="need-card uncertain-card pairing-card"><span class="section-kicker" aria-live="off">AGENT CONNECTION</span>
+    <h3>${esc(label)} wants to connect</h3>
+    <p class="calm-copy">It can propose spending permissions and read their status. It cannot confirm, change or revoke anything, and it cannot buy.</p>
+    <p class="meta">Allowed: ${esc(scopes.join(", "))}</p>
+    <div class="need-actions"><button type="button" class="primary-button" data-action="approve-pending-pair" data-id="${esc(text(item.pairing_id, "Pairing id"))}">Approve</button></div></div>`;
 }
 
 function pendingCard(item) {
@@ -688,8 +703,12 @@ async function refreshPending() {
   const route = state.serial;
   const id = mandateId();
   try {
-    const [pending, ownedDrafts] = await Promise.all([walletApi.pending(), walletApi.drafts().then(validateDraftList)]);
+    const [pending, ownedDrafts, pairings] = await Promise.all([walletApi.pending(), walletApi.drafts().then(validateDraftList), walletApi.pendingPairings()]);
     if (!Array.isArray(pending)) throw new Error("Pending purchases must be a list.");
+    if (!Array.isArray(pairings)) throw new Error("Pending agent connections must be a list.");
+    const pairingList = document.querySelector("#pairing-list");
+    const pairingsChanged = !state.pairings || pairings.length !== state.pairings.length || pairings.some((item, index) => item.pairing_id !== state.pairings[index].pairing_id);
+    if (pairingList && pairingsChanged) { pairingList.innerHTML = pairings.map(pairingCard).join(""); state.pairings = pairings; }
     if (request !== state.pendingSerial || route !== state.serial || id !== mandateId() || !container.isConnected) return;
     const markup = pending.map(pendingCard).join("");
     const unchanged = pending.length === state.pending.length && pending.every((item, index) =>
@@ -1219,6 +1238,12 @@ document.addEventListener("click", async (event) => {
       document.querySelector("#wallet-indicator").hidden = true;
       closeOverlay();
       renderLogin();
+    } else if (action === "approve-pending-pair") {
+      const id = button.dataset.id;
+      await walletApi.approvePendingPairing(id);
+      state.pairings = null;
+      toast("Agent connected. It will continue on its own.", "success");
+      await refreshPending();
     } else if (action === "approve-pair") {
       const code = pairingCode();
       if (code !== state.pairingCode || !state.pairing || validTime(state.pairing.expires_at, "Connection expiry") <= Date.now()) throw new Error("The agent connection link has expired or changed. Reload it before approving.");
