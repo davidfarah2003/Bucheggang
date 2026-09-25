@@ -24,14 +24,41 @@ An MCP client JSON server list can use this command:
       "command": "uv",
       "args": ["run", "--project", "/absolute/path/to/Bucheggang", "python", "-m", "leash.policy.mcp_server"],
       "env": {
-        "LEASH_POLICY_STORE": "/absolute/path/to/Bucheggang/data/policy"
+        "LEASH_POLICY_STORE": "/absolute/path/to/Bucheggang/data/policy",
+        "LEASH_APP_ORIGIN": "http://127.0.0.1:8000"
       }
     }
   }
 }
 ```
 
-Use absolute paths. If the store path differs from the Wallet's, the customer will not find the draft.
+Use absolute paths. If the store path differs from the Wallet's, the customer will not find the draft. `LEASH_APP_ORIGIN` is required as well and must be the Wallet's origin, because `begin_pairing` builds the pairing link from it.
+
+### OpenCode as the client
+
+OpenCode spawns local MCP servers with a reduced environment. `scripts/mcp-stdio.sh` sets the two variables and executes the server with an absolute `uv` path, so the entry in `~/.config/opencode/opencode.json` is one command:
+
+```json
+{
+  "mcp": {
+    "leash-policy": {
+      "type": "local",
+      "enabled": true,
+      "command": ["/absolute/path/to/Bucheggang/scripts/mcp-stdio.sh"],
+      "env": {
+        "LEASH_POLICY_STORE": "/absolute/path/to/Bucheggang/data/policy",
+        "LEASH_APP_ORIGIN": "http://127.0.0.1:8000"
+      }
+    }
+  }
+}
+```
+
+`opencode mcp list` shows `leash-policy connected` when the entry works. Checked on 2026-09-25 with OpenCode spawning the raw `uv run` command, which closed the connection; the wrapper script connects.
+
+## What the agent is told
+
+The server sends MCP `instructions` at initialize: the six-step flow, guidance on shaping the policy to the request (recurring errand versus one-off purchase, which fields to use, how to phrase open questions so the customer answers in the Wallet), and two complete worked proposals. Every tool description names its step, its inputs, its return keys and what to do on each error. The text is `SERVER_INSTRUCTIONS` in `src/leash/policy/mcp_server.py`; both worked examples validate against `DraftStore.create` and are re-checked whenever that text changes.
 
 ## Start it over streamable HTTP
 
