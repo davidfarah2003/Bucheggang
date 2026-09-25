@@ -92,6 +92,8 @@ Contract text mismatch, 2026-09-25 10:32 CEST: main #128's `JevAnswer` and provi
 
 Current-main check, 2026-09-25 10:40 CEST: commit `6528dfa` changed local-buy device identity to the unique paired `agent_id`, and the shared contract and classifier-design text now state 0.015 tolerance. The off-grid three-option sum of 1.014 still passes the adapter and shared type at #128; the change remains broader than David's direct grid-limited rounding choice. Main #128 model-off replay was run in a clean detached checkout: 45 attempts, 11 approve, 32 decline, two step-up, with all decisions and reasons matching the checked-in CSV. No provider or simulator call was made by that replay. `scripts/flow_sim.py` still supplies a scripted customer answer. The local O4 overlay and rescoring branch remains separate, with no attempted merge over the other owner's overlapping files. The checkout kept only its pre-existing untracked review report after this evidence was recorded.
 
+Recorded demo distinction, 2026-09-25 11:10 CEST: main commits `ead3e8e` and `3b5eb99` added a 58-second local Wallet/MCP demo video with models on. Plan 06 records two local buys, one step-up and visible CatBoost/Jev bars. It explicitly says the Wallet step-up approval was a scripted browser tap. I inspected the launcher and script sources but did not independently run the recording or inspect provider raw responses. This is partial local-path evidence; it is no human customer answer, no simulator submission and no complete new 45-input real-provider exercise. The live checklist still leaves genuine confirmation, step-up and repeated run unchecked.
+
 ## Open items after M0
 
 The open items from startup are answered in [02-classifier-m0.md](02-classifier-m0.md):
