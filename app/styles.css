@@ -349,6 +349,7 @@ p { margin: 0; line-height: 1.48; }
 .permission-stats b { color: var(--ink); text-align: right; }
 .rule-group { display: grid; gap: 14px; padding: 20px; border: 1px solid var(--line); border-radius: 19px; background: #fff; }
 .rule-group h3 { font-size: 17px; }
+.rule-section-heading { font-size: 16px; }
 .rule-group > p { color: var(--muted); font-size: 14px; }
 .rule-item { display: flex; align-items: flex-start; gap: 10px; color: var(--ink); font-size: 14px; line-height: 1.43; }
 .rule-item + .rule-item { padding-top: 13px; border-top: 1px solid var(--line); }

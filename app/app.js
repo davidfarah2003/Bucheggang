@@ -158,13 +158,26 @@ function validateMandateList(items) {
     if (!Number.isInteger(item.version) || !Number.isInteger(item.approvals_count) || item.approvals_count < 0 || !Number.isInteger(item.pending_step_ups) || item.pending_step_ups < 0) throw new Error("A permission has invalid counts or version.");
     if (!["active", "revoked", "superseded", "expired"].includes(item.status)) throw new Error("A permission has an unknown status.");
     if (!Number.isFinite(new Date(text(item.confirmed_at, "Confirmation time")).getTime())) throw new Error("A permission has an invalid confirmation time.");
+    if (!Number.isInteger(item.global_policy_version) || item.global_policy_version < 0) throw new Error("A permission has no valid account-wide rule version.");
+    text(item.global_policy_hash, "Permission account-wide rule hash");
     return item;
   });
+}
+
+function validateGlobalPolicy(payload) {
+  if (!payload || payload.customer !== state.user || !Number.isInteger(payload.version) || payload.version < 0 || !Array.isArray(payload.rules)) throw new Error("The account-wide rule record is incomplete or belongs to another customer.");
+  text(payload.hash, "Account-wide rule hash");
+  payload.rules.forEach((rule) => { text(rule.field, "Account-wide rule field"); text(rule.plain_english, "Account-wide rule description"); });
+  if (payload.updated_at !== null && !Number.isFinite(new Date(text(payload.updated_at, "Account-wide rule update time")).getTime())) throw new Error("The account-wide rule update time is invalid.");
+  if (payload.version === 0 && (payload.rules.length || payload.updated_at !== null)) throw new Error("The empty account-wide rule record is inconsistent.");
+  return payload;
 }
 
 function validateMandate(payload) {
   if (!payload || !payload.mandate || !payload.draft || !payload.effective_policy || !payload.state) throw new Error("The Wallet returned an incomplete permission.");
   const { mandate, draft, effective_policy, state: usage } = payload;
+  if (!Number.isInteger(payload.global_policy_version) || payload.global_policy_version < 0) throw new Error("The permission has no valid account-wide rule version.");
+  text(payload.global_policy_hash, "Permission account-wide rule hash");
   text(mandate.mandate_id, "Permission ID");
   if (!["active", "revoked", "superseded", "expired"].includes(mandate.status)) throw new Error("The permission has an unknown status.");
   validateDraft(draft);
@@ -538,24 +551,35 @@ async function activeContent(serial) {
   return `<div class="wallet-section"><h2>Spending permissions</h2>${detail}<section class="permission-list"><h3>All permissions</h3>${mandateChoices(items, selected?.mandate_id)}</section></div>`;
 }
 
+function globalPolicyCard(policy, selectedVersion) {
+  const notice = selectedVersion !== null && selectedVersion < policy.version
+    ? `This permission uses version ${selectedVersion}. Version ${policy.version} will apply to your next confirmed permission.`
+    : "Changes to account-wide rules apply to the next confirmed permission.";
+  return `<section class="rule-group"><h3>Account-wide rules · version ${policy.version}</h3>${policy.rules.length ? policy.rules.map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("") : `<p>No account-wide rules are saved for this local customer.</p>`}<p>${esc(notice)} Account-wide editing is not available in this Wallet view. Cross-permission spend caps are not active until the runner supports them.</p></section>`;
+}
+
 async function rulesContent(serial) {
-  const items = validateMandateList(await walletApi.mandates());
+  const [items, globalPolicy] = await Promise.all([
+    walletApi.mandates().then(validateMandateList),
+    walletApi.globalPolicy().then(validateGlobalPolicy),
+  ]);
   if (serial !== state.serial) return "";
   state.ownedMandates = items;
   const id = mandateId();
   const selected = items.find((item) => item.mandate_id === id);
-  let detail = `<p class="calm-copy">${items.length ? "Select a permission below to inspect its confirmed rules." : "You have no confirmed permission to inspect."} Account-wide settings cannot be edited in this Wallet view yet.</p>`;
+  let detail = `<p class="calm-copy">${items.length ? "Select a permission below to inspect its confirmed rules." : "You have no confirmed permission to inspect."}</p>`;
   state.mandate = null;
   if (selected) {
     const response = await walletApi.mandate(id);
     if (serial !== state.serial) return "";
     const payload = validateMandate(response);
-    if (payload.mandate.mandate_id !== id) throw new Error("The selected permission does not match the Wallet response.");
+    if (payload.mandate.mandate_id !== id || payload.global_policy_version !== selected.global_policy_version || payload.global_policy_hash !== selected.global_policy_hash) throw new Error("The selected permission does not match the Wallet list.");
+    if (payload.global_policy_version > globalPolicy.version || (payload.global_policy_version === globalPolicy.version && payload.global_policy_hash !== globalPolicy.hash)) throw new Error("The permission and account-wide rule versions do not match.");
     state.mandate = payload;
     const { mandate, effective_policy } = payload;
-    detail = `<p class="calm-copy">These limits belong to the spending permission you confirmed. Account-wide settings cannot be edited in this Wallet view yet.</p>${ruleGroups(effective_policy.rules)}<section class="rule-group"><h3>Missing information</h3><p>${esc(effective_policy.uncertainty_policy === "ask" ? "Ask me before buying" : effective_policy.uncertainty_policy === "decline" ? "Decline the purchase" : "Allow the purchase when evidence is missing")}</p></section><section class="rule-group"><h3>Security</h3><p>Purchase decisions and unfamiliar evidence are checked by the Wallet backend. Your agent cannot change these confirmed rules.</p></section><div class="rule-actions"><button type="button" class="outline-button" data-action="open-tighten" ${mandate.status !== "active" || effective_policy.uncertainty_policy === "decline" ? "disabled" : ""}>Decline uncertain purchases</button><button type="button" class="danger-link" data-action="open-revoke" ${mandate.status !== "active" ? "disabled" : ""}>Revoke this permission</button></div>`;
+    detail = `<p class="calm-copy">These are the effective rules saved on the selected permission. Later account-wide changes apply to the next confirmation.</p><h3 class="rule-section-heading">Effective rules for this permission</h3>${ruleGroups(effective_policy.rules)}<section class="rule-group"><h3>Missing information</h3><p>${esc(effective_policy.uncertainty_policy === "ask" ? "Ask me before buying" : effective_policy.uncertainty_policy === "decline" ? "Decline the purchase" : "Allow the purchase when evidence is missing")}</p></section><section class="rule-group"><h3>Security</h3><p>Purchase decisions and unfamiliar evidence are checked by the Wallet backend. Your agent cannot change these confirmed rules.</p></section><div class="rule-actions"><button type="button" class="outline-button" data-action="open-tighten" ${mandate.status !== "active" || effective_policy.uncertainty_policy === "decline" ? "disabled" : ""}>Decline uncertain purchases</button><button type="button" class="danger-link" data-action="open-revoke" ${mandate.status !== "active" ? "disabled" : ""}>Revoke this permission</button></div>`;
   }
-  return `<div class="wallet-section"><h2>Rules for your permissions</h2>${detail}${items.length ? `<section class="permission-list"><h3>Choose a permission</h3>${mandateChoices(items, selected?.mandate_id, "rules")}</section>` : ""}</div>`;
+  return `<div class="wallet-section"><h2>Rules for your permissions</h2>${detail}${globalPolicyCard(globalPolicy, selected?.global_policy_version ?? null)}${items.length ? `<section class="permission-list"><h3>Choose a permission</h3>${mandateChoices(items, selected?.mandate_id, "rules")}</section>` : ""}</div>`;
 }
 
 async function renderReview(serial) {
