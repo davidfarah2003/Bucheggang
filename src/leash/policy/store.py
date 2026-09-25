@@ -17,6 +17,11 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+from pydantic import ValidationError
+
+from leash.contracts import BoundaryCase, PolicyDraft
+from leash.engine.evaluate import ENGINE_VERSION, evaluate
+
 
 FIELDS = frozenset(
     {
@@ -85,11 +90,86 @@ def _canonical(value: Any) -> bytes:
     )
 
 
-def draft_hash(instruction: str, rules: list[dict[str, Any]], uncertainty_policy: str) -> str:
-    """Hash exactly the customer instruction and executable draft permissions."""
-    return hashlib.sha256(
-        _canonical({"instruction": instruction, "rules": rules, "uncertainty_policy": uncertainty_policy})
-    ).hexdigest()
+def draft_hash(
+    instruction: str,
+    rules: list[dict[str, Any]],
+    uncertainty_policy: str,
+    *,
+    hash_version: int = 1,
+    boundary_cases: list[dict[str, Any]] | None = None,
+) -> str:
+    """Hash the agreed policy payload, preserving the exact legacy v1 bytes."""
+    if hash_version == 1:
+        if boundary_cases:
+            raise InvalidDraft("hash_version 1 cannot contain boundary cases")
+        payload = {"instruction": instruction, "rules": rules, "uncertainty_policy": uncertainty_policy}
+    elif hash_version == 2:
+        if not boundary_cases:
+            raise InvalidDraft("hash_version 2 requires at least one boundary case")
+        payload = {
+            "hash_version": 2,
+            "instruction": instruction,
+            "rules": rules,
+            "uncertainty_policy": uncertainty_policy,
+            "boundary_cases": boundary_cases,
+        }
+    else:
+        raise InvalidDraft(f"unsupported draft hash version: {hash_version}")
+    return hashlib.sha256(_canonical(payload)).hexdigest()
+
+
+def _boundary_cases(values: Any) -> list[dict[str, Any]]:
+    if values is None:
+        return []
+    if not isinstance(values, list):
+        raise InvalidDraft("boundary_cases must be a list")
+    cases = []
+    for index, value in enumerate(values):
+        try:
+            case = BoundaryCase.model_validate(value)
+        except ValidationError as exc:
+            raise InvalidDraft(f"boundary case {index} is invalid: {exc}") from exc
+        cases.append(case.model_dump(mode="json"))
+    return cases
+
+
+def _candidate_policy(draft: dict[str, Any]) -> PolicyDraft:
+    """Build the strict evaluator contract from one stored draft version."""
+    try:
+        return PolicyDraft.model_validate(draft)
+    except ValidationError as exc:
+        raise InvalidDraft(f"candidate policy is invalid: {exc}") from exc
+
+
+def _evaluate_boundary_cases(draft: dict[str, Any], *, phase: str) -> dict[str, Any]:
+    cases = draft.get("boundary_cases", [])
+    results = []
+    policy = _candidate_policy(draft) if cases else None
+    for index, raw_case in enumerate(cases):
+        case = BoundaryCase.model_validate(raw_case)
+        decision = evaluate(case.event, policy, case.state, case.facts, history=case.history)
+        observed = decision.decision
+        if observed != case.expected:
+            raise InvalidDraft(
+                f"boundary case {index} ({case.description}) expected {case.expected}, observed {observed}"
+            )
+        results.append({
+            "case_index": index,
+            "description": case.description,
+            "expected": case.expected,
+            "observed": observed,
+            "reason_codes": [code.value if hasattr(code, "value") else code for code in decision.reason_codes],
+            "case_input_hash": hashlib.sha256(_canonical({
+                "event": case.event.model_dump(mode="json"),
+                "facts": [fact.model_dump(mode="json") for fact in case.facts],
+                "state": case.state.model_dump(mode="json"),
+                "history": case.history.model_dump(mode="json"),
+            })).hexdigest(),
+        })
+    return {
+        "draft_id": draft["draft_id"], "version": draft["version"], "hash": draft["hash"],
+        "evaluated_at": _now(), "phase": phase, "engine_version": ENGINE_VERSION, "results": results,
+    }
 
 
 def _valid_value(value: Any) -> bool:
@@ -260,6 +340,63 @@ class DraftStore:
         finally:
             temporary.unlink(missing_ok=True)
 
+    @staticmethod
+    def _write_replace(path: Path, value: dict[str, Any]) -> None:
+        data = json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2).encode("utf-8") + b"\n"
+        temporary = path.parent / f".{path.name}.{uuid4().hex}.tmp"
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+            directory = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def _save_boundary_results(self, folder: Path, results: dict[str, Any]) -> None:
+        self._write_replace(folder / "boundary-results.json", results)
+
+    def get_boundary_results(self, draft_id: str, created_for: str) -> dict[str, Any]:
+        """Read computed results only when they describe the current owned draft hash."""
+        with self._locked(draft_id) as folder:
+            draft = self.get(draft_id)
+            if not isinstance(created_for, str) or draft.get("created_for") != created_for:
+                raise KeyError(draft_id)
+            cases = draft.get("boundary_cases", [])
+            path = folder / "boundary-results.json"
+            if not path.exists():
+                if cases:
+                    raise DraftConflict("boundary results are stale")
+                return {
+                    "draft_id": draft_id,
+                    "version": draft["version"],
+                    "hash": draft["hash"],
+                    "evaluated_at": draft["created_at"],
+                    "phase": "proposal",
+                    "engine_version": ENGINE_VERSION,
+                    "results": [],
+                }
+            results = json.loads(path.read_text())
+            if results.get("version") != draft["version"] or results.get("hash") != draft["hash"]:
+                raise DraftConflict("boundary results are stale")
+            entries = results.get("results")
+            if not isinstance(entries, list) or len(entries) != len(cases):
+                raise DraftConflict("boundary results are stale")
+            for index, (entry, case) in enumerate(zip(entries, cases, strict=True)):
+                if (
+                    entry.get("case_index") != index
+                    or entry.get("description") != case["description"]
+                    or entry.get("expected") != case["expected"]
+                ):
+                    raise DraftConflict("boundary results are stale")
+            return results
+
     def _audit(self, folder: Path, event: str, **details: Any) -> None:
         entry = {"event": event, "at": _now(), **details}
         descriptor = os.open(folder / "audit.jsonl", os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
@@ -277,6 +414,7 @@ class DraftStore:
         uncertainty_policy: str = "ask",
         examples: list[dict[str, Any]] | None = None,
         open_questions: list[dict[str, Any]] | None = None,
+        boundary_cases: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if not isinstance(created_for, str) or not created_for:
             raise InvalidDraft("created_for is required")
@@ -286,13 +424,16 @@ class DraftStore:
         rules = json.loads(_canonical(rules))
         examples = json.loads(_canonical(examples))
         open_questions = json.loads(_canonical(open_questions))
+        cases = _boundary_cases(boundary_cases)
+        hash_version = 2 if cases else 1
         draft_id = str(uuid4())
-        folder = self._folder(draft_id)
-        folder.mkdir()
         draft = {
             "draft_id": draft_id,
             "version": 1,
-            "hash": draft_hash(instruction, rules, uncertainty_policy),
+            "hash_version": hash_version,
+            "hash": draft_hash(
+                instruction, rules, uncertainty_policy, hash_version=hash_version, boundary_cases=cases
+            ),
             "instruction": instruction,
             "rules": rules,
             "examples": examples,
@@ -301,7 +442,13 @@ class DraftStore:
             "created_for": created_for,
             "created_at": _now(),
         }
+        if cases:
+            draft["boundary_cases"] = cases
+        boundary_results = _evaluate_boundary_cases(draft, phase="proposal")
+        folder = self._folder(draft_id)
+        folder.mkdir()
         self._write_exclusive(folder / "v1.json", draft)
+        self._save_boundary_results(folder, boundary_results)
         self._audit(folder, "draft_created", version=1, hash=draft["hash"])
         return draft
 
@@ -311,8 +458,14 @@ class DraftStore:
         if not versions:
             raise KeyError(draft_id)
         draft = json.loads(versions[-1][1].read_text())
-        if draft["hash"] != draft_hash(draft["instruction"], draft["rules"], draft["uncertainty_policy"]):
+        hash_version = draft.get("hash_version", 1)
+        cases = _boundary_cases(draft.get("boundary_cases", []))
+        if draft["hash"] != draft_hash(
+            draft["instruction"], draft["rules"], draft["uncertainty_policy"],
+            hash_version=hash_version, boundary_cases=cases,
+        ):
             raise DraftConflict("stored draft hash does not match its contents")
+        draft.setdefault("hash_version", 1)
         return draft
 
     def get_owned(self, draft_id: str, created_for: str) -> dict[str, Any]:
@@ -336,6 +489,7 @@ class DraftStore:
         uncertainty_policy: str | None = None,
         examples: list[dict[str, Any]] | None = None,
         open_questions: list[dict[str, Any]] | None = None,
+        boundary_cases: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         with self._locked(draft_id) as folder:
             previous = self.assert_current(draft_id, expected_version, expected_hash)
@@ -343,23 +497,47 @@ class DraftStore:
             new_policy = uncertainty_policy if uncertainty_policy is not None else previous["uncertainty_policy"]
             new_examples = examples if examples is not None else previous["examples"]
             new_questions = open_questions if open_questions is not None else previous["open_questions"]
+            cases = _boundary_cases(
+                boundary_cases if boundary_cases is not None else previous.get("boundary_cases", [])
+            )
+            hash_version = 2 if cases else previous.get("hash_version", 1)
             _validate_draft(previous["instruction"], new_rules, new_policy, new_examples, new_questions)
             revised = {
                 **previous,
                 "version": previous["version"] + 1,
-                "hash": draft_hash(previous["instruction"], new_rules, new_policy),
+                "hash_version": hash_version,
+                "hash": draft_hash(
+                    previous["instruction"], new_rules, new_policy,
+                    hash_version=hash_version, boundary_cases=cases,
+                ),
                 "rules": new_rules,
                 "uncertainty_policy": new_policy,
                 "examples": new_examples,
                 "open_questions": new_questions,
                 "created_at": _now(),
             }
+            if cases:
+                revised["boundary_cases"] = cases
+            else:
+                revised.pop("boundary_cases", None)
+            boundary_results = _evaluate_boundary_cases(revised, phase="revision")
             try:
                 self._write_exclusive(folder / f"v{revised['version']}.json", revised)
             except FileExistsError as exc:
                 raise DraftConflict("another revision was saved first") from exc
+            self._save_boundary_results(folder, boundary_results)
             self._audit(folder, "draft_revised", version=revised["version"], hash=revised["hash"])
             return revised
+
+    def reevaluate_boundary_cases_for_confirmation(
+        self, draft_id: str, *, version: int, hash_value: str
+    ) -> dict[str, Any]:
+        """Recheck the exact current draft and persist confirmation-phase observations."""
+        with self._locked(draft_id) as folder:
+            draft = self.assert_current(draft_id, version, hash_value)
+            results = _evaluate_boundary_cases(draft, phase="confirmation")
+            self._save_boundary_results(folder, results)
+            return results
 
     def assert_current(self, draft_id: str, version: int, hash_value: str) -> dict[str, Any]:
         return self._assert_current(draft_id, version, hash_value)
@@ -448,6 +626,7 @@ class DraftStore:
         global_version: int,
         global_hash: str,
         global_rules: list[dict[str, Any]],
+        boundary_results: dict[str, Any],
     ) -> dict[str, Any]:
         with self._locked(draft_id) as folder:
             draft = self._assert_current(draft_id, version, hash_value, attempt_id)
@@ -471,6 +650,7 @@ class DraftStore:
                 "global_version": global_version,
                 "global_hash": global_hash,
                 "global_rules": global_rules,
+                "boundary_results": boundary_results,
             }
             try:
                 self._write_exclusive(folder / "confirmation.json", record)
