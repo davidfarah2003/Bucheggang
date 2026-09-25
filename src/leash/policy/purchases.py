@@ -348,8 +348,8 @@ class PurchaseDesk:
             if remote.get("status") != "active":
                 raise InvalidPurchase(f"mandate is {remote.get('status')}")
             earlier = _purchase_files(mandate_id)
-            # The agent is the device. Its label is what the customer recognises in a check note.
-            device_id = f"agent:{agent['agent_label']}"
+            # The agent is the device (contract: the paired agent_id, unique per pairing).
+            device_id = agent_id
             event, auth_id = _build_event(validated, device_id=device_id, identity=identity, policy=policy,
                                           mandate_status="active", now=now, budget_s=budget_s, earlier=earlier)
             records.write_exclusive(path, {

@@ -117,8 +117,9 @@ def familiarity(ctx: RuleContext) -> Result:
     devices = ctx.history.device_count(auth.card_id, auth.customer_device_id, auth.timestamp)
     devices += sum(1 for a in ctx.state.approvals if a.device_id == auth.customer_device_id and a.timestamp < auth.timestamp)
     if devices == 0:
+        who = "This shopping agent" if auth.initiator_type == "agent" and "-" in auth.customer_device_id and len(auth.customer_device_id) == 36 else f"Device {auth.customer_device_id}"
         return _bad("familiarity", "uncertain", auth.customer_device_id, "history",
-                    f"Device {auth.customer_device_id} has never made an approved purchase on this card.",
+                    f"{who} has never made an approved purchase on this card.",
                     "new_device")
     merchants = _merchant_seen(ctx)
     if merchants == 0:
