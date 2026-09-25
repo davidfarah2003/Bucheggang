@@ -2,6 +2,7 @@
 
 const MANDATE_KEY = "viseca.demo.mandateId";
 const MANDATE_OWNER_KEY = "viseca.demo.mandateOwner";
+class DraftLinkError extends Error {}
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const screen = document.querySelector("#screen");
 const overlayRoot = document.querySelector("#overlay-root");
@@ -78,12 +79,17 @@ function errorPanel(title, error) {
   return `<section class="error-panel" role="alert"><span aria-hidden="true">!</span><div><h2>${esc(title)}</h2><p>${esc(error.message)}</p><button type="button" data-action="reload">Try again</button></div></section>`;
 }
 
+function hasDraftLink() {
+  const query = new URLSearchParams(window.location.search);
+  return query.has("draft") || query.has("draft_id");
+}
+
 function linkedDraftId() {
   const query = new URLSearchParams(window.location.search);
   const draft = query.get("draft");
   const draftId = query.get("draft_id");
-  if (draft === "" || draftId === "") throw new Error("The spending-plan link has an empty draft ID.");
-  if (draft && draftId && draft !== draftId) throw new Error("The draft and draft_id links refer to different spending plans.");
+  if (draft === "" || draftId === "") throw new DraftLinkError("The spending-plan link has an empty draft ID.");
+  if (draft && draftId && draft !== draftId) throw new DraftLinkError("The draft and draft_id links refer to different spending plans.");
   return draft || draftId;
 }
 
@@ -216,7 +222,8 @@ async function render() {
   } catch (error) {
     if (serial !== state.serial) return;
     if (error.status === 401) { sessionExpired(error); return; }
-    setScreen(`<div class="page-title"><h1>${esc(state.route === "review" ? "Review spending permission" : state.route)}</h1></div>${errorPanel("This screen could not be loaded", error)}`);
+    const linkAction = error instanceof DraftLinkError ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this link</button>` : "";
+    setScreen(`<div class="page-title"><h1>${esc(state.route === "review" ? "Review spending permission" : state.route)}</h1></div>${errorPanel("This screen could not be loaded", error)}${linkAction}`);
   }
 }
 
@@ -229,7 +236,7 @@ async function initialize() {
     const session = await walletApi.session();
     state.user = text(session.username, "Session username");
     const hash = window.location.hash.slice(1);
-    navigate(hash || (linkedDraftId() ? "review" : "shop"));
+    navigate(hash || (hasDraftLink() ? "review" : "shop"));
   } catch (error) {
     if (error.status === 401) { renderLogin(); return; }
     setScreen(errorPanel("Your session could not be checked", error));
@@ -698,6 +705,7 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "reload") { void render(); return; }
+    if (action === "clear-invalid-link") { clearDraftLink(); navigate("shop"); return; }
     button.disabled = true;
     if (action === "login") {
       const username = text(document.querySelector("#username").value.trim(), "Username");
@@ -708,7 +716,7 @@ document.addEventListener("click", async (event) => {
         window.sessionStorage.removeItem(MANDATE_KEY);
         window.sessionStorage.removeItem(MANDATE_OWNER_KEY);
       }
-      navigate(linkedDraftId() ? "review" : "shop");
+      navigate(hasDraftLink() ? "review" : "shop");
     } else if (action === "logout") {
       await walletApi.logout();
       window.sessionStorage.removeItem(MANDATE_KEY);
@@ -827,7 +835,7 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
-window.addEventListener("hashchange", () => navigate(window.location.hash.slice(1) || (linkedDraftId() ? "review" : "shop")));
+window.addEventListener("hashchange", () => navigate(window.location.hash.slice(1) || (hasDraftLink() ? "review" : "shop")));
 reducedMotion.addEventListener("change", () => {
   window.clearTimeout(state.exampleTimer);
   const example = document.querySelector("#animated-example");
