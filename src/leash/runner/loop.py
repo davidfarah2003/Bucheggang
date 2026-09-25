@@ -208,17 +208,21 @@ def handle(
         raise RunLoopError(f"event mandate instruction differs from the confirmed draft {policy.draft_id}")
     coordinator = Coordinator(store, book)
     dispatch_deadline = event.deadline_at - timedelta(seconds=0.25)
-    if dispatch_deadline <= _now():
-        raise RunLoopError(
-            f"{event.authorization.authorization_id}: deadline {event.deadline_at.isoformat()} already passed before dispatch"
-        )
-    with coordinator.locked(mandate_id, deadline_at=dispatch_deadline) as mandate_ids:
+    # The platform redelivers a handled pending step-up with its original deadline, which
+    # is long past by then. The handled lookup therefore runs before the deadline check,
+    # under a short bounded lock; only an unhandled event past its deadline is a failure.
+    lock_deadline = dispatch_deadline if dispatch_deadline > _now() else _now() + timedelta(seconds=5)
+    with coordinator.locked(mandate_id, deadline_at=lock_deadline) as mandate_ids:
         record, _ = policy_context.confirmation(store, mandate_id)
         if record["hash"] != policy.hash or record["version"] != policy.version:
             raise RunLoopError(f"{mandate_id}: supplied draft differs from the saved confirmation")
         state = engine_state.load(mandate_id, customer_mandates=mandate_ids)
         seen = state.handled.get(auth_id)
         if seen is None:
+            if dispatch_deadline <= _now():
+                raise RunLoopError(
+                    f"{auth_id}: deadline {event.deadline_at.isoformat()} already passed before dispatch"
+                )
             effective_event, effective_policy = policy_context.refresh(
                 store, event, deadline_at=dispatch_deadline - timedelta(seconds=2),
             )
