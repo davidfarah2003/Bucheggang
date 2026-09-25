@@ -155,7 +155,7 @@
       s = s || 1; ms = ms == null ? 900 : ms;
       let tx = 800 - x * s, ty = 450 - y * s;
       tx = Math.min(0, Math.max(1600 * (1 - s), tx)); ty = Math.min(0, Math.max(900 * (1 - s), ty));
-      if (s === 1) { tx = 0; ty = 0; }
+      if (s === 1) { tx = 0; ty = 0; const c = document.getElementById("caption"); if (c.classList.contains("side")) { c.classList.remove("show"); document.getElementById("agent").classList.remove("dim"); } }
       Object.assign(cam, { tx, ty, s });
       camera.style.transition = `transform ${ms}ms cubic-bezier(.2,.8,.2,1)`;
       camera.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;

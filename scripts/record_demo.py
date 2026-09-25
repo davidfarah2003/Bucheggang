@@ -156,7 +156,7 @@ async def main() -> None:
             s.frame = frame
             s.cue("swell")
             await page.evaluate("() => window.scene('title')")
-            await asyncio.sleep(1.3)
+            await asyncio.sleep(1.1)
             await page.evaluate("() => window.scene('stage')")
             await page.evaluate("() => window.scene('lead', 'Meet Alex.', 'Groceries every week. No wish to hand an AI the card.')")
             await asyncio.sleep(0.6)
@@ -176,7 +176,7 @@ async def main() -> None:
             # The MCP beat: any agent can plug in.
             await s.zoom_out(500)
             await page.evaluate("() => window.scene('chips', 'Any agent.', 'The Wallet is an MCP server. Any agent plugs in with one tool call.')")
-            await asyncio.sleep(1.4)
+            await asyncio.sleep(1.2)
             await page.evaluate("() => window.scene('agent')")
             await s.say("user", INSTRUCTION, 0.25)
             await s.say("agent", "On it. Asking your Wallet for permission.", 0.2)
@@ -218,7 +218,7 @@ async def main() -> None:
             await s.frame.wait_for_selector('[data-action="open-pending"]', timeout=15000)
             await s.click('[data-action="open-pending"]', after=0.3)
             await s.zoom(PHONE_CX, 470, 1.5, 600, hold=0.2)
-            await s.caption("Why it asks: new device, risk-model flag. Alex decides, never the agent.", 1.1, side=True)
+            await s.caption("Why it asks: new device, risk-model flag. Alex decides, never the agent.", 0.9, side=True)
             await s.click('[data-action="resolve"][data-decision="approve"]', after=0.2)
             await s.zoom_out(450)
             await wait_for_agent(log, "customer answered")
@@ -228,7 +228,7 @@ async def main() -> None:
             await wait_for_agent(log, "agent: done")
             await s.done(0.1)
             s.cue("deny")
-            await s.say("agent", "Declined: shops you already use only, and this card has never bought there.", 0.4)
+            await s.say("agent", "Declined: shops you already use only, and this card has never bought there.", 0.3)
 
             # Why: the decision pipeline and the live probabilities.
             await s.caption("Every decision on record, with the reason.", 0.1)
@@ -243,12 +243,12 @@ async def main() -> None:
             await s.caption("Live models: a CatBoost history score and Jev's probabilities, shown to Alex.", 0.2, side=True)
             await s.zoom(PHONE_CX, 560, 1.9, 700, hold=0.2)
             await s.scroll(520, steps=10)
-            await asyncio.sleep(1.1)
+            await asyncio.sleep(0.9)
             await s.zoom_out(600)
             await page.evaluate("() => window.hideCursor()")
             s.cue("swell")
             await page.evaluate("() => window.scene('outro', 'Agent on a Leash', 'Your agent buys. Your Wallet decides.')")
-            await asyncio.sleep(1.9)
+            await asyncio.sleep(1.7)
             await context.close()
             await browser.close()
     finally:
