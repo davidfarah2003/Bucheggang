@@ -91,6 +91,14 @@ def mandate_locks(mandate_ids: list[str], *, deadline_at: datetime) -> Iterator[
         yield
 
 
+def sync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def write_exclusive(path: Path, value: dict[str, Any]) -> None:
     """Create `path` with `value`; raises FileExistsError if it is already there."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,6 +110,8 @@ def write_exclusive(path: Path, value: dict[str, Any]) -> None:
         os.fsync(stream.fileno())
     os.link(tmp, path)  # fails if path exists: never overwrite an accepted result
     os.unlink(tmp)
+    sync_directory(path.parent)
+    sync_directory(path.parent.parent)
 
 
 def write_atomic(path: Path, value: dict[str, Any]) -> None:
@@ -114,6 +124,8 @@ def write_atomic(path: Path, value: dict[str, Any]) -> None:
         stream.flush()
         os.fsync(stream.fileno())
     os.replace(tmp, path)
+    sync_directory(path.parent)
+    sync_directory(path.parent.parent)
 
 
 def record_accepted(
@@ -184,11 +196,7 @@ def recover_accepted(
     if not path.exists():
         write_exclusive(path, expected)
     for folder in (state_path.parent, state_path.parent.parent, path.parent, path.parent.parent):
-        descriptor = os.open(folder, os.O_RDONLY)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
+        sync_directory(folder)
     return state_after
 
 
