@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Leash demo stage</title>
+<style>
+  :root { --ink: #101418; --red: #c8102e; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    width: 1600px; height: 900px; position: relative;
+    font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background: linear-gradient(120deg, #ff8a3d 0%, #ff3d6e 45%, #7b3dff 100%);
+    background-size: 220% 220%;
+    animation: drift 20s ease-in-out infinite alternate;
+  }
+  @keyframes drift { from { background-position: 0% 0%; } to { background-position: 100% 100%; } }
+  .glow { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .5; pointer-events: none; }
+  .glow.a { width: 640px; height: 640px; left: -180px; top: -220px; background: #ffd166; animation: floatA 14s ease-in-out infinite alternate; }
+  .glow.b { width: 600px; height: 600px; right: -140px; bottom: -240px; background: #4dd0ff; animation: floatB 17s ease-in-out infinite alternate; }
+  @keyframes floatA { to { transform: translate(80px, 60px) scale(1.1); } }
+  @keyframes floatB { to { transform: translate(-70px, -40px) scale(1.06); } }
+
+  /* Scenes */
+  .title {
+    position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: #fff; z-index: 40;
+    opacity: 0; pointer-events: none; transition: opacity .5s ease;
+  }
+  .title.show { opacity: 1; }
+  .title h1 { margin: 0; font-size: 112px; font-weight: 800; letter-spacing: -.045em; line-height: .98; text-shadow: 0 6px 40px rgba(0,0,0,.25);
+    transform: translateY(40px) scale(.94); opacity: 0; transition: transform .7s cubic-bezier(.2,.9,.2,1), opacity .5s ease; }
+  .title p { margin: 22px 0 0; font-size: 34px; font-weight: 600; opacity: 0; transform: translateY(20px); transition: transform .6s cubic-bezier(.2,.9,.2,1) .25s, opacity .5s ease .25s; }
+  .title.show h1, .title.show p { transform: none; opacity: 1; }
+  .title.show p { opacity: .95; }
+
+  .headline { position: absolute; left: 80px; top: 52px; color: #fff; text-shadow: 0 2px 24px rgba(0,0,0,.18);
+    transform: translateY(-30px); opacity: 0; transition: transform .6s cubic-bezier(.2,.9,.2,1), opacity .5s ease; }
+  .headline.show { transform: none; opacity: 1; }
+  .headline h1 { margin: 0; font-size: 42px; font-weight: 800; letter-spacing: -.035em; line-height: 1.05; }
+  .headline p { margin: 6px 0 0; font-size: 19px; font-weight: 500; opacity: .92; }
+
+  .lead {
+    position: absolute; left: 80px; top: 300px; width: 640px; color: #fff; z-index: 30;
+    font-size: 64px; font-weight: 800; letter-spacing: -.04em; line-height: 1.02; text-shadow: 0 6px 40px rgba(0,0,0,.25);
+    opacity: 0; transform: translateY(28px); transition: opacity .45s ease, transform .6s cubic-bezier(.2,.9,.2,1);
+  }
+  .lead.show { opacity: 1; transform: none; }
+  .lead small { display: block; margin-top: 18px; font-size: 26px; font-weight: 600; letter-spacing: -.01em; opacity: .92; line-height: 1.25; }
+
+  .caption {
+    position: absolute; left: 60px; right: 60px; bottom: 44px; text-align: center; color: #fff;
+    font-size: 34px; font-weight: 800; letter-spacing: -.025em; text-shadow: 0 4px 28px rgba(0,0,0,.28);
+    opacity: 0; transform: translateY(16px) scale(.97); transition: opacity .32s ease, transform .4s cubic-bezier(.2,.9,.2,1);
+  }
+  .caption.show { opacity: 1; transform: none; }
+
+  /* Agent panel (left) */
+  .agent-panel {
+    position: absolute; left: 80px; top: 172px; width: 640px; height: 620px;
+    border-radius: 30px; background: rgba(16, 20, 26, .78);
+    border: 1px solid rgba(255,255,255,.22); box-shadow: 0 30px 80px rgba(0,0,0,.35);
+    padding: 24px 26px; display: flex; flex-direction: column; gap: 12px; color: #fff; overflow: hidden;
+    transform: translateX(-120%) rotate(-3deg); opacity: 0; transition: transform .75s cubic-bezier(.2,.9,.2,1), opacity .5s ease;
+  }
+  .agent-panel.show { transform: none; opacity: 1; }
+  .agent-panel header { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 18px; letter-spacing: -.01em; flex: none; }
+  .agent-panel header .dot { width: 12px; height: 12px; border-radius: 50%; background: #48f0a0; box-shadow: 0 0 0 4px rgba(72,240,160,.25); }
+  .agent-panel header small { margin-left: auto; font-weight: 500; opacity: .7; font-size: 14px; }
+  .log { display: flex; flex-direction: column; gap: 10px; justify-content: flex-end; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+  .msg {
+    flex: 0 0 auto; max-width: 92%; padding: 13px 17px; border-radius: 20px; font-size: 19px; line-height: 1.32; font-weight: 500;
+    opacity: 0; transform: translateY(16px) scale(.97); transition: opacity .3s ease, transform .4s cubic-bezier(.2,.9,.2,1);
+  }
+  .msg.show { opacity: 1; transform: none; }
+  .msg.user { align-self: flex-end; background: #fff; color: var(--ink); border-bottom-right-radius: 6px; }
+  .msg.agent { align-self: flex-start; background: rgba(255,255,255,.14); color: #fff; border-bottom-left-radius: 6px; }
+  .msg.tool { align-self: flex-start; background: rgba(0,0,0,.5); color: #d9fbe8; font: 500 15px/1.4 "SF Mono", Menlo, Consolas, monospace; padding: 9px 13px; border-radius: 12px; }
+  .msg.tool b { color: #fff; font-weight: 700; }
+  .msg.tool .wait { display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: #ffd166; animation: pulse .9s ease-in-out infinite; vertical-align: middle; }
+  @keyframes pulse { 50% { opacity: .25; transform: scale(.7); } }
+  .msg.tool.done .wait { display: none; }
+  .msg.tool.done::after { content: " ✓"; color: #48f0a0; font-weight: 700; }
+
+  /* Phone (right) */
+  .phone {
+    position: absolute; right: 120px; top: 84px; width: 430px; height: 880px; transform: translateX(120%) rotate(4deg) scale(.82); transform-origin: top center;
+    border-radius: 54px; background: #0b0d10; padding: 14px; box-shadow: 0 40px 100px rgba(0,0,0,.45), inset 0 0 0 2px #2a2e34;
+    opacity: 0; transition: transform .8s cubic-bezier(.2,.9,.2,1) .08s, opacity .5s ease .08s;
+  }
+  .phone.show { transform: scale(.82); opacity: 1; }
+  .phone::before { content: ""; position: absolute; left: 50%; top: 14px; width: 120px; height: 30px; margin-left: -60px; background: #0b0d10; border-radius: 0 0 20px 20px; z-index: 2; }
+  .phone iframe { width: 100%; height: 100%; border: 0; border-radius: 42px; background: #fff; display: block; }
+
+  #cursor {
+    position: absolute; width: 36px; height: 36px; border-radius: 50%; z-index: 50; pointer-events: none;
+    background: rgba(255,255,255,.35); border: 2px solid #fff; box-shadow: 0 4px 16px rgba(0,0,0,.25);
+    transform: translate(-50%,-50%); left: 1200px; top: 700px;
+    transition: left .42s cubic-bezier(.2,.8,.2,1), top .42s cubic-bezier(.2,.8,.2,1), transform .1s ease, opacity .25s ease; opacity: 0;
+  }
+  #cursor::after { content: ""; position: absolute; inset: -14px; border-radius: 50%; border: 2px solid rgba(255,255,255,.7); opacity: 0; }
+  #cursor.tap::after { animation: ring .45s ease-out; }
+  @keyframes ring { from { transform: scale(.5); opacity: .9; } to { transform: scale(1.3); opacity: 0; } }
+</style>
+</head>
+<body>
+  <div class="glow a"></div><div class="glow b"></div>
+  <div class="title" id="title"><div><h1 id="title-h">Agent on a Leash</h1><p id="title-p">Your agent buys. Your Wallet decides.</p></div></div>
+  <div class="headline" id="headline"><h1>Agent on a Leash</h1><p>Your shopping agent buys. Your Wallet decides.</p></div>
+  <div class="lead" id="lead"></div>
+  <section class="agent-panel" id="agent">
+    <header><span class="dot"></span>Grocery helper<small>MCP · leash-policy</small></header>
+    <div class="log" id="log"></div>
+  </section>
+  <div class="phone" id="phone"><iframe id="wallet" name="wallet" src="/app/" title="Viseca Wallet"></iframe></div>
+  <div class="caption" id="caption"></div>
+  <div id="cursor"></div>
+  <script>
+    const log = document.getElementById("log");
+    const show = (id, on) => document.getElementById(id).classList.toggle("show", on);
+    window.scene = (name, h, p) => {
+      if (name === "title") { if (h) document.getElementById("title-h").textContent = h; if (p) document.getElementById("title-p").textContent = p; show("title", true); show("headline", false); show("agent", false); show("phone", false); }
+      if (name === "stage") { show("title", false); show("headline", true); show("phone", true); }
+      if (name === "lead") { const l = document.getElementById("lead"); l.innerHTML = `${h}<small>${p || ""}</small>`; show("agent", false); show("lead", true); }
+      if (name === "agent") { show("lead", false); show("agent", true); }
+      if (name === "outro") { if (h) document.getElementById("title-h").textContent = h; if (p) document.getElementById("title-p").textContent = p; show("agent", false); show("lead", false); show("phone", false); show("headline", false); show("caption", false); setTimeout(() => show("title", true), 350); }
+    };
+    window.say = (kind, html) => {
+      const el = document.createElement("div"); el.className = "msg " + kind; el.innerHTML = html;
+      log.appendChild(el); requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("show")));
+      while (log.children.length > 6) log.removeChild(log.firstChild);
+    };
+    window.tool = (name, args) => say("tool", `<b>${name}</b>(${args})<span class="wait"></span>`);
+    window.done = () => { const t = [...log.querySelectorAll(".msg.tool:not(.done)")].pop(); if (t) t.classList.add("done"); };
+    window.caption = (text) => { const c = document.getElementById("caption"); c.classList.remove("show"); setTimeout(() => { c.textContent = text; if (text) c.classList.add("show"); }, 180); };
+    const cur = document.getElementById("cursor");
+    window.cursor = (x, y, press) => { cur.style.opacity = "1"; cur.style.left = x + "px"; cur.style.top = y + "px"; cur.style.transform = press ? "translate(-50%,-50%) scale(.72)" : "translate(-50%,-50%)"; if (press) { cur.classList.remove("tap"); void cur.offsetWidth; cur.classList.add("tap"); } };
+    window.hideCursor = () => { cur.style.opacity = "0"; };
+  </script>
+</body>
+</html>
