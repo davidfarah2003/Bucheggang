@@ -551,11 +551,13 @@ async function activeContent(serial) {
   return `<div class="wallet-section"><h2>Spending permissions</h2>${detail}<section class="permission-list"><h3>All permissions</h3>${mandateChoices(items, selected?.mandate_id)}</section></div>`;
 }
 
-function globalPolicyCard(policy, selectedVersion) {
-  const notice = selectedVersion !== null && selectedVersion < policy.version
-    ? `This permission uses version ${selectedVersion}. Version ${policy.version} will apply to your next confirmed permission.`
-    : "Changes to account-wide rules apply to the next confirmed permission.";
-  return `<section class="rule-group"><h3>Account-wide rules · version ${policy.version}</h3>${policy.rules.length ? policy.rules.map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("") : `<p>No account-wide rules are saved for this local customer.</p>`}<p>${esc(notice)} Account-wide editing is not available in this Wallet view. Spending caps shared across permissions are not active in this demo yet.</p></section>`;
+function globalPolicyCard(policy, savedGlobal) {
+  let notice = "";
+  if (!savedGlobal) notice = "Changes to account-wide rules apply to the next confirmed permission.";
+  else if (savedGlobal.version < policy.version) notice = `This permission uses version ${savedGlobal.version}. Version ${policy.version} will apply to your next confirmed permission.`;
+  else if (savedGlobal.version > policy.version) notice = `This permission was confirmed with version ${savedGlobal.version}, but the current account-wide record reports version ${policy.version}. Check the saved rules before another confirmation.`;
+  else if (savedGlobal.hash !== policy.hash) notice = `This permission and the current account-wide record both report version ${policy.version}, but their rule hashes differ. Check the saved rules before another confirmation.`;
+  return `<section class="rule-group"><h3>Account-wide rules · version ${policy.version}</h3>${policy.rules.length ? policy.rules.map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("") : `<p>No account-wide rules are saved for this local customer.</p>`}<p>${notice ? `${esc(notice)} ` : ""}Account-wide editing is not available in this Wallet view. Spending caps shared across permissions are not active in this demo yet.</p></section>`;
 }
 
 async function rulesContent(serial) {
@@ -568,18 +570,19 @@ async function rulesContent(serial) {
   const id = mandateId();
   const selected = items.find((item) => item.mandate_id === id);
   let detail = `<p class="calm-copy">${items.length ? "Select a permission below to inspect its confirmed rules." : "You have no confirmed permission to inspect."}</p>`;
+  let savedGlobal = null;
   state.mandate = null;
   if (selected) {
     const response = await walletApi.mandate(id);
     if (serial !== state.serial) return "";
     const payload = validateMandate(response);
     if (payload.mandate.mandate_id !== id || payload.global_policy_version !== selected.global_policy_version || payload.global_policy_hash !== selected.global_policy_hash) throw new Error("The selected permission does not match the Wallet list.");
-    if (payload.global_policy_version > globalPolicy.version || (payload.global_policy_version === globalPolicy.version && payload.global_policy_hash !== globalPolicy.hash)) throw new Error("The permission and account-wide rule versions do not match.");
+    savedGlobal = { version: payload.global_policy_version, hash: payload.global_policy_hash };
     state.mandate = payload;
     const { mandate, effective_policy } = payload;
     detail = `<p class="calm-copy">These are the effective rules saved on the selected permission. Later account-wide changes apply to the next confirmation.</p><h3 class="rule-section-heading">Effective rules for this permission</h3>${ruleGroups(effective_policy.rules)}<section class="rule-group"><h3>Missing information</h3><p>${esc(effective_policy.uncertainty_policy === "ask" ? "Ask me before buying" : effective_policy.uncertainty_policy === "decline" ? "Decline the purchase" : "Allow the purchase when evidence is missing")}</p></section><section class="rule-group"><h3>Security</h3><p>Purchase decisions and unfamiliar evidence are checked by the Wallet backend. Your agent cannot change these confirmed rules.</p></section><div class="rule-actions"><button type="button" class="outline-button" data-action="open-tighten" ${mandate.status !== "active" || effective_policy.uncertainty_policy === "decline" ? "disabled" : ""}>Decline uncertain purchases</button><button type="button" class="danger-link" data-action="open-revoke" ${mandate.status !== "active" ? "disabled" : ""}>Revoke this permission</button></div>`;
   }
-  return `<div class="wallet-section"><h2>Rules for your permissions</h2>${detail}${globalPolicyCard(globalPolicy, selected?.global_policy_version ?? null)}${items.length ? `<section class="permission-list"><h3>Choose a permission</h3>${mandateChoices(items, selected?.mandate_id, "rules")}</section>` : ""}</div>`;
+  return `<div class="wallet-section"><h2>Rules for your permissions</h2>${detail}${globalPolicyCard(globalPolicy, savedGlobal)}${items.length ? `<section class="permission-list"><h3>Choose a permission</h3>${mandateChoices(items, selected?.mandate_id, "rules")}</section>` : ""}</div>`;
 }
 
 async function renderReview(serial) {
