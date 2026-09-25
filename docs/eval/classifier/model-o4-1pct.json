@@ -1,0 +1,7 @@
+{
+  "base_manifest": "docs/eval/classifier/model-manifest.json",
+  "base_manifest_sha256": "3e9022aa98223d962e8beee29c0a5cbb0a10b093ff1a7fee916c6703b750ec0e",
+  "release_status": "o4_selected_pending_integrated_review",
+  "requested_june_rate": 0.01,
+  "score_cut": 0.8950478918645203
+}

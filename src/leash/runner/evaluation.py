@@ -35,7 +35,7 @@ class ModelEvaluator:
             from leash.engine.classifier.assess import assess
             from leash.engine.classifier.behaviour import BehaviorModel
             from leash.engine.classifier.history import HistoryIndex
-            from leash.engine.classifier.jev import DEADLINE_RESERVE_SECONDS, REQUESTED_MODEL
+            from leash.engine.classifier.jev import DEADLINE_RESERVE_SECONDS, PROMPT_VERSION, REQUESTED_MODEL
         except ModuleNotFoundError as exc:
             raise SettingsError(
                 "model-enabled startup requires the classifier package and its classifier dependency group"
@@ -45,9 +45,11 @@ class ModelEvaluator:
         self._provider = load_openrouter()
         self._assess = assess
         self._requested_model = REQUESTED_MODEL
+        self._prompt_version = PROMPT_VERSION
         self._provider_reserve_s = DEADLINE_RESERVE_SECONDS
-        log.info("model configuration ready: jev=%s artifact=%s behavioural_threshold=%s",
-                 self._requested_model, self._model.artifact_version, self._model.threshold)
+        log.info("model configuration ready: jev=%s artifact=%s operating_point=%s model_id=%s",
+                 self._requested_model, self._model.artifact_version,
+                 self._model.operating_threshold, self._model.model_id)
 
     def __call__(self, event: Event, policy: PolicyDraft, state: MandateState,
                  facts: list[PurchaseFacts] | None) -> Decision:
@@ -83,13 +85,15 @@ class ModelEvaluator:
             bundle = AssessmentBundle.model_validate(bundle.model_dump(mode="python"))
             if bundle.behaviour is None or bundle.semantic is None:
                 raise ValueError("configured model evaluator requires both completed assessments")
-            if bundle.behaviour.escalation_fired and self._model.threshold is None:
-                raise ValueError("behavioural escalation fired without an operating threshold")
-            if (bundle.behaviour.artifact_version != self._model.artifact_version
-                    or bundle.behaviour.model_id != self._model.model_id):
-                raise ValueError("assessment differs from the loaded behavioural artifact")
-            if bundle.semantic.requested_model != self._requested_model:
-                raise ValueError("assessment differs from the configured Jev model")
+            expected_features = self._history.for_event(event)
+            if bundle.features != expected_features:
+                raise ValueError("assessment history differs from the authorized pre-event profile")
+            expected_behaviour = self._model.score(expected_features)
+            if bundle.behaviour != expected_behaviour:
+                raise ValueError("assessment differs from the configured behavioural score and operating point")
+            if (bundle.semantic.requested_model != self._requested_model
+                    or bundle.semantic.prompt_version != self._prompt_version):
+                raise ValueError("assessment differs from the configured Jev model or prompt")
             if time.monotonic() - started >= allowance or budget.remaining(MODEL_RESERVE_S) <= 0:
                 raise ModelDeadlineError(f"{event.authorization.authorization_id}: model stage exceeded its allowance")
             decision = evaluate(event, policy, state, facts, assessments=bundle)
