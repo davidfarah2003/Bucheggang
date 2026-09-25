@@ -221,7 +221,7 @@ All customer routes except `POST /session` require a valid local session cookie 
 
 ## MCP tools
 
-Served by `leash.policy.mcp_server` over stdio, backed by the same `LEASH_POLICY_STORE` directory as `leash.api`. This is the whole agent-facing surface (plan 01, steps 2 and 9 to 12). Every tool raises on bad input; nothing is defaulted. No tool confirms, resolves, tightens or revokes, and no tool returns a rule field or a hash to the agent.
+Served by `leash.policy.mcp_server` over stdio, backed by the same `LEASH_POLICY_STORE` directory as `leash.api`. This is the whole agent-facing surface (plan 01, steps 2 and 9 to 12). Every tool raises on bad input; nothing is defaulted. No tool confirms, resolves, tightens or revokes. `propose_task_policy` returns the full stored `PolicyDraft`, including the rules and hash the agent submitted. The read-only `get_policy_status` and `get_policy_summary` tools return no rule fields or hash.
 
 | Tool | Input → returns |
 | --- | --- |
