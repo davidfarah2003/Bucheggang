@@ -353,6 +353,7 @@ function pendingCard(item) {
   text(item.expires_at, "Pending purchase deadline");
   if (!item.event?.authorization?.merchant || !item.decision || !Array.isArray(item.decision.evidence)) throw new Error("A pending purchase is incomplete.");
   const auth = item.event.authorization;
+  if (auth.authorization_id !== item.authorization_id || item.decision.authorization_id !== item.authorization_id || item.decision.decision !== "step_up") throw new Error("The pending purchase and its decision do not match.");
   const merchant = text(auth.merchant.merchant_name, "Pending merchant");
   return `<button type="button" class="need-card uncertain-card" data-action="open-pending" data-id="${esc(item.authorization_id)}"><span class="section-kicker" aria-live="off">PURCHASE REVIEW · ${esc(pendingTimeLabel(item.expires_at))}</span><strong>${esc(pendingTitle(item.decision.evidence))}</strong><span>${esc(merchant)} · ${esc(money(auth.billing_amount_chf, auth.currency))}</span><small>${esc(item.decision.customer_message)}</small><b aria-hidden="true">›</b></button>`;
 }
