@@ -1,0 +1,659 @@
+{
+  "measurement_base": "9bb1ebc",
+  "adapter_revision": "2b2f83f",
+  "requested_provider": {
+    "only": [
+      "typesafe"
+    ],
+    "allow_fallbacks": false
+  },
+  "served_provider_validated_by_adapter": "TypeSafe",
+  "code_sha256": {
+    "src/leash/contracts/classifier.py": "9bbec2a698d3103638a79d6684d416ebf1ae1a6f0c91c2f57e10855468c369db",
+    "src/leash/engine/model_checks.py": "a7216ce4de07ee31c9ee21809edf2031d990a315187dfd618e848fc69aafda88",
+    "src/leash/engine/evaluate.py": "f8d073ee357e684ff843d9a171584ab9670e44dfda3195571e402ba2bc37c76c",
+    "src/leash/contracts/decision.py": "d1df06a78f6b3b42a0f7bd36be3a4df32cf74954b08b6af6b63a04ca653a4ac1"
+  },
+  "calls": [
+    {
+      "authorization_id": "AU0001",
+      "semantic": {
+        "requested_model": "typesafe/jev-1.13-20260917",
+        "served_model": "typesafe/jev-1.13-20260917",
+        "prompt_version": "history-risk-1",
+        "answers": [
+          {
+            "question_id": "spend_pattern",
+            "options": {
+              "ordinary": 0.75,
+              "unclear": 0.16,
+              "unusual": 0.09
+            },
+            "selected": "ordinary"
+          },
+          {
+            "question_id": "activity_pattern",
+            "options": {
+              "ordinary": 0.74,
+              "unclear": 0.02,
+              "unusual": 0.24
+            },
+            "selected": "ordinary"
+          }
+        ],
+        "latency_ms": 539
+      },
+      "baseline": "approve",
+      "with_assessments": "approve",
+      "reason_codes": [
+        "within_policy"
+      ],
+      "model_checks": [
+        {
+          "name": "model.jev.activity_pattern",
+          "result": "pass",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.74,\"unclear\":0.02,\"unusual\":0.24},\"question_id\":\"activity_pattern\",\"selected\":\"ordinary\"},\"latency_ms\":539,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment found no additional concern about the purchasing activity."
+        },
+        {
+          "name": "model.jev.spend_pattern",
+          "result": "pass",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.75,\"unclear\":0.16,\"unusual\":0.09},\"question_id\":\"spend_pattern\",\"selected\":\"ordinary\"},\"latency_ms\":539,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment found no additional concern about the purchase amount."
+        }
+      ]
+    },
+    {
+      "authorization_id": "AU0037",
+      "semantic": {
+        "requested_model": "typesafe/jev-1.13-20260917",
+        "served_model": "typesafe/jev-1.13-20260917",
+        "prompt_version": "history-risk-1",
+        "answers": [
+          {
+            "question_id": "spend_pattern",
+            "options": {
+              "ordinary": 0.75,
+              "unclear": 0.07,
+              "unusual": 0.18
+            },
+            "selected": "ordinary"
+          },
+          {
+            "question_id": "activity_pattern",
+            "options": {
+              "ordinary": 0.8,
+              "unclear": 0.02,
+              "unusual": 0.18
+            },
+            "selected": "ordinary"
+          }
+        ],
+        "latency_ms": 295
+      },
+      "baseline": "decline",
+      "with_assessments": "decline",
+      "reason_codes": [
+        "amount_over_limit"
+      ],
+      "model_checks": [
+        {
+          "name": "model.jev.activity_pattern",
+          "result": "pass",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.8,\"unclear\":0.02,\"unusual\":0.18},\"question_id\":\"activity_pattern\",\"selected\":\"ordinary\"},\"latency_ms\":295,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment found no additional concern about the purchasing activity."
+        },
+        {
+          "name": "model.jev.spend_pattern",
+          "result": "pass",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.75,\"unclear\":0.07,\"unusual\":0.18},\"question_id\":\"spend_pattern\",\"selected\":\"ordinary\"},\"latency_ms\":295,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment found no additional concern about the purchase amount."
+        }
+      ]
+    },
+    {
+      "authorization_id": "AU10319-414975d9",
+      "semantic": {
+        "requested_model": "typesafe/jev-1.13-20260917",
+        "served_model": "typesafe/jev-1.13-20260917",
+        "prompt_version": "history-risk-1",
+        "answers": [
+          {
+            "question_id": "spend_pattern",
+            "options": {
+              "unusual": 0.03,
+              "ordinary": 0.1,
+              "unclear": 0.87
+            },
+            "selected": "unclear"
+          },
+          {
+            "question_id": "activity_pattern",
+            "options": {
+              "unusual": 0.56,
+              "ordinary": 0.38,
+              "unclear": 0.06
+            },
+            "selected": "unusual"
+          }
+        ],
+        "latency_ms": 453
+      },
+      "baseline": "decline",
+      "with_assessments": "decline",
+      "reason_codes": [
+        "merchant_type_mismatch"
+      ],
+      "model_checks": [
+        {
+          "name": "model.jev.activity_pattern",
+          "result": "uncertain",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.38,\"unclear\":0.06,\"unusual\":0.56},\"question_id\":\"activity_pattern\",\"selected\":\"unusual\"},\"latency_ms\":453,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment flagged unusual purchasing activity."
+        },
+        {
+          "name": "model.jev.spend_pattern",
+          "result": "uncertain",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.1,\"unclear\":0.87,\"unusual\":0.03},\"question_id\":\"spend_pattern\",\"selected\":\"unclear\"},\"latency_ms\":453,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment could not establish whether the purchase amount is ordinary."
+        }
+      ]
+    },
+    {
+      "authorization_id": "AU10234-fb2858da",
+      "semantic": {
+        "requested_model": "typesafe/jev-1.13-20260917",
+        "served_model": "typesafe/jev-1.13-20260917",
+        "prompt_version": "history-risk-1",
+        "answers": [
+          {
+            "question_id": "spend_pattern",
+            "options": {
+              "unusual": 0.27,
+              "ordinary": 0.66,
+              "unclear": 0.07
+            },
+            "selected": "ordinary"
+          },
+          {
+            "question_id": "activity_pattern",
+            "options": {
+              "unusual": 0.3,
+              "ordinary": 0.67,
+              "unclear": 0.03
+            },
+            "selected": "ordinary"
+          }
+        ],
+        "latency_ms": 481
+      },
+      "baseline": "step_up",
+      "with_assessments": "step_up",
+      "reason_codes": [
+        "no_card_history",
+        "unrequested_item"
+      ],
+      "model_checks": [
+        {
+          "name": "model.jev.activity_pattern",
+          "result": "pass",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.67,\"unclear\":0.03,\"unusual\":0.3},\"question_id\":\"activity_pattern\",\"selected\":\"ordinary\"},\"latency_ms\":481,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment found no additional concern about the purchasing activity."
+        },
+        {
+          "name": "model.jev.spend_pattern",
+          "result": "pass",
+          "value": "{\"answer\":{\"options\":{\"ordinary\":0.66,\"unclear\":0.07,\"unusual\":0.27},\"question_id\":\"spend_pattern\",\"selected\":\"ordinary\"},\"latency_ms\":481,\"prompt_version\":\"history-risk-1\",\"requested_model\":\"typesafe/jev-1.13-20260917\",\"served_model\":\"typesafe/jev-1.13-20260917\"}",
+          "source": "model",
+          "note": "The history assessment found no additional concern about the purchase amount."
+        }
+      ]
+    }
+  ],
+  "scope": "Real provider requests with offline evaluator composition. No simulator submission or customer answer.",
+  "recomposition": {
+    "all_four_match": true,
+    "provider_requests_repeated": false,
+    "code_hashes_describe_recomposition": true
+  },
+  "history_pack_recomposition": {
+    "base": "0b7c2c1",
+    "provider_requests_repeated": false,
+    "outcomes": [
+      {
+        "authorization_id": "AU0001",
+        "baseline": "approve",
+        "baseline_reasons": [
+          "within_policy"
+        ],
+        "with_assessments": "approve",
+        "reason_codes": [
+          "within_policy"
+        ],
+        "model_checks": [
+          [
+            "model.jev.activity_pattern",
+            "pass"
+          ],
+          [
+            "model.jev.spend_pattern",
+            "pass"
+          ]
+        ]
+      },
+      {
+        "authorization_id": "AU0037",
+        "baseline": "decline",
+        "baseline_reasons": [
+          "amount_over_limit"
+        ],
+        "with_assessments": "decline",
+        "reason_codes": [
+          "amount_over_limit"
+        ],
+        "model_checks": [
+          [
+            "model.jev.activity_pattern",
+            "pass"
+          ],
+          [
+            "model.jev.spend_pattern",
+            "pass"
+          ]
+        ]
+      },
+      {
+        "authorization_id": "AU10319-414975d9",
+        "baseline": "decline",
+        "baseline_reasons": [
+          "merchant_type_mismatch"
+        ],
+        "with_assessments": "decline",
+        "reason_codes": [
+          "merchant_type_mismatch"
+        ],
+        "model_checks": [
+          [
+            "model.jev.activity_pattern",
+            "uncertain"
+          ],
+          [
+            "model.jev.spend_pattern",
+            "uncertain"
+          ]
+        ]
+      },
+      {
+        "authorization_id": "AU10234-fb2858da",
+        "baseline": "step_up",
+        "baseline_reasons": [
+          "unrequested_item"
+        ],
+        "with_assessments": "step_up",
+        "reason_codes": [
+          "unrequested_item"
+        ],
+        "model_checks": [
+          [
+            "model.jev.activity_pattern",
+            "pass"
+          ],
+          [
+            "model.jev.spend_pattern",
+            "pass"
+          ]
+        ]
+      }
+    ]
+  },
+  "feature_bound_recomposition": {
+    "base": "0b7c2c1",
+    "producer_revision": "bfb4df5",
+    "provider_requests_repeated": false,
+    "digest_matches_producer": true,
+    "changed_feature_map_rejected": true,
+    "code_sha256": {
+      "src/leash/contracts/classifier.py": "b103333c868786f23d51aa85795f4514c5f3f900e82a8306829265d6f736380a",
+      "src/leash/engine/model_checks.py": "e6607061204929e6931d60cb62a1cd92018d1a21dd4af6866194e0b61ce413f7",
+      "src/leash/engine/evaluate.py": "f8d073ee357e684ff843d9a171584ab9670e44dfda3195571e402ba2bc37c76c",
+      "src/leash/contracts/decision.py": "d1df06a78f6b3b42a0f7bd36be3a4df32cf74954b08b6af6b63a04ca653a4ac1"
+    },
+    "outcomes": [
+      {
+        "authorization_id": "AU0001",
+        "baseline": "approve",
+        "with_assessments": "approve",
+        "reason_codes": [
+          "within_policy"
+        ],
+        "behaviour": {
+          "score": 0.029953195661059726,
+          "model_id": "catboost",
+          "artifact_version": "e4815c5677073c4e985c56f09f045be3d72c4e3ae624b75f9d06870630c828cf",
+          "feature_schema_version": "hist-1",
+          "support": {
+            "card_approved_purchase_count": 119,
+            "card_prior_attempt_count": 121,
+            "card_merchant_approved_count": 119,
+            "card_merchant_last_approved_days": 26,
+            "card_device_approved_count": 119,
+            "card_device_last_approved_days": 50,
+            "card_country_approved_count": 119,
+            "card_country_last_approved_days": 97,
+            "card_channel_approved_count": 119,
+            "card_channel_last_approved_days": 55,
+            "card_category_approved_count": 119,
+            "card_category_last_approved_days": 35,
+            "card_category_amount_median_chf": 35,
+            "card_category_amount_percentile": 35,
+            "card_attempt_count_10m": 121,
+            "card_declined_attempt_count_10m": 121,
+            "card_attempt_count_1h": 121,
+            "card_declined_attempt_count_1h": 121,
+            "card_attempt_count_24h": 121,
+            "card_declined_attempt_count_24h": 121,
+            "card_last_approved_purchase_days": 119,
+            "card_agent_attempt_count": 121,
+            "card_agent_approved_count": 119,
+            "customer_approved_purchase_count": 229,
+            "customer_prior_attempt_count": 237,
+            "customer_merchant_approved_count": 229,
+            "customer_merchant_last_approved_days": 47,
+            "customer_device_approved_count": 229,
+            "customer_device_last_approved_days": 93,
+            "customer_country_approved_count": 229,
+            "customer_country_last_approved_days": 193,
+            "customer_channel_approved_count": 229,
+            "customer_channel_last_approved_days": 123,
+            "customer_category_approved_count": 229,
+            "customer_category_last_approved_days": 66,
+            "customer_category_amount_median_chf": 66,
+            "customer_category_amount_percentile": 66,
+            "customer_attempt_count_10m": 237,
+            "customer_declined_attempt_count_10m": 237,
+            "customer_attempt_count_1h": 237,
+            "customer_declined_attempt_count_1h": 237,
+            "customer_attempt_count_24h": 237,
+            "customer_declined_attempt_count_24h": 237,
+            "customer_last_approved_purchase_days": 229,
+            "customer_agent_attempt_count": 237,
+            "customer_agent_approved_count": 229,
+            "amount_to_per_transaction_limit": 1,
+            "amount_to_monthly_limit": 1,
+            "initiator_is_agent": 1,
+            "card_active_at_attempt": 1
+          },
+          "escalation_fired": false
+        },
+        "purchase_digest": "e524d91a37ccf7cdfb65f146fb882db293bcdc57a2a4aab60779a7256ddaa664",
+        "model_checks": [
+          [
+            "model.behaviour",
+            "pass"
+          ],
+          [
+            "model.jev.activity_pattern",
+            "pass"
+          ],
+          [
+            "model.jev.spend_pattern",
+            "pass"
+          ]
+        ]
+      },
+      {
+        "authorization_id": "AU0037",
+        "baseline": "decline",
+        "with_assessments": "decline",
+        "reason_codes": [
+          "amount_over_limit"
+        ],
+        "behaviour": {
+          "score": 0.1639176685438607,
+          "model_id": "catboost",
+          "artifact_version": "e4815c5677073c4e985c56f09f045be3d72c4e3ae624b75f9d06870630c828cf",
+          "feature_schema_version": "hist-1",
+          "support": {
+            "card_approved_purchase_count": 128,
+            "card_prior_attempt_count": 131,
+            "card_merchant_approved_count": 128,
+            "card_merchant_last_approved_days": 6,
+            "card_device_approved_count": 128,
+            "card_device_last_approved_days": 55,
+            "card_country_approved_count": 128,
+            "card_country_last_approved_days": 81,
+            "card_channel_approved_count": 128,
+            "card_channel_last_approved_days": 79,
+            "card_category_approved_count": 128,
+            "card_category_last_approved_days": 27,
+            "card_category_amount_median_chf": 27,
+            "card_category_amount_percentile": 27,
+            "card_attempt_count_10m": 131,
+            "card_declined_attempt_count_10m": 131,
+            "card_attempt_count_1h": 131,
+            "card_declined_attempt_count_1h": 131,
+            "card_attempt_count_24h": 131,
+            "card_declined_attempt_count_24h": 131,
+            "card_last_approved_purchase_days": 128,
+            "card_agent_attempt_count": 131,
+            "card_agent_approved_count": 128,
+            "customer_approved_purchase_count": 201,
+            "customer_prior_attempt_count": 212,
+            "customer_merchant_approved_count": 201,
+            "customer_merchant_last_approved_days": 8,
+            "customer_device_approved_count": 201,
+            "customer_device_last_approved_days": 83,
+            "customer_country_approved_count": 201,
+            "customer_country_last_approved_days": 154,
+            "customer_channel_approved_count": 201,
+            "customer_channel_last_approved_days": 119,
+            "customer_category_approved_count": 201,
+            "customer_category_last_approved_days": 31,
+            "customer_category_amount_median_chf": 31,
+            "customer_category_amount_percentile": 31,
+            "customer_attempt_count_10m": 212,
+            "customer_declined_attempt_count_10m": 212,
+            "customer_attempt_count_1h": 212,
+            "customer_declined_attempt_count_1h": 212,
+            "customer_attempt_count_24h": 212,
+            "customer_declined_attempt_count_24h": 212,
+            "customer_last_approved_purchase_days": 201,
+            "customer_agent_attempt_count": 212,
+            "customer_agent_approved_count": 201,
+            "amount_to_per_transaction_limit": 1,
+            "amount_to_monthly_limit": 1,
+            "initiator_is_agent": 1,
+            "card_active_at_attempt": 1
+          },
+          "escalation_fired": false
+        },
+        "purchase_digest": "c6e0c2b822f115e67e3e0f9752e3f3fb352ec86795224840ded26a737954f960",
+        "model_checks": [
+          [
+            "model.behaviour",
+            "pass"
+          ],
+          [
+            "model.jev.activity_pattern",
+            "pass"
+          ],
+          [
+            "model.jev.spend_pattern",
+            "pass"
+          ]
+        ]
+      },
+      {
+        "authorization_id": "AU10319-414975d9",
+        "baseline": "decline",
+        "with_assessments": "decline",
+        "reason_codes": [
+          "merchant_type_mismatch"
+        ],
+        "behaviour": {
+          "score": 0.13956740570122317,
+          "model_id": "catboost",
+          "artifact_version": "e4815c5677073c4e985c56f09f045be3d72c4e3ae624b75f9d06870630c828cf",
+          "feature_schema_version": "hist-1",
+          "support": {
+            "card_approved_purchase_count": 336,
+            "card_prior_attempt_count": 344,
+            "card_merchant_approved_count": 336,
+            "card_merchant_last_approved_days": 0,
+            "card_device_approved_count": 336,
+            "card_device_last_approved_days": 240,
+            "card_country_approved_count": 336,
+            "card_country_last_approved_days": 301,
+            "card_channel_approved_count": 336,
+            "card_channel_last_approved_days": 206,
+            "card_category_approved_count": 336,
+            "card_category_last_approved_days": 0,
+            "card_category_amount_median_chf": 0,
+            "card_category_amount_percentile": 0,
+            "card_attempt_count_10m": 344,
+            "card_declined_attempt_count_10m": 344,
+            "card_attempt_count_1h": 344,
+            "card_declined_attempt_count_1h": 344,
+            "card_attempt_count_24h": 344,
+            "card_declined_attempt_count_24h": 344,
+            "card_last_approved_purchase_days": 336,
+            "card_agent_attempt_count": 344,
+            "card_agent_approved_count": 336,
+            "customer_approved_purchase_count": 336,
+            "customer_prior_attempt_count": 344,
+            "customer_merchant_approved_count": 336,
+            "customer_merchant_last_approved_days": 0,
+            "customer_device_approved_count": 336,
+            "customer_device_last_approved_days": 240,
+            "customer_country_approved_count": 336,
+            "customer_country_last_approved_days": 301,
+            "customer_channel_approved_count": 336,
+            "customer_channel_last_approved_days": 206,
+            "customer_category_approved_count": 336,
+            "customer_category_last_approved_days": 0,
+            "customer_category_amount_median_chf": 0,
+            "customer_category_amount_percentile": 0,
+            "customer_attempt_count_10m": 344,
+            "customer_declined_attempt_count_10m": 344,
+            "customer_attempt_count_1h": 344,
+            "customer_declined_attempt_count_1h": 344,
+            "customer_attempt_count_24h": 344,
+            "customer_declined_attempt_count_24h": 344,
+            "customer_last_approved_purchase_days": 336,
+            "customer_agent_attempt_count": 344,
+            "customer_agent_approved_count": 336,
+            "amount_to_per_transaction_limit": 1,
+            "amount_to_monthly_limit": 1,
+            "initiator_is_agent": 1,
+            "card_active_at_attempt": 1
+          },
+          "escalation_fired": false
+        },
+        "purchase_digest": "266d16cbc148b0665f06fca2717f9dec8565da1794575e12f2c5f2937b27ed60",
+        "model_checks": [
+          [
+            "model.behaviour",
+            "pass"
+          ],
+          [
+            "model.jev.activity_pattern",
+            "uncertain"
+          ],
+          [
+            "model.jev.spend_pattern",
+            "uncertain"
+          ]
+        ]
+      },
+      {
+        "authorization_id": "AU10234-fb2858da",
+        "baseline": "step_up",
+        "with_assessments": "step_up",
+        "reason_codes": [
+          "unrequested_item"
+        ],
+        "behaviour": {
+          "score": 0.08430324889214635,
+          "model_id": "catboost",
+          "artifact_version": "e4815c5677073c4e985c56f09f045be3d72c4e3ae624b75f9d06870630c828cf",
+          "feature_schema_version": "hist-1",
+          "support": {
+            "card_approved_purchase_count": 92,
+            "card_prior_attempt_count": 97,
+            "card_merchant_approved_count": 92,
+            "card_merchant_last_approved_days": 22,
+            "card_device_approved_count": 92,
+            "card_device_last_approved_days": 32,
+            "card_country_approved_count": 92,
+            "card_country_last_approved_days": 70,
+            "card_channel_approved_count": 92,
+            "card_channel_last_approved_days": 31,
+            "card_category_approved_count": 92,
+            "card_category_last_approved_days": 25,
+            "card_category_amount_median_chf": 25,
+            "card_category_amount_percentile": 25,
+            "card_attempt_count_10m": 97,
+            "card_declined_attempt_count_10m": 97,
+            "card_attempt_count_1h": 97,
+            "card_declined_attempt_count_1h": 97,
+            "card_attempt_count_24h": 97,
+            "card_declined_attempt_count_24h": 97,
+            "card_last_approved_purchase_days": 92,
+            "card_agent_attempt_count": 97,
+            "card_agent_approved_count": 92,
+            "customer_approved_purchase_count": 208,
+            "customer_prior_attempt_count": 216,
+            "customer_merchant_approved_count": 208,
+            "customer_merchant_last_approved_days": 36,
+            "customer_device_approved_count": 208,
+            "customer_device_last_approved_days": 32,
+            "customer_country_approved_count": 208,
+            "customer_country_last_approved_days": 153,
+            "customer_channel_approved_count": 208,
+            "customer_channel_last_approved_days": 106,
+            "customer_category_approved_count": 208,
+            "customer_category_last_approved_days": 39,
+            "customer_category_amount_median_chf": 39,
+            "customer_category_amount_percentile": 39,
+            "customer_attempt_count_10m": 216,
+            "customer_declined_attempt_count_10m": 216,
+            "customer_attempt_count_1h": 216,
+            "customer_declined_attempt_count_1h": 216,
+            "customer_attempt_count_24h": 216,
+            "customer_declined_attempt_count_24h": 216,
+            "customer_last_approved_purchase_days": 208,
+            "customer_agent_attempt_count": 216,
+            "customer_agent_approved_count": 208,
+            "amount_to_per_transaction_limit": 1,
+            "amount_to_monthly_limit": 1,
+            "initiator_is_agent": 1,
+            "card_active_at_attempt": 1
+          },
+          "escalation_fired": false
+        },
+        "purchase_digest": "bfe23cd3d5d4410f873f2b657173613f66fdc498e42a6263ffa47fda817080c1",
+        "model_checks": [
+          [
+            "model.behaviour",
+            "pass"
+          ],
+          [
+            "model.jev.activity_pattern",
+            "pass"
+          ],
+          [
+            "model.jev.spend_pattern",
+            "pass"
+          ]
+        ]
+      }
+    ]
+  }
+}
