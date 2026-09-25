@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -54,10 +55,20 @@ def human_window_s() -> float:
     limits = api.bootstrap().get("limits")
     if not isinstance(limits, dict) or not isinstance(limits.get("step_up_timeout_seconds"), (int, float)):
         raise StepUpError(f"bootstrap has no limits.step_up_timeout_seconds: {limits}")
-    return float(limits["step_up_timeout_seconds"])
+    window = limits["step_up_timeout_seconds"]
+    _validate_window(window)
+    return float(window)
+
+
+def _validate_window(window_s: float) -> None:
+    if isinstance(window_s, bool) or not math.isfinite(window_s) or window_s <= EXPIRY_MARGIN_S:
+        raise StepUpError("human window must be finite and longer than the expiry margin")
 
 
 def expires_at(accepted_at: datetime, window_s: float) -> datetime:
+    _validate_window(window_s)
+    if accepted_at.utcoffset() is None:
+        raise StepUpError("step-up accepted_at must have a timezone")
     return accepted_at + timedelta(seconds=window_s - EXPIRY_MARGIN_S)
 
 
@@ -65,7 +76,7 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def resolve(authorization_id: str, decision: str, customer_message: str) -> Any:
+def resolve(authorization_id: str, decision: str, customer_message: str, *, deadline_at: datetime) -> Any:
     """POST /v1/authorizations/{id}/resolve. Raises ApiError on non-2xx.
 
     The simulator's resolve body accepts decision, customer_message and evidence
@@ -73,7 +84,7 @@ def resolve(authorization_id: str, decision: str, customer_message: str) -> Any:
     as step_up_timeout live in our recorded Decision.
     """
     body = {"decision": decision, "customer_message": customer_message, "evidence": []}
-    return api.call("POST", f"/v1/authorizations/{authorization_id}/resolve", json=body)
+    return api.call("POST", f"/v1/authorizations/{authorization_id}/resolve", json=body, deadline_at=deadline_at)
 
 
 class StepUpBook:
@@ -143,10 +154,13 @@ class StepUpBook:
         records.write_atomic(path, {"step_up": step_up.model_dump(mode="json"), "status": "pending", "resolution": None})
         return step_up
 
-    def _finish(self, path: Path, step_up: StepUp, outcome: str, reason_codes: list[str], message: str, explanation: str) -> Any:
-        """Resolve on the simulator, then record. Caller holds the mandate lock."""
+    def _finish(
+        self, path: Path, step_up: StepUp, outcome: str, reason_codes: list[str], message: str, explanation: str,
+        *, deadline_at: datetime,
+    ) -> Any:
+        """Resolve within the human window, then record. Caller holds the mandate lock."""
         auth_id = step_up.authorization_id
-        accepted = resolve(auth_id, outcome, message)
+        accepted = resolve(auth_id, outcome, message, deadline_at=deadline_at)
         accepted_at = _now()
         final = Decision(
             authorization_id=auth_id,
@@ -231,6 +245,7 @@ class StepUpBook:
                 [code],
                 answer.customer_message,
                 f"The customer answered {answer.decision} at {answer.answered_at.isoformat()}.",
+                deadline_at=step_up.expires_at,
             )
 
     def sweep(self, mandate_id: str, run_id: str) -> list[str]:
@@ -242,11 +257,17 @@ class StepUpBook:
                 if now < step_up.expires_at:
                     continue
                 path = self._path(mandate_id, step_up.authorization_id)
+                timeout_deadline = step_up.expires_at + timedelta(seconds=EXPIRY_MARGIN_S)
+                if _now() >= timeout_deadline:
+                    self._reconcile_expired(path, step_up, run_id)
+                    done.append(step_up.authorization_id)
+                    continue
                 try:
                     self._finish(
                         path, step_up, "decline", ["step_up_timeout"],
                         "You did not answer in time, so this purchase was declined.",
                         f"No customer answer before {step_up.expires_at.isoformat()}; declined on timeout.",
+                        deadline_at=timeout_deadline,
                     )
                 except api.ApiError as exc:
                     error = exc.body.get("error") if isinstance(exc.body, dict) else None

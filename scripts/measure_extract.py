@@ -74,7 +74,7 @@ def main() -> None:
 
     width = max(len(label) for label, _ in rows)
     print(f"corpus {CORPUS.name}: {len(records)} lines")
-    print(f"{'metric':<{width}} | pass 1")
+    print(f"{'metric':<{width}} | deterministic")
     print(f"{'-' * width}-|-{'-' * max(len(v) for _, v in rows)}")
     for label, value in rows:
         print(f"{label:<{width}} | {value}")

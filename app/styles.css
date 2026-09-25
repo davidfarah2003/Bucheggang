@@ -211,7 +211,7 @@ p { margin: 0; line-height: 1.48; }
   border-radius: 23px;
   background: #fff;
 }
-.composer textarea, .composer input {
+.composer textarea {
   width: 100%;
   min-height: 38px;
   padding: 0;
@@ -223,7 +223,7 @@ p { margin: 0; line-height: 1.48; }
   line-height: 1.45;
 }
 .composer textarea { min-height: 62px; padding-right: 50px; overflow-y: hidden; }
-.composer textarea::placeholder, .composer input::placeholder { color: #687479; opacity: 1; }
+.composer textarea::placeholder { color: #687479; opacity: 1; }
 .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgb(200 56 49 / 10%); }
 .prompt-example { display: grid; gap: 7px; min-height: 98px; margin-top: 15px; padding: 13px 16px; border: 1px solid #f0e9e5; border-radius: 17px; background: linear-gradient(125deg, #fffefd 20%, #fbf6f2 100%); color: var(--muted); }
 .prompt-example span { color: #525e61; font-size: 10px; font-weight: 650; letter-spacing: .07em; }
@@ -235,10 +235,9 @@ p { margin: 0; line-height: 1.48; }
 .clarification label { color: var(--ink); font-size: 14px; font-weight: 650; }
 .clarification textarea { width: 100%; min-height: 72px; padding: 11px 12px; border: 1px solid #e4ded6; border-radius: 12px; background: #fff; color: var(--ink); font-size: 14px; line-height: 1.45; resize: none; overflow-y: hidden; }
 .clarification small { color: var(--muted); font-size: 11px; line-height: 1.45; }
-.composer-actions { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
-.composer-submit, .send-button {
+.send-button {
   display: grid;
-  width: 42px;
+  width: 44px;
   height: 42px;
   flex: 0 0 42px;
   place-items: center;
@@ -246,17 +245,16 @@ p { margin: 0; line-height: 1.48; }
   border-radius: 15px;
   background: #e9e6e1;
   color: #687479;
-  font-size: 24px;
+  font-size: 13px;
+  font-weight: 680;
 }
-.composer-submit:not(:disabled):hover, .send-button:not(:disabled):hover { background: var(--accent-dark); color: #fff; }
+.send-button:not(:disabled):hover { background: var(--accent-dark); color: #fff; }
 .send-button:not(:disabled) { background: var(--accent); color: #fff; }
-.send-button { width: 44px; height: 44px; font-size: 13px; font-weight: 680; }
+.send-button { height: 44px; }
 .send-button svg { width: 21px; height: 21px; }
 .composer .send-button { position: absolute; right: 17px; bottom: 17px; }
 .agent-state { margin-top: 20px; color: var(--accent); font-size: 14px; font-weight: 650; }
 .agent-state span { color: var(--muted); font-weight: 450; }
-.agent-state button { width: fit-content; padding: 0; border: 0; background: transparent; color: var(--accent); text-align: left; }
-.agent-state small, .agent-state a { color: var(--muted); font-size: 13px; font-weight: 450; text-decoration: none; }
 .shop-plan { margin-top: 24px; padding: 20px; border: 1px solid var(--line); border-radius: 20px; background: #fff; }
 .shop-plan h2 { font-size: 20px; }
 .shop-plan p { margin-top: 8px; color: var(--muted); }
@@ -321,6 +319,26 @@ p { margin: 0; line-height: 1.48; }
 .need-card b { position: absolute; right: 24px; top: 50%; transform: translateY(-50%); color: var(--accent); font-size: 30px; font-weight: 350; line-height: 1; }
 .need-card.uncertain-card { background: var(--amber-soft); box-shadow: none; }
 .uncertain-card .section-kicker, .uncertain-card b { color: var(--amber); }
+.request-history, .permission-list, .mandate-list { display: grid; gap: 12px; }
+.request-history, .permission-list { margin-top: 8px; }
+.request-history h3, .permission-list h3 { font-size: 16px; }
+.request-record, .mandate-choice {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.request-record strong, .mandate-choice strong { font-size: 15px; line-height: 1.35; }
+.request-record small, .mandate-choice small { color: var(--muted); font-size: 13px; line-height: 1.4; }
+.request-button, .mandate-choice { cursor: pointer; }
+.request-button > span:last-child { color: var(--accent); font-size: 13px; font-weight: 680; }
+.mandate-choice.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .permission-card { display: grid; gap: 10px; padding: 23px 21px; background: var(--green-soft); }
 .permission-card .section-kicker { color: var(--green); }
 .permission-card h3 { font-size: 20px; }
@@ -331,6 +349,7 @@ p { margin: 0; line-height: 1.48; }
 .permission-stats b { color: var(--ink); text-align: right; }
 .rule-group { display: grid; gap: 14px; padding: 20px; border: 1px solid var(--line); border-radius: 19px; background: #fff; }
 .rule-group h3 { font-size: 17px; }
+.rule-section-heading { font-size: 16px; }
 .rule-group > p { color: var(--muted); font-size: 14px; }
 .rule-item { display: flex; align-items: flex-start; gap: 10px; color: var(--ink); font-size: 14px; line-height: 1.43; }
 .rule-item + .rule-item { padding-top: 13px; border-top: 1px solid var(--line); }
@@ -378,6 +397,9 @@ p { margin: 0; line-height: 1.48; }
 .activity-card-bottom time { color: var(--muted); }
 .activity-disclaimer { margin-top: 42px; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .activity-view { display: flex; min-height: calc(100dvh - 156px); flex-direction: column; }
+.activity-view > .calm-copy { margin-bottom: 9px; }
+.activity-view > .text-button { align-self: flex-start; margin-bottom: 22px; }
+.activity-view > .outline-button { align-self: flex-start; margin-top: 16px; }
 #activity-list { flex: 1; }
 .activity-disclaimer { margin-top: auto; padding-top: 42px; }
 
@@ -386,6 +408,7 @@ p { margin: 0; line-height: 1.48; }
 .review-view .page-title { margin-bottom: 8px; }
 .review-view .page-title h1 { font-size: 31px; }
 .review-subtitle { margin-bottom: 25px; color: var(--muted); font-size: 14px; }
+.review-version { display: block; margin-top: 8px; color: var(--ink); font-weight: 650; }
 .review-summary { display: grid; gap: 11px; padding: 23px 21px; border: 1px solid #f0ebe5; background: #fff; }
 .review-summary h2 { font-size: 19px; }
 .review-summary > strong { margin-top: 9px; font-size: 38px; font-weight: 720; letter-spacing: -.045em; line-height: 1.1; }

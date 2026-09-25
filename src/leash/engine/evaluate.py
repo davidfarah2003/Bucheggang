@@ -1,18 +1,19 @@
-"""evaluate(event, policy, state, facts) -> Decision. Pure: no I/O, no model."""
+"""evaluate(event, policy, state, facts, assessments=None). Pure: no I/O or model calls."""
 
 from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
 
-from leash.contracts import Check, Decision, Event, MandateState, PolicyDraft, PurchaseFacts
+from leash.contracts import AssessmentBundle, Check, Decision, Event, MandateState, PolicyDraft, PurchaseFacts
 from leash.contracts.event import MandateRule
 
 from . import checks
+from .model_checks import model_checks, validate_assessments
 from .rules import RuleContext, evaluate_rule, reason_code
 from .words import Finding, compose
 
-ENGINE_VERSION = "leash-engine 0.4"
+ENGINE_VERSION = "leash-engine 0.5"
 STRICTNESS = {"approve": 0, "ask": 1, "decline": 2}
 FACT_FIELDS = ("product_type", "size", "return_days", "is_addon", "is_gift_card", "is_subscription",
                "is_protection_plan", "matches_request")
@@ -40,13 +41,15 @@ def _uncertainty(policy: PolicyDraft, event: Event) -> str:
 
 
 def evaluate(event: Event, policy: PolicyDraft, state: MandateState,
-             facts: list[PurchaseFacts] | None) -> Decision:
+             facts: list[PurchaseFacts] | None, assessments: AssessmentBundle | None = None) -> Decision:
+    start = time.perf_counter()
+    if assessments is not None:
+        assessments = validate_assessments(event, policy, state, assessments)
     auth_id = event.authorization.authorization_id
     handled = state.handled.get(auth_id)
     if handled is not None:
         return handled  # a repeated delivery of a purchase already decided
 
-    start = time.perf_counter()
     raw_ctx = RuleContext(event, state, facts)
     ctx = RuleContext(event, state, _quarantine(facts))
 
@@ -72,6 +75,10 @@ def evaluate(event: Event, policy: PolicyDraft, state: MandateState,
         result = fn(raw_ctx if fn is checks.injected else ctx)
         if result is not None:  # a check another check already covers for this purchase
             add(result.check, result.code)
+
+    if assessments is not None:
+        for check in model_checks(assessments):
+            add(check, "model_history_uncertain" if check.result == "uncertain" else None)
 
     policy_mode = _uncertainty(policy, event)
     if fails:
