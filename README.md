@@ -103,6 +103,8 @@ Shop currently hands requests to an external MCP client. The in-app provider ada
 
 ## Built with Cotal Cloud
 
+<a href="https://cotal.ai"><img src="docs/assets/readme/cotal-mark.svg" width="64" height="64" align="left" hspace="12" alt="Cotal"></a>
+
 We used [Cotal Cloud](https://cotal.ai) to coordinate 3 people and 15 agents across more than 640 commits in under 22 hours. Context passed between agents automatically.
 
 [Cotal on GitHub](https://github.com/Cotal-Ai/Cotal)
