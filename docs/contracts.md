@@ -321,6 +321,40 @@ Served by `leash.api`. Paths and shapes are what the app lane codes against.
 
 All customer routes except `POST /account` and `POST /session` require a valid session cookie and return 401 without one. Every browser mutation, including `POST /account` and `POST /session` and every cookie-authenticated one (confirm, reject, answer, tighten, revoke, `PUT /global-policy`, pairing approve, agent revoke), requires an `Origin` header equal to `LEASH_APP_ORIGIN`, a configured value read at startup (the local demo sets `http://127.0.0.1:<port>`), never derived from the request's `Host`; a missing or different `Origin` is 403. The API sets no CORS headers. The Origin check runs before any session read; the middleware only tests that the cookie is present, and the route's session dependency performs the single session read and `last_seen_at` write. Confirmation, tightening, revocation and step-up answers are only reachable through these authenticated app routes. None of them is an MCP tool. The identity model behind these routes is in the section "Identity source" below.
 
+## Harness link
+
+The built-in Shopping Harness (plan 04, Later) and any external MCP agent hand the customer to the trusted Wallet for two moments only: confirming a proposed policy and answering a step-up. The link carries one server-persisted identifier and nothing else.
+
+```
+proposal   /app/?draft_id=<draft_id>              the draft the agent proposed, owned by the agent's account
+purchase   /app/?authorization_id=<authorization_id>   the pending step-up the runner recorded
+```
+
+Entry. The Wallet resolves the identifier against the signed-in account. A draft whose `created_for` is another account, an unknown identifier, or a purchase that is not pending for one of the account's mandates is an error screen with an escape to Shop; nothing is created on entry. The agent never sends the policy text, the rules, or a customer answer over the link; the Wallet reads them from the store.
+
+Return. The agent resumes only on backend state it can read back, never on the Wallet's say-so:
+
+| Moment | Readback | Resume when |
+| --- | --- | --- |
+| proposal | `GET /drafts/{draft_id}` for content; the owned `GET /drafts?state=all` summary for `proposed`, `confirming`, `confirmed` or `rejected`; over MCP, `get_policy_status` | `confirmed` with a `mandate_id`. `rejected` gives the agent no authority and it stops. |
+| purchase | `GET /step-ups/pending` while pending; `GET /decisions/{authorization_id}` for the latest accepted result; over MCP, `get_purchase_status` | the accepted result exists. A `decline`, a `step_up_timeout` or a `customer_declined` stops the purchase. |
+
+Readback is a poll by the agent at its own cadence. There is no callback, no push event and no route that lets the agent set a state. The Harness runs in the customer's browser session and holds no agent token or provider key; the server-side adapter that turns its chat into MCP calls is the one process holding credentials, and that adapter is a later plan-04 decision recorded there before any code.
+
+## Purchase over MCP
+
+`buy` and `get_purchase_status` stay parked until this section is implemented under its own PR. When they land they do not integrate a payment processor. The contract is:
+
+```
+buy          paired agent token + confirmed mandate_id + final typed cart, merchant and all-in total
+             -> Decision (approve | decline | step_up with authorization_id), the same evaluate the runner uses
+step_up      resolved only in the Wallet, or times out to decline (section StepUp and StepUpAnswer)
+outcome      get_purchase_status -> { authorization_id, decision, resolved, final,
+                                      reference: { authorization_id, mandate_id, decision, decision_hash, expires_at } | null }
+```
+
+`reference` is present only for a final `approve` and is what an external processor consumes to take payment; the backend records no charge and makes no order claim. `decision_hash` is the SHA-256 of the canonical accepted `Decision`. A cart or total that differs from what the agent showed the customer is the agent's problem: the engine judges the typed values it receives, and `facts.*` rules apply to the `facts` the agent supplies with `sources[field] = agent_form`.
+
 ## Identity source
 
 Ruled 2026-09-25 by the contracts owner on Oskar's direction. This replaces the earlier `LEASH_MCP_TOKENS` capability-map ruling and the shared `LEASH_MCP_TOKEN` bearer; neither ships. It is a local credential system for the demo, and the section ends with what a bank integration replaces.
@@ -366,7 +400,7 @@ Served by `leash.policy.mcp_server` over stdio or streamable HTTP, backed by the
 | `propose_task_policy` | `{ instruction: str, proposal: { rules: [Rule], examples: [...], open_questions: [...], uncertainty_policy } }` → the stored `PolicyDraft` (`draft_id`, `version: 1`, `hash`, the validated fields). Invalid proposal raises `InvalidDraft` with the reason. The agent then hands the customer `/app/?draft_id=<draft_id>` |
 | `get_policy_status` | `{ draft_id: str }` → `{ draft_id, version, status: pending \| confirmed \| rejected, mandate_id: str \| null, confirmed_at: datetime \| null, rejected_reason: str \| null }`. `mandate_id` is set only when `status` is `confirmed`. Unknown draft raises |
 | `get_policy_summary` | `{ draft_id: str }` → `{ draft_id, version, instruction, plain_english: [str], examples: [{ description, expected, why }], open_questions: [{ question, options, answer: str \| null }], uncertainty_policy }`. The sentences are the same ones the Wallet shows |
-| `buy` | `{ mandate_id: str, cart: [{ item_id, item_name, item_category, item_details, unit_price_chf, quantity }], merchant: { merchant_id, merchant_name, merchant_category, merchant_mcc, merchant_country }, facts: [PurchaseFacts] }` → `Decision` (`approve`, `decline` or `step_up` with `authorization_id`). Parked for the submission: raises `NotImplementedError("purchases arrive through the simulator in demo mode; see plan 01 step 12")` |
+| `buy` | `{ mandate_id: str, cart: [{ item_id, item_name, item_category, item_details, unit_price_chf, quantity }], merchant: { merchant_id, merchant_name, merchant_category, merchant_mcc, merchant_country }, facts: [PurchaseFacts] }` → `Decision` (`approve`, `decline` or `step_up` with `authorization_id`). Parked for the submission: raises `NotImplementedError("purchases arrive through the simulator in demo mode; see plan 01 step 12")`. Scope when it lands: section "Purchase over MCP" |
 | `get_purchase_status` | `{ authorization_id: str }` → `{ authorization_id, decision: Decision, resolved: bool, final: approve \| decline \| null }`; a `step_up` is `resolved: false` until the Wallet answers or it times out. Parked with `buy` |
 
 `facts` in `buy` is the form the agent's own model fills; the backend checks it deterministically and records `sources[field] = agent_form` for every field the agent supplied. The agent never sends the policy; the backend reads the confirmed policy for `mandate_id` from its own store.
