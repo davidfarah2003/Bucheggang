@@ -1005,7 +1005,7 @@ document.addEventListener("click", async (event) => {
       openDetail(detail);
       return;
     }
-    if (action === "reload") { void render(); return; }
+    if (action === "reload") { if (state.user) void render(); else void initialize(); return; }
     if (action === "clear-invalid-link") { if (state.route === "pair") clearPairLink(); else clearDraftLink(); navigate(requestedRoute("")); return; }
     button.disabled = true;
     if (action === "select-mandate") {
