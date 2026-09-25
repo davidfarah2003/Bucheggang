@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -182,46 +183,59 @@ def mandate_router(
             raise HTTPException(status_code=422, detail="status must be active, superseded, revoked, expired or all")
         if load_state is None:
             raise HTTPException(status_code=503, detail="mandate state reader is not available")
-        items = []
-        for mandate_id, record in owned_confirmations(store, customer).items():
-            draft = store.get(record["draft_id"])
-            if draft["version"] != record["version"] or draft["hash"] != record["hash"]:
-                raise RuntimeError(f"confirmed draft for mandate {mandate_id} has changed")
-            remote = _remote(mandate_id, record, draft)
-            edits = edits_store.read(mandate_id)
-            _effective(remote, draft, edits, record)
-            mandate = _mandate(mandate_id, record, remote, edits)
-            if status != "all" and mandate["status"] != status:
-                continue
-            state_value = MandateState.model_validate(load_state(mandate_id))
-            if state_value.mandate_id != mandate_id:
-                raise RuntimeError(f"state reader returned a different mandate for {mandate_id}")
-            items.append({
-                **mandate,
-                "instruction": draft["instruction"],
-                "approvals_count": len(state_value.approvals),
-                "pending_step_ups": len(state_value.pending_step_ups),
-                "global_policy_version": record.get("global_version", 0),
-                "global_policy_hash": record.get("global_hash", rules_hash([])),
-            })
-        return sorted(items, key=lambda item: (item["confirmed_at"], item["mandate_id"]), reverse=True)
+        deadline_at = datetime.now(UTC) + timedelta(seconds=30)
+        stop_at = time.monotonic() + 30
+        with records.customer_lock(customer, stop_at=stop_at):
+            confirmations = owned_confirmations(store, customer)
+            mandate_ids = sorted(confirmations)
+            with records.mandate_locks(mandate_ids, deadline_at=deadline_at, stop_at=stop_at):
+                if owned_confirmations(store, customer) != confirmations:
+                    raise RuntimeError("owned mandate set changed while locking the list")
+                items = []
+                for mandate_id, record in confirmations.items():
+                    draft = store.get(record["draft_id"])
+                    if draft["version"] != record["version"] or draft["hash"] != record["hash"]:
+                        raise RuntimeError(f"confirmed draft for mandate {mandate_id} has changed")
+                    remote = _remote(mandate_id, record, draft, deadline_at=deadline_at)
+                    edits = edits_store.read(mandate_id)
+                    _effective(remote, draft, edits, record)
+                    mandate = _mandate(mandate_id, record, remote, edits)
+                    if status != "all" and mandate["status"] != status:
+                        continue
+                    state_value = MandateState.model_validate(load_state(mandate_id, customer_mandates=mandate_ids))
+                    if state_value.mandate_id != mandate_id:
+                        raise RuntimeError(f"state reader returned a different mandate for {mandate_id}")
+                    items.append({
+                        **mandate,
+                        "instruction": draft["instruction"],
+                        "approvals_count": len(state_value.approvals),
+                        "pending_step_ups": len(state_value.pending_step_ups),
+                        "global_policy_version": record.get("global_version", 0),
+                        "global_policy_hash": record.get("global_hash", rules_hash([])),
+                    })
+                return sorted(items, key=lambda item: (item["confirmed_at"], item["mandate_id"]), reverse=True)
 
     @router.get("/mandates/{mandate_id}")
     def get_mandate(mandate_id: str, customer: str = Depends(authenticated_customer)) -> dict:
         mandate_id = _mandate_id(mandate_id)
-        record, draft = _confirmation(store, mandate_id, customer)
         if load_state is None:
             raise HTTPException(status_code=503, detail="mandate state reader is not available")
-        mandate_ids = sorted(owned_confirmations(store, customer))
         deadline_at = datetime.now(UTC) + timedelta(seconds=30)
-        with records.mandate_locks(mandate_ids, deadline_at=deadline_at):
-            remote = _remote(mandate_id, record, draft, deadline_at=deadline_at)
-            edits = edits_store.read(mandate_id)
-            policy = _effective(remote, draft, edits, record)
-            state = MandateState.model_validate(load_state(mandate_id, customer_mandates=mandate_ids)).model_dump(mode="json")
-            if state["mandate_id"] != mandate_id:
-                raise RuntimeError(f"state reader returned a different mandate for {mandate_id}")
-            return {"mandate": _mandate(mandate_id, record, remote, edits), "draft": PolicyDraft.model_validate(draft).model_dump(mode="json"), "effective_policy": policy, "state": state, "global_policy_version": record.get("global_version", 0), "global_policy_hash": record.get("global_hash", rules_hash([]))}
+        stop_at = time.monotonic() + 30
+        with records.customer_lock(customer, stop_at=stop_at):
+            record, draft = _confirmation(store, mandate_id, customer)
+            confirmations = owned_confirmations(store, customer)
+            mandate_ids = sorted(confirmations)
+            with records.mandate_locks(mandate_ids, deadline_at=deadline_at, stop_at=stop_at):
+                if owned_confirmations(store, customer) != confirmations:
+                    raise RuntimeError("owned mandate set changed while locking the detail")
+                remote = _remote(mandate_id, record, draft, deadline_at=deadline_at)
+                edits = edits_store.read(mandate_id)
+                policy = _effective(remote, draft, edits, record)
+                state = MandateState.model_validate(load_state(mandate_id, customer_mandates=mandate_ids)).model_dump(mode="json")
+                if state["mandate_id"] != mandate_id:
+                    raise RuntimeError(f"state reader returned a different mandate for {mandate_id}")
+                return {"mandate": _mandate(mandate_id, record, remote, edits), "draft": PolicyDraft.model_validate(draft).model_dump(mode="json"), "effective_policy": policy, "state": state, "global_policy_version": record.get("global_version", 0), "global_policy_hash": record.get("global_hash", rules_hash([]))}
 
     @router.post("/mandates/{mandate_id}/tighten")
     def tighten_mandate(mandate_id: str, body: TightenBody, customer: str = Depends(authenticated_customer)) -> dict:
