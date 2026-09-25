@@ -184,7 +184,7 @@ function linkedPurchaseId() {
 
 function clearPurchaseLink() {
   const url = new URL(window.location.href);
-  url.searchParams.delete("authorization_id");
+  for (const name of ["authorization_id", "draft", "draft_id", "pair"]) url.searchParams.delete(name);
   window.history.replaceState(null, "", url.pathname + url.search + url.hash);
 }
 
