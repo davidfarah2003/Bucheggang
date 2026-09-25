@@ -2,7 +2,7 @@
 
 Generated 2026-09-25T04:07:56.212275+00:00.
 
-Checkout revision at generation: `57449464923310a0ef121e85dde1c458109ecc50`. Code hashes below identify the files used, including any uncommitted edits.
+Generation checkout: `57449464923310a0ef121e85dde1c458109ecc50`. The generated report was committed in `52af096013e81c550730e27aa7b3156a2b6e5617` and merged in `4657a47`; the code hashes below identify the files used at generation, including any uncommitted edits.
 Generator: [report.py](../../scripts/report.py), SHA-256 `901d95a0ebb1e2141be4d10f5b03385d924d2ac2d301c7872a8f04000f8af5ca`.
 Replay input: [replay-2026-09-25-all.csv](replay-2026-09-25-all.csv), SHA-256 `76a0c89ca07b1b7f3eaa232a8264a47981def6a6a9c46f8837957a44931bedaf`.
 Mode: `sequential`. Engine versions in the recorded rows: leash-engine 0.5.
