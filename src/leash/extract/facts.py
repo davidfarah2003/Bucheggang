@@ -1,4 +1,4 @@
-"""Deterministic first pass over the simulator's cart lines."""
+"""Deterministic extraction over the simulator's cart lines."""
 
 from __future__ import annotations
 
