@@ -58,6 +58,15 @@
   .lead.show .chip { opacity: 1; transform: none; }
   .lead.show .chip:nth-child(1) { transition-delay: .25s; } .lead.show .chip:nth-child(2) { transition-delay: .4s; } .lead.show .chip:nth-child(3) { transition-delay: .55s; } .lead.show .chip:nth-child(4) { transition-delay: .7s; }
   .lead .chip.mcp { background: #fff; color: var(--red); border-color: #fff; }
+  .lead.tech { top: 170px; width: 620px; font-size: 44px; }
+  .lead .steps { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; }
+  .lead .step { display: grid; grid-template-columns: 44px 1fr; gap: 14px; align-items: start; padding: 14px 16px; border-radius: 18px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.35); backdrop-filter: blur(6px);
+    opacity: 0; transform: translateX(-18px); transition: opacity .35s ease, transform .45s cubic-bezier(.2,.9,.2,1); }
+  .lead.show .step { opacity: 1; transform: none; }
+  .lead.show .step:nth-child(1) { transition-delay: .2s; } .lead.show .step:nth-child(2) { transition-delay: .5s; } .lead.show .step:nth-child(3) { transition-delay: .8s; } .lead.show .step:nth-child(4) { transition-delay: 1.1s; }
+  .lead .step b { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: #fff; color: var(--red); font-size: 20px; font-weight: 800; letter-spacing: 0; }
+  .lead .step strong { display: block; font-size: 21px; font-weight: 750; letter-spacing: -.015em; line-height: 1.2; }
+  .lead .step span { display: block; margin-top: 3px; font-size: 16px; font-weight: 500; opacity: .9; line-height: 1.3; letter-spacing: 0; }
 
   .caption {
     position: absolute; left: 60px; right: 60px; bottom: 44px; text-align: center; color: #fff; z-index: 35;
@@ -140,8 +149,14 @@
       if (name === "stage") { show("title", false); show("headline", true); show("phone", true); }
       if (name === "lead") { const l = document.getElementById("lead"); l.innerHTML = `${h}<small>${p || ""}</small>`; show("agent", false); show("lead", true); }
       if (name === "chips") { const l = document.getElementById("lead"); l.innerHTML = `${h}<small>${p || ""}</small><div class="chips"><span class="chip mcp">MCP</span><span class="chip">Claude Code</span><span class="chip">OpenCode</span><span class="chip">your own agent</span></div>`; show("agent", false); show("lead", true); }
-      if (name === "agent") { show("lead", false); show("agent", true); }
-      if (name === "outro") { document.getElementById("credit").hidden = false; if (h) document.getElementById("title-h").textContent = h; if (p) document.getElementById("title-p").textContent = p; show("agent", false); show("lead", false); show("phone", false); show("headline", false); show("caption", false); setTimeout(() => show("title", true), 350); }
+      if (name === "tech") { const l = document.getElementById("lead"); l.classList.add("tech"); l.innerHTML = `${h}<div class="steps">
+          <div class="step"><b>1</b><div><strong>Alex's rules</strong><span>Amount, window, category, known shops. A failed rule decides on its own.</span></div></div>
+          <div class="step"><b>2</b><div><strong>Cart facts</strong><span>What the agent declared and what the merchant text says. Injected instructions are flagged.</span></div></div>
+          <div class="step"><b>3</b><div><strong>Card history, 50 features</strong><span>Device, shop, country, pace and amounts against this card's real approved purchases.</span></div></div>
+          <div class="step"><b>4</b><div><strong>Risk models</strong><span>CatBoost decline score on those features, Jev's probabilities. They can ask, never override.</span></div></div>
+        </div>`; show("agent", false); show("lead", true); }
+      if (name === "agent") { const l = document.getElementById("lead"); l.classList.remove("tech"); show("lead", false); show("agent", true); }
+      if (name === "outro") { document.getElementById("credit").hidden = false; document.getElementById("lead").classList.remove("tech"); if (h) document.getElementById("title-h").textContent = h; if (p) document.getElementById("title-p").textContent = p; show("agent", false); show("lead", false); show("phone", false); show("headline", false); show("caption", false); setTimeout(() => show("title", true), 350); }
     };
     window.say = (kind, html) => {
       const el = document.createElement("div"); el.className = "msg " + kind; el.innerHTML = html;
@@ -153,9 +168,9 @@
     window.caption = (text, side) => { const c = document.getElementById("caption"); c.classList.remove("show"); document.getElementById("agent").classList.toggle("dim", !!(text && side)); setTimeout(() => { c.textContent = text; c.classList.toggle("side", !!side); if (text) c.classList.add("show"); }, 180); };
     // Camera. cam holds the target transform so points can be mapped back to stage coordinates while zoomed.
     const cam = { tx: 0, ty: 0, s: 1 };
-    window.zoom = (x, y, s, ms) => {
-      s = s || 1; ms = ms == null ? 900 : ms;
-      let tx = 800 - x * s, ty = 450 - y * s;
+    window.zoom = (x, y, s, ms, cx) => {
+      s = s || 1; ms = ms == null ? 900 : ms; cx = cx == null ? 800 : cx;
+      let tx = cx - x * s, ty = 450 - y * s;
       tx = Math.min(0, Math.max(1600 * (1 - s), tx)); ty = Math.min(0, Math.max(900 * (1 - s), ty));
       if (s === 1) { tx = 0; ty = 0; const c = document.getElementById("caption"); if (c.classList.contains("side")) { c.classList.remove("show"); document.getElementById("agent").classList.remove("dim"); } }
       Object.assign(cam, { tx, ty, s });
