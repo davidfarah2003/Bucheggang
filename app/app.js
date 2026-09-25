@@ -237,7 +237,7 @@ function validateBoundaryResults(payload, draft) {
     if (!["approve", "decline", "step_up"].includes(item.observed)) throw new Error("A computed boundary result has an unsupported outcome.");
     if (!Array.isArray(item.reason_codes)) throw new Error("A computed boundary result has no reason codes.");
     item.reason_codes.forEach((code) => text(code, "Boundary reason code"));
-    text(item.case_input_hash, "Boundary case input hash");
+    if (!/^[0-9a-f]{64}$/.test(text(item.case_input_hash, "Boundary case input hash"))) throw new Error("A computed boundary result has an invalid case-input hash.");
   });
   return payload;
 }
