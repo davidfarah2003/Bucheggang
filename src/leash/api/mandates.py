@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import re
 from collections.abc import Callable
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -17,8 +17,11 @@ from leash.contracts import Mandate, MandateState, PolicyDraft, Rule
 from leash.policy.global_policy import rules_hash
 from leash.policy.ownership import owned_confirmations
 from leash.policy.store import DraftStore
-from leash.runner import mandates
-from leash.runner.api import ApiError
+from leash.runner import mandates, records
+from leash.runner.coordinator import Coordinator
+from leash.runner.intents import UnresolvedMutation
+from leash.runner.stepups import StepUpBook
+from leash.runner.api import ApiError, ApiTimeout
 
 
 class TightenBody(BaseModel):
@@ -80,13 +83,8 @@ class MandateEdits:
 
     @contextmanager
     def locked(self, mandate_id: str):
-        descriptor = os.open(self.root / f"{mandate_id}.lock", os.O_RDWR | os.O_CREAT, 0o600)
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
+        with records.mandate_lock(mandate_id):
             yield
-        finally:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
-            os.close(descriptor)
 
     def write(self, mandate_id: str, data: dict) -> None:
         path = self.root / f"{mandate_id}.json"
@@ -102,16 +100,18 @@ class MandateEdits:
             temporary.unlink(missing_ok=True)
 
 
-def _simulator_call(action: Callable, *args):
+def _simulator_call(action: Callable, *args, **kwargs):
     try:
-        return action(*args)
+        return action(*args, **kwargs)
+    except ApiTimeout as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
     except ApiError as exc:
         status = exc.status if 400 <= exc.status < 500 else 502
         raise HTTPException(status_code=status, detail=f"Simulator {exc.method} {exc.path} failed: {exc.body}") from exc
 
 
-def _remote(mandate_id: str, record: dict, draft: dict) -> dict:
-    remote = _simulator_call(mandates.get, mandate_id)
+def _remote(mandate_id: str, record: dict, draft: dict, *, deadline_at: datetime | None = None) -> dict:
+    remote = _simulator_call(mandates.get, mandate_id, deadline_at=deadline_at)
     if not isinstance(remote, dict) or remote.get("mandate_id") != mandate_id:
         raise RuntimeError(f"simulator returned the wrong mandate for {mandate_id}")
     if remote.get("draft_id") != record["simulator_draft_id"] or remote.get("instruction") != draft["instruction"]:
@@ -154,11 +154,23 @@ def _mandate(mandate_id: str, record: dict, remote: dict, edits: dict) -> dict:
 def mandate_router(
     store: DraftStore,
     authenticated_customer: Callable[..., str],
-    load_state: Callable[[str], MandateState] | None = None,
+    load_state: Callable[..., MandateState] | None = None,
+    *, step_up_book: StepUpBook | None = None,
 ) -> APIRouter:
     """Mount beside the policy router, with the shell's session dependency."""
     router = APIRouter()
     edits_store = MandateEdits(store)
+    coordinator = Coordinator(store, step_up_book if step_up_book is not None else StepUpBook())
+
+    @contextmanager
+    def mutation(mandate_id: str, deadline_at: datetime):
+        try:
+            with coordinator.locked(mandate_id, deadline_at=deadline_at):
+                yield
+        except UnresolvedMutation as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=504, detail=str(exc)) from exc
 
     @router.get("/mandates")
     def list_mandates(
@@ -200,27 +212,31 @@ def mandate_router(
         record, draft = _confirmation(store, mandate_id, customer)
         if load_state is None:
             raise HTTPException(status_code=503, detail="mandate state reader is not available")
-        remote = _remote(mandate_id, record, draft)
-        edits = edits_store.read(mandate_id)
-        policy = _effective(remote, draft, edits, record)
-        state = MandateState.model_validate(load_state(mandate_id)).model_dump(mode="json")
-        if state["mandate_id"] != mandate_id:
-            raise RuntimeError(f"state reader returned a different mandate for {mandate_id}")
-        return {"mandate": _mandate(mandate_id, record, remote, edits), "draft": PolicyDraft.model_validate(draft).model_dump(mode="json"), "effective_policy": policy, "state": state, "global_policy_version": record.get("global_version", 0), "global_policy_hash": record.get("global_hash", rules_hash([]))}
+        mandate_ids = sorted(owned_confirmations(store, customer))
+        deadline_at = datetime.now(UTC) + timedelta(seconds=30)
+        with records.mandate_locks(mandate_ids, deadline_at=deadline_at):
+            remote = _remote(mandate_id, record, draft, deadline_at=deadline_at)
+            edits = edits_store.read(mandate_id)
+            policy = _effective(remote, draft, edits, record)
+            state = MandateState.model_validate(load_state(mandate_id, customer_mandates=mandate_ids)).model_dump(mode="json")
+            if state["mandate_id"] != mandate_id:
+                raise RuntimeError(f"state reader returned a different mandate for {mandate_id}")
+            return {"mandate": _mandate(mandate_id, record, remote, edits), "draft": PolicyDraft.model_validate(draft).model_dump(mode="json"), "effective_policy": policy, "state": state, "global_policy_version": record.get("global_version", 0), "global_policy_hash": record.get("global_hash", rules_hash([]))}
 
     @router.post("/mandates/{mandate_id}/tighten")
     def tighten_mandate(mandate_id: str, body: TightenBody, customer: str = Depends(authenticated_customer)) -> dict:
         mandate_id = _mandate_id(mandate_id)
         record, draft = _confirmation(store, mandate_id, customer)
-        with edits_store.locked(mandate_id):
+        deadline_at = datetime.now(UTC) + timedelta(seconds=30)
+        with mutation(mandate_id, deadline_at):
             edits = edits_store.read(mandate_id)
-            remote = _remote(mandate_id, record, draft)
-            _effective(remote, draft, edits, record)
+            remote = _remote(mandate_id, record, draft, deadline_at=deadline_at)
+            effective = _effective(remote, draft, edits, record)
             if remote["status"] != "active":
                 raise HTTPException(status_code=409, detail="only an active mandate can be tightened")
             updated = dict(edits)
             if body.rules is not None:
-                rules = [Rule.model_validate(rule) for rule in [*draft["rules"], *edits["rules"], *body.rules]]
+                rules = [Rule.model_validate(rule) for rule in [*effective["rules"], *body.rules]]
                 patch = {"hard_rules": [rule.simulator_rule() for rule in rules]}
                 updated["rules"] = [*edits["rules"], *(rule.model_dump(mode="json") for rule in body.rules)]
             else:
@@ -228,23 +244,35 @@ def mandate_router(
                     raise HTTPException(status_code=409, detail="mandate already declines uncertain purchases")
                 patch = {"uncertainty_policy": "decline"}
                 updated["uncertainty_policy"] = "decline"
-            result = _simulator_call(mandates.tighten, mandate_id, patch)
             updated["revision"] += 1
-            _effective(result, draft, updated, record)
-            edits_store.write(mandate_id, updated)
-            return _mandate(mandate_id, record, result, updated)
+            intent = coordinator.journal.prepare(
+                mandate_id, "tighten", method="PATCH", path=f"/v1/mandates/{mandate_id}",
+                body=patch, deadline_at=deadline_at,
+                context={"remote_before": remote, "draft": draft, "confirmation": record,
+                         "edits_before": edits, "edits_after": updated},
+            )
+            accepted = _simulator_call(coordinator.journal.dispatch, intent)
+            coordinator.record(accepted)
+            return _mandate(mandate_id, record, accepted.accepted, updated)
 
     @router.post("/mandates/{mandate_id}/revoke")
     def revoke_mandate(mandate_id: str, customer: str = Depends(authenticated_customer)) -> dict:
         mandate_id = _mandate_id(mandate_id)
         record, draft = _confirmation(store, mandate_id, customer)
-        with edits_store.locked(mandate_id):
+        deadline_at = datetime.now(UTC) + timedelta(seconds=30)
+        with mutation(mandate_id, deadline_at):
             edits = edits_store.read(mandate_id)
-            remote = _remote(mandate_id, record, draft)
+            remote = _remote(mandate_id, record, draft, deadline_at=deadline_at)
             _effective(remote, draft, edits, record)
             if remote["status"] != "active":
                 raise HTTPException(status_code=409, detail="only an active mandate can be revoked")
-            _simulator_call(mandates.revoke, mandate_id)
-            return _mandate(mandate_id, record, {**remote, "status": "revoked"}, edits)
+            intent = coordinator.journal.prepare(
+                mandate_id, "revoke", method="DELETE", path=f"/v1/mandates/{mandate_id}",
+                body=None, deadline_at=deadline_at,
+                context={"remote_before": remote, "draft": draft, "confirmation": record},
+            )
+            accepted = _simulator_call(coordinator.journal.dispatch, intent)
+            coordinator.record(accepted)
+            return _mandate(mandate_id, record, accepted.accepted, edits)
 
     return router

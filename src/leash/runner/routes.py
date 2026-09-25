@@ -23,6 +23,7 @@ from leash.policy.store import DraftStore
 
 from . import api, records
 from .stepups import StepUpBook, StepUpError
+from .intents import UnresolvedMutation
 
 
 class DecisionEntry(BaseModel):
@@ -71,11 +72,13 @@ def step_up_router(book: StepUpBook, authenticated_customer: Callable[..., str],
             step_up = book.get(authorization_id)
             if step_up.event.mandate.mandate_id not in confirmations:
                 raise HTTPException(status_code=404, detail=f"no pending step-up {authorization_id}")
-            return book.answer(body)
+            return book.answer(body, store)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=f"no pending step-up {authorization_id}") from exc
-        except StepUpError as exc:
+        except (StepUpError, UnresolvedMutation) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=504, detail=str(exc)) from exc
         except api.ApiError as exc:
             raise HTTPException(status_code=502, detail=f"simulator refused resolve: HTTP {exc.status} {exc.body}") from exc
 

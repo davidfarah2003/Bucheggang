@@ -1,6 +1,6 @@
 # Runner intent recovery
 
-The first checkpoint adds write-ahead storage, accepted-result recovery and bounded multi-mandate locks. Dispatch does not use these helpers yet. This checkpoint is not a completed runner integration or a release candidate.
+The first checkpoint added write-ahead storage, accepted-result recovery and bounded multi-mandate locks. The integration checkpoint below connects them to runner and app mutation paths. This branch is not a release candidate; live verification and independent review are pending.
 
 ## Write-ahead storage
 
@@ -36,8 +36,30 @@ After the holder exited, the sorted unique set was acquired successfully. The ch
 
 An altered copy of the actual accepted response carried the wrong final status. `MutationJournal.accept` raised `UnresolvedMutation`; the persisted intent stayed prepared. A separate copy of an accepted journal file was altered to carry another authorization ID. Reopening it raised `UnresolvedMutation`. Intent permissions were0600, and `git check-ignore data/intents/private.json` matched the new ignore rule.
 
-## Remaining integration
+## Integration checkpoint
 
-The runner still needs to use the journal before every submit and resolve, reconcile ambiguous writes from authoritative API reads, and restore pending step-up records after restart. App tightening and revocation also need journaled writes under the same locks. Final evaluation must reload effective policy and the customer-wide state under sorted owned-mandate locks, including the customer-approval path. No current dispatch or customer endpoint claims those changes are active.
+The runner now requires LEASH_POLICY_STORE before any remote startup. It verifies the supplied draft against its saved customer confirmation and resolves the customer's mandate set through owned_confirmations. Final evaluation and customer-approval rechecks load customer_mandates under the sorted lock set. The journal keeps the persistent mandate state separately from the customer-wide evaluation snapshot.
+
+Submit and resolve now persist intent before dispatch and store the accepted response before local financial state. Tighten and revoke use the same coordinator. Revocation is returned as confirmed only after an authoritative GET reports revoked. Known mandate_widening refusals are recorded and the original error is re-raised; other uncertain writes stay open. A separate durable dispatched phase prevents reusing an intent for another POST.
+
+Pending redelivery has a separate reconciliation budget from its expired automated deadline. The raw delivered Event remains in history; the exact effective policy used for evaluation is saved in the intent. New step-ups take their expiry from the actual accepted response. An already-expired platform window uses a read-only intent that cannot dispatch a resolution. Verified platform timeout declines are recorded as observed outcomes. They do not substitute for failed evaluation.
+
+On a customer approve, the pending marker is removed from an in-memory checking copy so evaluate cannot return its old idempotent step_up result. Current permissions and customer-wide spend are evaluated again. A current decline is sent through resolve instead of approving. Customer declines are preserved. The sweeper also checks withdrawn permissions while a step-up is pending, and reserves its final three local-window seconds for timeout resolution.
+
+These paths import successfully. The positive-owner remote paths have not run because live simulator calls remain paused. Global-policy PR #54 changes the private _effective helper to accept the confirmation record as a fourth argument; this branch still uses main's three-argument helper and needs that compatibility update after #54 merges.
+
+## Further actual execution
+
+The complete coordinator recovery path was exercised with the same genuine historical CHF18 receipt and original saved StepUp. A separate process again exited17 after state.record. Coordinator.record then completed one approval, one history file, the resolved step-up file with its run ID, and the journal. The original source files were not changed. No confirmation or ownership record was created for this exercise, and no new customer answer was submitted.
+
+A real loopback Uvicorn server ran the changed create_app with an isolated empty policy store. Anonymous session, draft-list, mandate-list and pending reads returned401. After an actual local login, each owned list returned200 and an empty array. Unowned mandate detail, history and decision detail returned404; an unowned revoke also returned404 before simulator access. Wallet HTML returned200. Logout returned204 and the next session read returned401. The simulator settings cache stayed empty. The owned server exited and the temporary store was removed.
+
+The CLI without LEASH_POLICY_STORE exited1 with `runner requires LEASH_POLICY_STORE with the customer confirmations`, before run_progress or start_run. The full public replay still produced45 rows:11 approve,32 decline and2 step_up. Local extraction plus evaluation was p50 0.234ms and p99/max0.388ms.
+
+## Remaining gates
+
+The new journal dispatch/reconciliation calls, current-policy refresh, genuine customer approval, tightening and revocation need live execution after credential rotation. Positive-owner HTTP behavior has not been manufactured with invented confirmations. Current confirmations were not found in the inspected runner, runner-live or policy worktrees. The legacy raw decision receipts are retained as historical evidence only.
+
+Concurrent policy confirmation can also supersede a mandate. Its write path is owned by the policy lane and is not covered by this branch's tighten/revoke coordination yet. That ordering needs agreement before claiming every app permission mutation is serialized. Model startup, full absolute-budget composition and the classifier release holds remain separate gates.
 
 Live verification remains paused for challenge-key rotation. No test suite or linter was run.
