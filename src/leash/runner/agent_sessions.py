@@ -140,13 +140,14 @@ class AgentSessionStore:
         if not self.root.parent.is_dir():
             raise ValueError("session policy root is not a directory")
 
-    def _prepare_directories(self) -> None:
-        for folder in (self.root, self.root / "records", self.root / "create-keys", self.root / ".locks"):
+    def _prepare_directories(self, account_id: str) -> None:
+        for folder in (self.root, self.root / "records", self.root / "records" / account_id,
+                       self.root / "create-keys", self.root / ".locks"):
             folder.mkdir(mode=0o700, exist_ok=True)
             sync_directory(folder.parent)
 
-    def _read(self, session_id: UUID) -> StoredSession:
-        path = self.root / "records" / f"{session_id}.json"
+    def _read(self, session_id: UUID, account_id: str) -> StoredSession:
+        path = self.root / "records" / account_id / f"{session_id}.json"
         try:
             data = path.read_text()
         except FileNotFoundError as exc:
@@ -155,7 +156,7 @@ class AgentSessionStore:
             record = StoredSession.model_validate_json(data)
         except ValidationError:
             raise SessionStoreError("stored session schema is invalid") from None
-        if (record.session.session_id != session_id
+        if (record.account_id != account_id or record.session.session_id != session_id
                 or record.session.provider != record.request.provider
                 or record.session.model != record.request.model):
             raise SessionStoreError("stored session identity or provider binding differs")
@@ -165,17 +166,14 @@ class AgentSessionStore:
         account_id = _account(account_id)
         if not isinstance(session_id, UUID):
             raise ValueError("session_id must be a UUID")
-        record = self._read(session_id)
-        if record.account_id != account_id:
-            raise SessionNotFound()
-        return record.session
+        return self._read(session_id, account_id).session
 
     def create(self, account_id: str, request: CreateSession) -> tuple[AgentSession, bool]:
         """Create unpaired storage. The HTTP layer must establish adapter availability first."""
         account_id = _account(account_id)
         request = CreateSession.model_validate(request.model_dump(mode="python"))
         key = hashlib.sha256(_canonical([account_id, str(request.client_request_id)])).hexdigest()
-        self._prepare_directories()
+        self._prepare_directories(account_id)
         stop_at = time.monotonic() + 5
         with _file_lock(self.root / ".locks" / f"create-{key}.lock", stop_at=stop_at):
             key_path = self.root / "create-keys" / f"{key}.json"
@@ -189,7 +187,7 @@ class AgentSessionStore:
                 if binding.input_hash != _input_hash(request):
                     raise SessionConflict("create key was already used with different input")
                 try:
-                    record = self._read(binding.session_id)
+                    record = self._read(binding.session_id, account_id)
                 except SessionNotFound:
                     raise SessionStoreError("create key references a missing session; no second session was created") from None
                 if record.account_id != account_id or record.request != request:
@@ -214,5 +212,5 @@ class AgentSessionStore:
                                 input_hash=_input_hash(request), session_id=session_id)
             _publish(key_path, binding.model_dump(mode="json"))
             with _file_lock(self.root / ".locks" / f"session-{session_id}.lock", stop_at=stop_at):
-                _publish(self.root / "records" / f"{session_id}.json", record.model_dump(mode="json"))
+                _publish(self.root / "records" / account_id / f"{session_id}.json", record.model_dump(mode="json"))
             return session, True

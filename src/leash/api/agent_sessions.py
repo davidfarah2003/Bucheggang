@@ -41,7 +41,7 @@ def agent_session_router(
             return store.get_owned(session_id, account_id)
         except SessionNotFound:
             return _error(404, "session_not_found", "configuration", "The agent session was not found.")
-        except SessionStoreError:
+        except (SessionStoreError, OSError, UnicodeError):
             return _error(500, "session_storage_error", "recovery", "The stored agent session could not be read.")
 
     @router.post("/agent-sessions")
