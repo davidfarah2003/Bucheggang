@@ -86,6 +86,8 @@ Further #128 source review, 2026-09-25 10:25 CEST: `docs/contracts.md` specifies
 
 Provider capture check, 2026-09-25 10:28 CEST: the main #128 adapter parsed both committed real failure bodies, public AU0036 and runner AU0001, into two Jev answers each with their original probabilities. The sums stayed 0.99 and 1.0, with no normalization or fresh provider request. A clean detached checkout at `8e9ee92` was removed by exact path. This proves those two saved shapes now pass; it does not prove provider reliability across 45 new calls or resolve the off-grid acceptance above.
 
+Local-buy evidence reliance, 2026-09-25 10:30 CEST: main #128 accepts agent-authored `facts` as `agent_form` and copies agent-supplied item/merchant fields into the local Event. The pure evaluator compares non-null `agent_form` values against hard `facts.*` rules without an evidence-reliance gate. A paired agent's claim can therefore satisfy a product or return-term rule without an independently verified catalogue or merchant source. This is a source finding, not a live purchase or exploit run. It was reported to the policy/engine owner and blocks a claim of general automatic merchant-fact compliance. Local demo operation must state that trust assumption until a backend-verified input or customer-confirmed reliance contract is implemented.
+
 ## Open items after M0
 
 The open items from startup are answered in [02-classifier-m0.md](02-classifier-m0.md):
