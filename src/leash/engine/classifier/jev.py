@@ -21,6 +21,7 @@ MINIMUM_RECHECK_SECONDS = 2.0
 MAX_RESPONSE_BYTES = 64_000
 # Accept bounded two-decimal provider rounding only; never renormalize.
 PROBABILITY_SUM_TOLERANCE = 0.015
+PROBABILITY_GRID_TOLERANCE = 1e-12
 QUESTIONS = {
     "spend_pattern": {
         "type": "choice",
@@ -87,7 +88,9 @@ def _parse_response(text: str, latency_ms: int) -> SemanticAssessment:
         if not all(type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1
                    for value in probabilities.values()):
             raise JevResponseError(f"{question_id}: non-finite or out-of-range probability")
-        if any(value != round(value, 2) for value in probabilities.values()):
+        if any(not math.isclose(value, round(value, 2), rel_tol=0,
+                                abs_tol=PROBABILITY_GRID_TOLERANCE)
+               for value in probabilities.values()):
             raise JevResponseError(f"{question_id}: probabilities are not on the two-decimal grid")
         total = sum(probabilities.values())
         if not math.isclose(total, 1.0, rel_tol=0, abs_tol=PROBABILITY_SUM_TOLERANCE):
