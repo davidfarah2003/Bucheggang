@@ -26,7 +26,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from datetime import UTC, datetime, timedelta
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -36,7 +36,9 @@ from leash.extract import extract_event
 from leash.policy.store import DraftStore
 
 from . import api, records, policy_context
+from .budget import DecisionBudget, within_budget
 from .coordinator import Coordinator
+from .evaluation import Evaluate, ModelEvaluator, MODEL_CAP_S, MODEL_RESERVE_S
 from .stepups import StepUpBook
 
 POLL_WAIT_S = 25
@@ -46,8 +48,6 @@ EXTRACT_RESERVE_S = 2.0
 # The platform redelivers a pending step-up on every poll and holds the next
 # request back until it resolves. The loop waits this long before polling again.
 PENDING_STEP_UP_PAUSE_S = 1.0
-
-Evaluate = Callable[[Event, PolicyDraft, MandateState, list[PurchaseFacts] | None], Decision]
 
 log = logging.getLogger("leash.runner")
 # Pending step-ups already logged as skipped in this process; the platform
@@ -105,12 +105,6 @@ class ProcessingTimeout(RunLoopError):
     """Extraction or evaluation exceeded its budget; no decision was submitted."""
 
 
-def _processing_budget(event: Event, reserve_s: float) -> float:
-    if event.deadline_at.utcoffset() is None:
-        raise RunLoopError("event deadline_at must have a timezone")
-    return (event.deadline_at - _now()).total_seconds() - reserve_s
-
-
 def _timeout(event: Event, operation: str) -> ProcessingTimeout:
     message = f"{event.authorization.authorization_id}: {operation} budget expired; no decision submitted"
     log.error(message)
@@ -126,16 +120,22 @@ def requested_item(policy: PolicyDraft) -> dict[str, str] | None:
     return requested or None
 
 
-def extract_with_budget(event: Event, policy: PolicyDraft, pool: ThreadPoolExecutor) -> list[PurchaseFacts]:
+def extract_with_budget(
+    event: Event, policy: PolicyDraft, pool: ThreadPoolExecutor, *,
+    budget: DecisionBudget | None = None, reserve_s: float = EXTRACT_RESERVE_S,
+) -> list[PurchaseFacts]:
     """Return validated facts or raise. A timeout never becomes missing facts."""
-    budget = min(EXTRACT_CAP_S, _processing_budget(event, EXTRACT_RESERVE_S))
-    if budget <= 0:
+    operation = DecisionBudget.until(event.deadline_at) if budget is None else budget
+    allowance = min(EXTRACT_CAP_S, operation.remaining(reserve_s))
+    if allowance <= 0:
         raise _timeout(event, "extraction")
-    stop_at = time.monotonic() + budget
+    stop_at = time.monotonic() + allowance
     future = pool.submit(extract_event, event.model_dump(mode="json"), requested=requested_item(policy))
     try:
         rows = future.result(timeout=max(0, stop_at - time.monotonic()))
     except FutureTimeout as exc:
+        if future.done() and not future.cancelled() and future.exception() is exc:
+            raise
         future.cancel()
         raise _timeout(event, "extraction") from exc
     facts = [PurchaseFacts.model_validate(row) for row in rows]
@@ -151,16 +151,20 @@ def decide_with_guard(
     state: MandateState,
     facts: list[PurchaseFacts],
     pool: ThreadPoolExecutor,
+    *, budget: DecisionBudget | None = None,
 ) -> Decision:
     """Return the engine result before its guard or raise without a substitute."""
-    budget = _processing_budget(event, GUARD_MARGIN_S)
-    if budget <= 0:
+    operation = DecisionBudget.until(event.deadline_at) if budget is None else budget
+    allowance = operation.remaining(GUARD_MARGIN_S)
+    if allowance <= 0:
         raise _timeout(event, "evaluation")
-    stop_at = time.monotonic() + budget
-    future = pool.submit(evaluate, event, policy, state, facts)
+    stop_at = time.monotonic() + allowance
+    future = pool.submit(within_budget, operation, evaluate, event, policy, state, facts)
     try:
         decision = future.result(timeout=max(0, stop_at - time.monotonic()))
     except FutureTimeout as exc:
+        if future.done() and not future.cancelled() and future.exception() is exc:
+            raise
         future.cancel()
         raise _timeout(event, "evaluation") from exc
     decision = Decision.model_validate(decision.model_dump(mode="python"))
@@ -207,11 +211,11 @@ def handle(
     if event.mandate.instruction != policy.instruction:
         raise RunLoopError(f"event mandate instruction differs from the confirmed draft {policy.draft_id}")
     coordinator = Coordinator(store, book)
-    dispatch_deadline = event.deadline_at - timedelta(seconds=0.25)
+    budget = DecisionBudget.until(event.deadline_at - timedelta(seconds=0.25))
     # The platform redelivers a handled pending step-up with its original deadline, which
     # is long past by then. The handled lookup therefore runs before the deadline check,
     # under a short bounded lock; only an unhandled event past its deadline is a failure.
-    lock_deadline = dispatch_deadline if dispatch_deadline > _now() else _now() + timedelta(seconds=5)
+    lock_deadline = budget.wall_deadline() if budget.remaining() > 0 else _now() + timedelta(seconds=5)
     with coordinator.locked(mandate_id, deadline_at=lock_deadline) as mandate_ids:
         record, _ = policy_context.confirmation(store, mandate_id)
         if record["hash"] != policy.hash or record["version"] != policy.version:
@@ -219,26 +223,27 @@ def handle(
         state = engine_state.load(mandate_id, customer_mandates=mandate_ids)
         seen = state.handled.get(auth_id)
         if seen is None:
-            if dispatch_deadline <= _now():
+            if budget.remaining() <= 0:
                 raise RunLoopError(
                     f"{auth_id}: deadline {event.deadline_at.isoformat()} already passed before dispatch"
                 )
             effective_event, effective_policy = policy_context.refresh(
-                store, event, deadline_at=dispatch_deadline - timedelta(seconds=2),
+                store, event, deadline_at=budget.wall_deadline(reserve_s=2),
             )
-            effective_event.deadline_at = dispatch_deadline
+            effective_event.deadline_at = budget.wall_deadline()
             before = state.model_copy(deep=True, update={"customer_approvals": []})
             t0 = time.monotonic()
-            facts = extract_with_budget(effective_event, effective_policy, pool)
+            reserve = MODEL_CAP_S + MODEL_RESERVE_S if isinstance(evaluate, ModelEvaluator) else EXTRACT_RESERVE_S
+            facts = extract_with_budget(effective_event, effective_policy, pool, budget=budget, reserve_s=reserve)
             extract_ms = int((time.monotonic() - t0) * 1000)
             t1 = time.monotonic()
-            decision = decide_with_guard(evaluate, effective_event, effective_policy, state, facts, pool)
+            decision = decide_with_guard(evaluate, effective_event, effective_policy, state, facts, pool, budget=budget)
             evaluate_ms = int((time.monotonic() - t1) * 1000)
             submitted_at = _now()
             result = coordinator.authorization(
                 event=event, decision=decision, state_before=before, evaluated_state=state,
                 policy=effective_policy.model_dump(mode="json"), run_id=envelope.run_id,
-                deadline_at=dispatch_deadline,
+                deadline_at=budget.wall_deadline(),
             )
             recorded_at = _now()
             _log({

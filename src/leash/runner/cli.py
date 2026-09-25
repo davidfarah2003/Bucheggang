@@ -5,8 +5,9 @@
 
 --draft is the confirmed PolicyDraft (JSON) that the mandate was created from.
 
-The only evaluator is leash.engine.evaluate.evaluate. A failed operation
-raises and stops the runner without submitting a replacement decision.
+The pure engine is used by default. LEASH_ENABLE_MODELS=1 explicitly requires
+the configured classifier artifact and provider. A failed operation raises and
+stops the runner without submitting a replacement decision.
 """
 
 import argparse
@@ -18,7 +19,6 @@ from datetime import timedelta
 from leash.contracts import PolicyDraft
 
 from leash.engine import state as state_store
-from leash.engine.evaluate import evaluate as engine_evaluate
 from leash.policy.store import DraftStore
 
 from . import loop, records, routes, stepups, policy_context
@@ -75,7 +75,7 @@ def main() -> None:
     try:
         if args.serve_port is not None:
             serve(book, args.serve_port, store)
-        state = loop.run_loop(run["run_id"], engine_evaluate, policy, args.mandate_id, book, window_s, store)
+        state = loop.run_loop(run["run_id"], book.evaluator, policy, args.mandate_id, book, window_s, store)
     except Exception:
         loop.log.exception("runner stopped after an operation failed")
         raise
