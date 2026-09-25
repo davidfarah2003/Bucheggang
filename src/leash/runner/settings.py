@@ -43,6 +43,20 @@ def _parse_env(path: Path) -> dict[str, str]:
     return values
 
 
+@dataclass(frozen=True)
+class OpenRouterSettings:
+    api_key: str = field(repr=False)
+
+
+@lru_cache(maxsize=1)
+def load_openrouter() -> OpenRouterSettings:
+    """Return only the provider credential; model-off startup never calls this."""
+    values = _parse_env(ENV_FILE)
+    if not values.get("OPENROUTER_API"):
+        raise SettingsError(f"OPENROUTER_API is missing or empty in {ENV_FILE}")
+    return OpenRouterSettings(api_key=values["OPENROUTER_API"])
+
+
 @lru_cache(maxsize=1)
 def load() -> Settings:
     values = _parse_env(ENV_FILE)
