@@ -65,6 +65,8 @@ def authoring_guide() -> dict[str, Any]:
             "Use period scope and period_days only for authorization.billing_amount_chf or state.approvals_count. Currency applies only to money fields.",
             "Use <, <=, > or >= only on numeric fields; in and not_in require a string list, while = and != require one value.",
             "Include an allowed example, a forbidden boundary example, and an unknown-fact example.",
+            "Examples are agent-authored claims and are not evaluated by this backend.",
+            "For an exact product request, identify the requested model and size from known facts; if the final all-in total is unknown, state that as an open question rather than treating an estimate as a fact.",
             "Surface missing facts and semantic gaps as open_questions with answer null.",
             "For each open question, list confirming_answers as the subset of options that confirms the rules exactly as displayed. Use an empty list if every answer needs a revised draft.",
             "A broad merchant category does not prove a specialist retailer. A screen size does not identify a chosen model.",
@@ -73,6 +75,9 @@ def authoring_guide() -> dict[str, Any]:
             "Any expansion of allowed purchases needs a new reviewed draft and explicit customer confirmation.",
             "Do not use scenario IDs, authorization IDs, or replay order as policy conditions.",
             "The backend validates and stores the proposal. It never asks a model to write or repair it.",
+            "Pair first, propose the policy, wait for Wallet confirmation, then search and authorize a purchase.",
+            "External search or browsing before confirmation is outside backend control; only authorization is governed.",
+            "No agent purchase API is active. Demo purchase authorizations still arrive from the simulator.",
             "The customer confirms only in the authenticated app. This server cannot confirm, resolve, tighten, or revoke.",
         ],
     }

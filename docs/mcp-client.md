@@ -6,7 +6,7 @@ The local demo supports MCP stdio and streamable HTTP. Both transports use the s
 
 ## Start it over stdio
 
-Set the same `LEASH_POLICY_STORE` and `LEASH_APP_ORIGIN` that the Wallet API uses:
+Set the same `LEASH_POLICY_STORE` that the Wallet API uses:
 
 ```sh
 export LEASH_POLICY_STORE="$PWD/data/policy"
@@ -24,8 +24,7 @@ An MCP client JSON server list can use this command:
       "command": "uv",
       "args": ["run", "--project", "/absolute/path/to/Bucheggang", "python", "-m", "leash.policy.mcp_server"],
       "env": {
-        "LEASH_POLICY_STORE": "/absolute/path/to/Bucheggang/data/policy",
-        "LEASH_APP_ORIGIN": "http://127.0.0.1:8000"
+        "LEASH_POLICY_STORE": "/absolute/path/to/Bucheggang/data/policy"
       }
     }
   }
@@ -97,4 +96,4 @@ The resource `policy://authoring-guide` requires a paired agent with `policy:rea
 3. Call `complete_pairing` with the code and private verifier. Securely provide the returned token to the MCP client for later requests.
 4. Call `get_policy_authoring_instructions` with the customer's sentence.
 5. Draft the proposal and call `propose_task_policy`. The customer-owned draft appears in the Wallet list and opens at `/app/?draft_id=<draft_id>`.
-6. Poll `get_policy_status` until the customer confirms or rejects it. Use the `mandate_id` only after confirmation.
+6. Poll `get_policy_status` until the customer confirms or rejects it. Use the `mandate_id` only after confirmation. Then search and authorize a purchase. External search or browsing before confirmation is outside backend control; only authorization is governed. No agent purchase API is active; demo purchase authorizations still arrive from the simulator. Examples are agent-authored claims and are not evaluated by this backend. For an exact product request, match the requested model and size from known facts; if the final all-in total is unknown, surface it as an open question rather than treating an estimate as a fact.
