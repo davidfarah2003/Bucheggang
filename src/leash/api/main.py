@@ -67,13 +67,12 @@ def create_app(
     @app.middleware("http")
     async def check_mutation_origin(request: Request, call_next: Callable):
         unsafe = request.method in {"POST", "PUT", "PATCH", "DELETE"}
-        exempt = request.method == "POST" and request.url.path in {"/account", "/session"}
-        if unsafe and not exempt:
-            cookie = request.cookies.get(COOKIE_NAME)
-            if identities.session(cookie) is not None:
-                origins = request.headers.getlist("origin")
-                if origins != [configured_origin]:
-                    return JSONResponse(status_code=403, content={"detail": "request origin is not allowed"})
+        public_auth_post = request.method == "POST" and request.url.path in {"/account", "/session"}
+        has_session_cookie = bool(request.cookies.get(COOKIE_NAME))
+        if unsafe and (public_auth_post or has_session_cookie):
+            origins = request.headers.getlist("origin")
+            if origins != [configured_origin]:
+                return JSONResponse(status_code=403, content={"detail": "request origin is not allowed"})
         response = await call_next(request)
         if request.url.path.rstrip("/") == "/app" and "pair" in request.query_params:
             response.headers["Referrer-Policy"] = "no-referrer"
