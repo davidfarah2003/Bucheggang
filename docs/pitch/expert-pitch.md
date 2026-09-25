@@ -20,4 +20,5 @@ Rishabh directs the final spoken pitch. Use [the six-slide deck](deck.html) with
 - The report's latency p50 and p99 describe local offline extraction and evaluation only. Do not use them as network or end-to-end payment latency.
 - The two annotated merchant-instruction attempts in the report were declined or escalated. They do not measure success against all manipulated purchases.
 - The current live simulator report records declines and one platform timeout. A completed human Wallet step-up, two complete live runs and labelled error rate are not established. Use a fresh actual outcome when presenting.
+- Use the closing live-demo sentence only if a fresh live run is ready. If it is not ready, end after the labels sentence; do not substitute a recorded demonstration.
 - Slides are authored as self-contained HTML. Open `docs/pitch/deck.html`, use the arrow keys or controls to advance, and use browser print for six pages. No screenshot or recording replaces the live demo.
