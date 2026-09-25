@@ -149,20 +149,25 @@ def policy_router(
         if not customer:
             raise HTTPException(status_code=401, detail="customer login is required")
         try:
-            store.assert_owner(draft_id, customer)
-            store.reject(
-                draft_id,
-                version=body.version,
-                hash_value=body.hash,
-                rejected_by=customer,
-                reason=body.reason,
-            )
+            with customer_mandate_locks(store, customer):
+                store.assert_owner(draft_id, customer)
+                store.reject(
+                    draft_id,
+                    version=body.version,
+                    hash_value=body.hash,
+                    rejected_by=customer,
+                    reason=body.reason,
+                )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="draft was not found") from exc
         except DraftConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except InvalidDraft as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except ConfirmationSetChanged as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         return Response(status_code=204)
 
     return router
