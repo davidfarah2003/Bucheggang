@@ -299,6 +299,8 @@ Served by `leash.api`. Paths and shapes are what the app lane codes against.
 | `POST /session` | `{ username: str, password: str }` → `{ account_id, username }` and a new HttpOnly `leash_session` cookie. Unknown username and wrong password both return 401 `"username or password is wrong"`. After 5 failures on one account within 60 s, login for that account returns 429 until 60 s have passed. |
 | `GET /session` | `{ account_id, username }` for the current cookie, or 401 if no valid session exists |
 | `DELETE /session` | 204, deletes the session record and clears the cookie, or 401 if no valid session exists |
+| `GET /pairings/pending` | Customer session. Pairings begun by an agent and not yet approved: `[{ pairing_id, agent_label, scopes, created_at, expires_at }]`. `pairing_id` is the digest-derived file id; the code itself is never listed |
+| `POST /pairings/{pairing_id}/approve` | Customer session, exact Origin. Approves the pending pairing for the session's account; 204, or 404 when unknown, expired or already decided. The Wallet's Needs tab uses this for the Approve button on the connection card |
 | `GET /pairing/{code}` | `{ agent_label, scopes: [str], expires_at }` for a begun, unexpired pairing code, else 404. Requires a session. |
 | `POST /pairing/{code}/approve` | → 204. Binds the pairing to the session's `account_id`; 404 for an unknown, expired or already approved code. Requires a session. |
 | `GET /agents` | `[{ agent_id, agent_label, scopes, created_at, last_used_at, revoked_at }]` for the session's account, newest first |
@@ -574,6 +576,8 @@ Served by `leash.policy.mcp_server` over stdio or streamable HTTP, backed by the
 
 | Tool | Input → returns |
 | --- | --- |
+| `connect` | `{ agent_label: str, wait_seconds?: int (1..290, default 240) }` → `{ agent_id, account_id, scopes, paired: true }` (plus `agent_token` over HTTP only). Begins a pairing and blocks until the customer taps Approve on the pending connection card in the Wallet's Needs tab, then completes it; the stdio server keeps the token. `PairingTimeout` after `wait_seconds`, `PairingUnknown` if the pairing expired. The two-step `begin_pairing` and `complete_pairing` remain for clients that hold the token themselves |
+| `wait_for_policy` | `{ draft_id: str, wait_seconds?: int (1..290, default 240) }` → the `get_policy_status` result once `state` is `confirmed` or `rejected`; `PolicyPending` after `wait_seconds`. Read-only |
 | `begin_pairing` | `{ agent_label: str }` (1 to 80 characters, shown to the customer) → `{ pairing_code, verifier, expires_at, scopes, wallet_url }`. `wallet_url` is `<LEASH_APP_ORIGIN>/app/?pair=<pairing_code>`, built from the origin the MCP server read at startup, never from a request `Host`. The agent hands the customer `wallet_url`, or the bare `pairing_code` to type into the Wallet's Pair screen, and keeps `verifier` to itself; it never appears in a link, a log or the Wallet. No token needed |
 | `complete_pairing` | `{ pairing_code: str, verifier: str }` → `{ agent_token, agent_id, account_id, scopes }` exactly once, after the customer approved in the Wallet; before approval raises `PairingPending`; a wrong verifier, an unknown, consumed or expired code all raise the same `PairingUnknown`. No token needed |
 | `get_policy_authoring_instructions` | `{ instruction: str }` → `{ guide, request_instructions }`; `guide` is the `policy://authoring-guide` resource (field vocabulary, rule format, proposal shape, restrictions) |

@@ -37,6 +37,21 @@ def identity_router(
             raise HTTPException(status_code=404, detail="pairing was not found") from exc
         return Response(status_code=204)
 
+    @router.get("/pairings/pending")
+    def pending_pairings(session: dict[str, Any] = Depends(current_customer_session)) -> list[dict]:
+        return identities.pending_pairings()
+
+    @router.post("/pairings/{pairing_id}/approve", status_code=204)
+    def approve_pending_pairing(
+        pairing_id: str,
+        session: dict[str, Any] = Depends(current_customer_session),
+    ) -> Response:
+        try:
+            identities.approve_pairing_by_id(pairing_id, session["account_id"])
+        except PairingUnknown as exc:
+            raise HTTPException(status_code=404, detail="pairing was not found") from exc
+        return Response(status_code=204)
+
     @router.get("/agents")
     def list_agents(session: dict[str, Any] = Depends(current_customer_session)) -> list[dict]:
         return identities.agents_for_account(session["account_id"])

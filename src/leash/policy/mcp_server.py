@@ -8,6 +8,7 @@ import json
 import re
 from contextvars import ContextVar
 import os
+import time
 from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import quote
@@ -239,15 +240,15 @@ Keep it smooth for the customer. They should type one sentence, tap Approve once
 - Encode only what the customer said. "Shops I use" becomes history.merchant_seen_on_card = true; "ask me when unsure" becomes uncertainty_policy ask; "never buy anything else" becomes items.count or items.category, never a guess at a brand.
 - Prefer one to three open questions with two or three short options each. A question is for a real ambiguity (which model, does household include toiletries), not for something the sentence already settles.
 - Write plain_english as the sentence a person would read on a phone: what is allowed, in their words, one clause each.
-- After proposing, tell the customer in one line that the policy is waiting in their Wallet and what it allows. Then poll; do not re-propose while the draft is pending.
+- After proposing, tell the customer in one line that the policy is waiting in their Wallet and what it allows. Then wait with wait_for_policy; do not re-propose while the draft is pending.
 
-Run the flow in this order, one tool per step:
+Run the flow in this order:
 
-1. begin_pairing(agent_label) once per session. Give the customer only wallet_url. Keep verifier private; never print it, log it or put it in a URL.
-2. When the customer says they approved you in the Wallet, complete_pairing(pairing_code, verifier). The token stays inside this server process.
+1. connect(agent_label) once per session. It shows a pending connection in the customer's Wallet and returns when they tap Approve there; the customer opens no link and types nothing. Tell the customer in one line that a connection request is waiting in their Wallet, then call it. On PairingTimeout call it again. (begin_pairing and complete_pairing are the two-step form for HTTP clients that hold the token themselves.)
+2. Nothing else to do for pairing; the token stays inside this server process.
 3. get_policy_authoring_instructions(instruction) with the customer's sentence verbatim. Read the returned guide: it lists every allowed field and operator.
 4. propose_task_policy(instruction, proposal). Every rule quotes an exact substring of the instruction as source_text. Do not invent permissions the customer did not state; put anything unclear in open_questions.
-5. Tell the customer the draft is waiting in their Wallet (it opens at <wallet origin>/app/?draft_id=<draft_id>), then poll get_policy_status(draft_id) until state is confirmed (you receive mandate_id) or rejected (you receive the reason and draft a new proposal).
+5. Tell the customer in one line that the policy is waiting in their Wallet under Needs your attention, then call wait_for_policy(draft_id). It returns confirmed with mandate_id, or rejected with the reason (then draft a new proposal). On PolicyPending call it again. Do not ask the customer to open anything; the Wallet shows it by itself.
 6. Only after confirmed: search for the product and present what you found. Every purchase is judged by the Wallet against the confirmed mandate; approve, decline or step_up comes from the Wallet, and a step_up is answered by the customer there. In this demo buy and get_purchase_status are parked and purchase attempts arrive from the organizer's simulator, so you never complete a checkout yourself.
 
 Worked example. Instruction: "Do the weekly grocery shopping online at supermarkets I already use. Never spend more than CHF 100 per order or CHF 250 in any 7-day window; groceries and household basics only. If unsure, ask."
@@ -389,6 +390,70 @@ def create_server(
         if not server.http_transport:
             server.stdio_agent_token = result["agent_token"]
         return result
+
+    @server.tool()
+    async def connect(agent_label: str, wait_seconds: int = 240) -> dict[str, Any]:
+        """Step 1 and 2 in one call: pair this agent with the customer's Wallet, hands-free.
+
+        Begins a pairing under agent_label (the name the customer sees, for example "Grocery helper"),
+        then waits while the pending connection is shown in the customer's Wallet under Needs your
+        attention. The customer taps Approve there; nothing has to be typed or opened. Returns
+        {agent_id, account_id, scopes, paired: true} as soon as the approval lands, and the token
+        stays inside this server. If the customer does not approve within wait_seconds (default 240,
+        max 290) it raises PairingTimeout; call connect again. Over stdio prefer this over
+        begin_pairing plus complete_pairing.
+        """
+        if not isinstance(wait_seconds, int) or not 1 <= wait_seconds <= 290:
+            raise ToolError("InvalidPairing: wait_seconds must be 1 to 290")
+        try:
+            pairing = identity_store.begin_pairing(agent_label)
+        except ValueError as exc:
+            raise ToolError(f"InvalidPairing: {exc}") from exc
+        import asyncio
+        deadline = time.monotonic() + wait_seconds
+        while True:
+            status = identity_store.pairing_status(pairing["pairing_code"])
+            if status == "approved":
+                break
+            if status in {"expired", "consumed", "failed"}:
+                raise ToolError(f"PairingUnknown: the pairing is {status}; call connect again")
+            if time.monotonic() >= deadline:
+                raise ToolError("PairingTimeout: the customer has not approved this agent in the Wallet yet; call connect again")
+            await asyncio.sleep(1.0)
+        try:
+            result = identity_store.complete_pairing(pairing["pairing_code"], pairing["verifier"])
+        except (PairingPending, PairingUnknown) as exc:
+            raise ToolError(f"{type(exc).__name__}") from exc
+        if not server.http_transport:
+            server.stdio_agent_token = result["agent_token"]
+        out = {key: result[key] for key in ("agent_id", "account_id", "scopes")}
+        out["paired"] = True
+        if server.http_transport:
+            out["agent_token"] = result["agent_token"]
+        return out
+
+    @server.tool()
+    async def wait_for_policy(draft_id: str, wait_seconds: int = 240) -> dict[str, Any]:
+        """Step 5 as one blocking call: wait until the customer confirms or rejects the draft in the Wallet.
+
+        Polls the same state as get_policy_status once a second and returns as soon as it is confirmed
+        (with mandate_id) or rejected (with rejected_reason). Raises PolicyPending after wait_seconds
+        (default 240, max 290) if the customer has not decided; call it again. Read-only; it never
+        confirms anything itself.
+        """
+        if not isinstance(wait_seconds, int) or not 1 <= wait_seconds <= 290:
+            raise ToolError("InvalidDraft: wait_seconds must be 1 to 290")
+        agent = server.require_agent("policy:read")
+        _known(draft_id, agent["account_id"])
+        import asyncio
+        deadline = time.monotonic() + wait_seconds
+        while True:
+            status = policy_status(store, draft_id)
+            if status["state"] in {"confirmed", "rejected"}:
+                return status
+            if time.monotonic() >= deadline:
+                raise ToolError("PolicyPending: the customer has not decided in the Wallet yet; call wait_for_policy again")
+            await asyncio.sleep(1.0)
 
     @server.tool()
     def get_policy_authoring_instructions(instruction: str) -> dict[str, Any]:
