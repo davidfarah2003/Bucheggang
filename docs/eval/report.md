@@ -1,11 +1,11 @@
 # Evaluation report
 
-Generated 2026-09-24T22:06:39.626417+00:00.
+Generated 2026-09-25T04:07:56.212275+00:00.
 
-Checkout revision at generation: `9d15742643685e6bed2056c5b2d0bf8ad6e5358a`. Code hashes below identify the files used, including any uncommitted edits.
+Checkout revision at generation: `57449464923310a0ef121e85dde1c458109ecc50`. Code hashes below identify the files used, including any uncommitted edits.
 Generator: [report.py](../../scripts/report.py), SHA-256 `901d95a0ebb1e2141be4d10f5b03385d924d2ac2d301c7872a8f04000f8af5ca`.
-Replay input: [replay-2026-09-25-all.csv](replay-2026-09-25-all.csv), SHA-256 `dfd0b9774e63c29977bd406dbdf5587c3beeb293285da7751043c9a481c55fde`.
-Mode: `sequential`. Engine versions in the recorded rows: leash-engine 0.4.
+Replay input: [replay-2026-09-25-all.csv](replay-2026-09-25-all.csv), SHA-256 `76a0c89ca07b1b7f3eaa232a8264a47981def6a6a9c46f8837957a44931bedaf`.
+Mode: `sequential`. Engine versions in the recorded rows: leash-engine 0.5.
 
 These are observed decisions under the recorded evaluation policies. Historical authorization status is not a fraud label, and an engine outcome is not an expected-decision label.
 
@@ -36,15 +36,15 @@ This covers the annotated merchant-instruction subset only. It does not label ev
 | Annotated instruction attempt | Initial decision | Reasons |
 | --- | --- | --- |
 | AU0037 | decline | amount_over_limit |
-| AU0040 | step_up | item_mismatch\|unrequested_item\|injected_instructions |
+| AU0040 | step_up | item_mismatch\|injected_instructions |
 
 Ordinary-purchase approval without a question is unavailable: the observed approvals cannot define which purchases should have been approved.
 
 ## Deterministic extraction corpus
 
 Measured now on 76 corpus lines: [extract-corpus.jsonl](../samples/extract-corpus.jsonl), SHA-256 `2b79cdbb9cad9ebe7aca27974cbe719d2bf99db799e4db7169f96625e2a31b66`.
-Measurement code: [measure_extract.py](../../scripts/measure_extract.py), SHA-256 `98023d4cb2bcbe775be9b10eb73440e7338e1b3785bd30df1ebf036552a9de14`.
-Extractor: [facts.py](../../src/leash/extract/facts.py), SHA-256 `8c5fc6f7d88b0ec86eca14bdb5a89eb17e8c20346d0ff3cf96d98e5c7a0026a4`.
+Measurement code: [measure_extract.py](../../scripts/measure_extract.py), SHA-256 `b0bd332f86af70c407bf4302d62d3ed27f897575df16b347029337cb3c8d9381`.
+Extractor: [facts.py](../../src/leash/extract/facts.py), SHA-256 `4d0cc8c255e3f934ece717df5d93e869bfac068c8ef83b59cf5ad998c3038905`.
 
 | Field | Agreement with annotated fields |
 | --- | --- |
@@ -66,10 +66,10 @@ Nearest-rank percentiles, in milliseconds. Recorded replay timings exclude proce
 
 | Measurement | N | p50 ms | p99 ms | Maximum ms |
 | --- | ---: | ---: | ---: | ---: |
-| Recorded replay extract_ms | 45 | 0.027 | 0.078 | 0.078 |
-| Recorded replay evaluate_ms | 45 | 0.220 | 0.384 | 0.384 |
-| Recorded replay total_ms | 45 | 0.248 | 0.462 | 0.462 |
-| Current corpus extraction per line | 76 | 0.008 | 0.037 | 0.037 |
+| Recorded replay extract_ms | 45 | 0.041 | 0.084 | 0.084 |
+| Recorded replay evaluate_ms | 45 | 0.317 | 1.029 | 1.029 |
+| Recorded replay total_ms | 45 | 0.357 | 1.077 | 1.077 |
+| Current corpus extraction per line | 76 | 0.024 | 0.144 | 0.144 |
 
 ## Live simulator evidence
 
