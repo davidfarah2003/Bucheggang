@@ -357,6 +357,77 @@ outcome      get_purchase_status -> { authorization_id, decision, resolved, fina
 
 `reference` is present only for a final `approve` and is what an external processor consumes to take payment; the backend records no charge and makes no order claim. `decision_hash` is the SHA-256 of the canonical accepted `Decision`. A cart or total that differs from what the agent showed the customer is the agent's problem: the engine judges the typed values it receives, and `facts.*` rules apply to the `facts` the agent supplies with `sources[field] = agent_form`.
 
+### Purchase input and idempotency
+
+This subsection fixes what `buy` accepts, how the backend turns it into the `Event` the engine already judges, and what happens when the same purchase is sent twice. It is agreed before any `buy` code; the parked tool stays parked until an implementation PR cites it.
+
+Input. `buy` takes exactly the fields in the MCP tool table and nothing else; unknown keys raise `InvalidPurchase` naming the key. Every value is typed and checked before the engine sees it:
+
+```
+mandate_id        str, confirmed for the paired agent's account_id, status active; otherwise InvalidPurchase
+purchase_key      str, 16 to 64 characters, the agent's own idempotency key for this purchase attempt
+cart[]            1 to 50 lines; item_id, item_name, item_category non-empty; quantity int >= 1;
+                  unit_price_chf > 0 with at most 2 decimals; item_details str (untrusted merchant text, may be empty)
+merchant          merchant_id, merchant_name, merchant_category non-empty; merchant_mcc 4 digits; merchant_country ISO 3166-1 alpha-2
+delivery_fee_chf  >= 0, at most 2 decimals, default absent means the agent must send 0 explicitly
+total_chf         > 0, at most 2 decimals; must equal sum(quantity * unit_price_chf) + delivery_fee_chf to the cent, else InvalidPurchase("total does not match the cart")
+facts[]           one PurchaseFacts per cart line, same item_id in the same order; sources[field] must be agent_form for every supplied field;
+                  conflicts must be empty (the agent has one source); contains_instructions and excerpt as the agent's own screen of item_details
+```
+
+The backend never fills a missing value. A cart line without a `facts` entry, a `facts` entry whose `item_id` is not in the cart, a `sources` value other than `agent_form`, or a non-empty `conflicts` list is `InvalidPurchase` with the line number.
+
+Event construction. The backend builds the `Event` the engine already takes, so the same `evaluate(event, policy, state, facts, history=...)` runs for a simulator attempt and for an MCP purchase and nothing is keyed on which path produced it:
+
+```
+authorization.authorization_id      "AGT" + 13 upper-case base32 characters from 8 random bytes, minted once per accepted purchase_key
+authorization.source_authorization_id  the same value
+authorization.scenario_id           "SCEN0000"   (no simulator scenario; the engine never reads it)
+authorization.replay_order          1            (the engine never reads it)
+authorization.mandate_id            the input mandate_id
+authorization.profile_id, card_id   from the mandate's confirmation record (the customer's account and the card it was confirmed for)
+authorization.initiator_type        "agent"
+authorization.merchant              the input merchant, plus merchant_city "", availability "online", recurring_capable "false"
+authorization.timestamp             the backend's clock, UTC, at acceptance of the purchase_key
+authorization.amount, currency      total_chf, "CHF"
+authorization.billing_amount_chf    total_chf
+authorization.items_subtotal        sum(quantity * unit_price_chf)
+authorization.delivery_fee          delivery_fee_chf
+authorization.channel               "ecommerce"
+authorization.customer_device_id    the paired agent_id (the agent is the device)
+authorization.authority_status      "active" (checked above; a revoked mandate is InvalidPurchase before construction)
+authorization.card_status_at_attempt "active"
+authorization.spend_in_period_before_chf  null (the engine derives period spend from MandateState)
+authorization.recent_attempt_count_10m    the count of accepted purchase_keys on this mandate in the last 10 minutes, from the store
+authorization.fulfillment_method    "delivery"
+authorization.delivery_by           null
+authorization.order_returnable, order_cancellable  "unknown"
+authorization.related_authorization_id, related_authorization_status  null
+authorization.purchase_description  the confirmed draft's instruction
+authorization.items[]               line_no from 1 in cart order; item_id, item_name, item_category, quantity, unit_price = unit_price_chf, currency "CHF", item_details
+mandate                             the confirmed policy read from the store for mandate_id, as the runner's policy_context builds it
+context.approved_spend_in_period_chf  null; context.recent_authorizations  the accepted decisions on this mandate in the last history_window_minutes, from the store
+runtime                             received_at = timestamp, history_window_minutes and context_basis as the runner sets them; deadline_at = timestamp + the configured decision budget
+```
+
+`history` is the same frozen `History` slice the runner passes for the card, built from accepted decisions on the card before `timestamp`. `state` is the current `MandateState`. The decision is recorded with `leash.engine.state.record` and appears in `GET /mandates/{mandate_id}/decisions`, `GET /decisions/{authorization_id}` and, for a `step_up`, `GET /step-ups/pending`, exactly like a simulator decision.
+
+Idempotency. `purchase_key` is unique per `(agent_id, mandate_id)`. The backend stores `purchases/<sha256(agent_id + ":" + mandate_id + ":" + purchase_key)>` under the mandate lock, `O_EXCL`, before it evaluates, holding the canonical input hash (SHA-256 of compact sorted-key JSON of the validated input without `purchase_key`) and, once decided, the `authorization_id`:
+
+```
+same key, same input hash, decided       -> the stored Decision is returned again; no new authorization_id, no second evaluation, no state change
+same key, same input hash, not yet decided  -> PurchaseInProgress; the agent polls get_purchase_status with the authorization_id it already holds, or retries after the decision budget
+same key, different input hash           -> PurchaseKeyReused, the purchase is not evaluated; the agent must mint a new key for a changed cart
+new key                                  -> a new purchase, judged on the current state, which includes every earlier accepted decision on the mandate
+```
+
+There is no expiry on a used key within the mandate's life; a revoked or expired mandate rejects every `buy` before the key is looked at. A crash after the key file is written and before the decision is recorded leaves `PurchaseInProgress` until the runner's intent recovery (section "Runner coordination") either records the decision it finds or marks the purchase `decline` with reason `step_up_timeout` at `deadline_at`; the agent's readback shows which.
+
+`step_up`. Same as a simulator step-up: the Wallet answers through `POST /step-ups/{authorization_id}/answer` or the book times it out to `decline`. The agent sees `resolved: false` in `get_purchase_status` and nothing it sends can resolve it. `get_purchase_status` on an `authorization_id` that belongs to another agent's account is `PurchaseUnknown`, the same error as a nonexistent id.
+
+Out of scope for this contract and for the demo: a payment processor, a merchant order, inventory or price lookup by the backend, a `buy` that the backend retries or re-quotes, and any purchase created from the Wallet or the Harness page instead of through a paired agent. `reference` is data for a later processor integration and is not consumed by anything we ship.
+
+
 ## Identity source
 
 Ruled 2026-09-25 by the contracts owner on Oskar's direction. This replaces the earlier `LEASH_MCP_TOKENS` capability-map ruling and the shared `LEASH_MCP_TOKEN` bearer; neither ships. It is a local credential system for the demo, and the section ends with what a bank integration replaces.
