@@ -33,7 +33,13 @@ _PLAN = re.compile(
     r"(?:extending|extended|extra) cover beyond|coverage (?:extending |lasting )?beyond)\b",
     re.I,
 )
-_SUBSCRIPTION = re.compile(r"\b(?:subscription|billed (?:monthly|annually)|monthly fee)\b", re.I)
+_SUBSCRIPTION = re.compile(
+    r"\b(?:subscription|billed (?:weekly|monthly|annually|yearly|every)|(?:weekly|monthly|annual) fee|"
+    r"renews? automatically|auto[ -]?renew(?:s|al|ing)?|"
+    r"recurring (?:(?:weekly|monthly|annual|yearly) )?(?:charge|payment|billing)|"
+    r"until cancell?ed|standing (?:\w+ )?order)\b",
+    re.I,
+)
 _ADDON = re.compile(r"\b(?:add[ -]?on|optional (?:service|cover|plan))\b", re.I)
 
 
