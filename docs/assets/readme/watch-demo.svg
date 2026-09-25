@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="288" height="72" viewBox="0 0 288 72" role="img" aria-labelledby="title">
+  <title id="title">Watch the demo</title>
+  <rect x="4.5" y="6.5" width="279" height="59" rx="29.5" fill="#f3f6f8" stroke="#d6e0e5"/>
+  <path d="M56 27 L56 45 L70 36 Z" fill="#436c78"/>
+  <text x="160" y="43" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="500" fill="#263b44">Watch the demo</text>
+</svg>

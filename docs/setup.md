@@ -100,7 +100,7 @@ Choose a new output filename for a subsequent run. Existing reports are never ov
 | Decline | 32 |
 | Ask the customer | 2 |
 
-These are decision counts, not accuracy percentages or live payment results. Provider exercises, simulator runs and human Wallet verification have separate evidence records.
+These are decision counts. Against the reconciled expected decisions in `docs/eval/labels.csv`, the engine agrees on 43 of 45 attempts; the two disagreements and their causes are in [the labelled report](eval/report-labelled.md). Provider exercises, simulator runs and human Wallet verification have separate evidence records.
 
 [Replay assumptions and commands](run-replay.md) · [Recorded exercises](eval/) · [Live verification checklist](live-demo-checklist.md)
 

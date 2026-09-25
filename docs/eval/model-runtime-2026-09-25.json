@@ -1,0 +1,37 @@
+{
+  "status": "completed",
+  "started_at": "2026-09-25T10:55:34.503089+00:00",
+  "source_head": "5601dffb60dddfa2b93f279faccda66667d77e7f",
+  "driver_sha256": "b909f1ec0a0530ebf5281a1ea8bb95c76fc42c4c69e2518e4e5c6afcda1947c4",
+  "runtime_sha256": {
+    "src/leash/runner/evaluation.py": "b2bc8cbe801b1bea094d7ed77d5a35cb9565608392916c345700c1827559ab80",
+    "src/leash/engine/evaluate.py": "7da622b8b39600af8a45396bafcd88a430ba1297f62dc769011eea7c585b56b0",
+    "src/leash/engine/model_checks.py": "79ca8faafd000edca64c81ce416188c341cdacb92c1cce0e4518f99fe51322da",
+    "src/leash/engine/classifier/assess.py": "a3813081d27ca90c549c07631ee796f11545b58d8b3086d6cc7891d379858757",
+    "src/leash/engine/classifier/behaviour.py": "0621c6291980653129acb7a86010b381afb7e80bf901de9b0a11cfb4b09f1fa2",
+    "src/leash/engine/classifier/jev.py": "217624a00121e3410cb60c9df19414cf82c8d68ad7f57f30bf662634b82459cc",
+    "src/leash/contracts/classifier.py": "699394631b5705d21aa9b6c03c126175bcf2b080bf9ab2ecd0cf1479b44801b1"
+  },
+  "policy_hashes": {
+    "SCEN0000": "f13303019d3166997b7382f07debaf3ba18a9e15465e7bc7cd0b28ce31ab58fe",
+    "SCEN0001": "e60c894832c7ad0027a6372cdb74bf25553521fcd790b1dcd94fdcede1178164",
+    "SCEN0002": "54c70cc2061650485bb8833add6e1c73c5f53f13d9ca00ba3c64ee8dc38cde0f",
+    "SCEN0003": "a55b832fc4ccec0125b15949fa4cc3f2610ea9f71ff8ad7ed74a4af2244da454",
+    "SCEN0004": "3a83840408674d175a5ace5a629983fd0f08e9162bdba814d6d17e36fc603870"
+  },
+  "purchase_budget_s": 20,
+  "model_cap_s": 6,
+  "behaviour_threshold": 0.498,
+  "completed_rows": 45,
+  "completed_rows_with_model_evidence": 13,
+  "simulator_submissions": 0,
+  "customer_answers": 0,
+  "retries": 0,
+  "scope": "Real model calls; sequential offline purchase/state replay, no live Wallet journey.",
+  "decisions": {
+    "approve": 11,
+    "decline": 32,
+    "step_up": 2
+  },
+  "finished_at": "2026-09-25T10:56:13.607649+00:00"
+}
