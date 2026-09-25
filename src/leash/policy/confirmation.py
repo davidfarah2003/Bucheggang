@@ -80,6 +80,9 @@ def confirm_policy(
     if not confirmed_by:
         raise InvalidDraft("authenticated customer identity is required")
     draft = _answered_draft(store, draft_id, version, hash_value, answers)
+    boundary_results = store.reevaluate_boundary_cases_for_confirmation(
+        draft_id, version=draft["version"], hash_value=draft["hash"]
+    )
     attempt_id = store.begin_confirmation(
         draft_id,
         version=draft["version"],
@@ -107,6 +110,7 @@ def confirm_policy(
         global_version=global_policy["version"],
         global_hash=global_policy["hash"],
         global_rules=global_rules,
+        boundary_results=boundary_results,
     )
     return {
         "mandate_id": mandate_id,

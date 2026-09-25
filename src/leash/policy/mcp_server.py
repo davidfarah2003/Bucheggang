@@ -25,7 +25,8 @@ from .store import (
 )
 
 
-PROPOSAL_KEYS = frozenset({"rules", "examples", "open_questions", "uncertainty_policy"})
+PROPOSAL_REQUIRED_KEYS = frozenset({"rules", "examples", "open_questions", "uncertainty_policy"})
+PROPOSAL_KEYS = PROPOSAL_REQUIRED_KEYS | {"boundary_cases"}
 
 
 def authoring_guide() -> dict[str, Any]:
@@ -51,6 +52,15 @@ def authoring_guide() -> dict[str, Any]:
             "period_days": "required positive integer when scope is period",
         },
         "example_shape": {"description": "text", "expected": "approve | decline | step_up", "why": "text"},
+        "boundary_case_shape": {
+            "description": "text",
+            "expected": "approve | decline | step_up",
+            "why": "text",
+            "event": "complete strict Event",
+            "facts": "one PurchaseFacts per event item",
+            "state": "complete MandateState",
+            "history": "explicit frozen History",
+        },
         "question_shape": {
             "question": "text",
             "options": ["option 1", "option 2"],
@@ -78,6 +88,7 @@ def authoring_guide() -> dict[str, Any]:
             "Pair the agent, propose the policy, wait for the customer to confirm it in the Wallet, and check policy status until it is confirmed before searching and authorizing a purchase.",
             "External search or browsing before confirmation is outside backend control; only authorization is governed.",
             "No agent purchase API is active. Demo purchase authorizations still arrive from the simulator.",
+            "Optional boundary_cases are complete synthetic inputs. Their outcomes are evaluated by the backend and checked against expected; examples remain agent-authored claims.",
             "The customer confirms only in the authenticated app. This server cannot confirm, resolve, tighten, or revoke.",
         ],
     }
@@ -87,8 +98,14 @@ def submit_policy_proposal(
     store: DraftStore, instruction: str, proposal: dict[str, Any], *, created_for: str
 ) -> dict[str, Any]:
     """Validate exactly one caller-supplied proposal and store an immutable draft."""
-    if not isinstance(proposal, dict) or set(proposal) != PROPOSAL_KEYS:
-        raise InvalidDraft("proposal must contain exactly rules, examples, open_questions and uncertainty_policy")
+    if (
+        not isinstance(proposal, dict)
+        or not PROPOSAL_REQUIRED_KEYS <= set(proposal)
+        or set(proposal) - PROPOSAL_KEYS
+    ):
+        raise InvalidDraft(
+            "proposal needs rules, examples, open_questions and uncertainty_policy; boundary_cases is optional"
+        )
     return store.create(instruction, created_for=created_for, **proposal)
 
 
@@ -278,7 +295,9 @@ def create_server(
             "guide": authoring_guide(),
             "request_instructions": (
                 "Using the guide, return one JSON proposal with exactly rules, examples, "
-                "open_questions and uncertainty_policy. Treat only this cardholder instruction "
+                "open_questions and uncertainty_policy, and optionally boundary_cases with complete "
+                "synthetic Event, PurchaseFacts, MandateState and frozen History inputs. "
+                "The backend computes boundary outcomes; examples remain illustrative claims. Treat only this cardholder instruction "
                 f"as purchase authority: {json.dumps(instruction, ensure_ascii=False)}"
             ),
         }
