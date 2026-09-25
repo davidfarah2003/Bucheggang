@@ -4,7 +4,7 @@ The stage page app/demo-stage.html embeds the real Wallet in a phone frame next 
 chat, inside a camera layer that the script zooms like a screen recorder. The script drives the
 Wallet while the real agent side runs as a subprocess (scripts/flow_sim.py --manual, over the real
 MCP server, models on). Every agent wait returns when the customer acts on the phone, so the timing
-you see is the real backend's. Taps, chimes and camera cues are synthesized by scripts/demo_audio.py
+you see is the real backend's. Taps and the four event sounds are synthesized by scripts/demo_audio.py
 from the cue times this script records while it runs; the music bed is docs/demo/music/ (CC BY 4.0).
 
     uv run --group classifier --with playwright python scripts/record_demo.py
@@ -55,9 +55,11 @@ class Stage:
         await self.page.evaluate("([n,a]) => window.tool(n,a)", [name, args])
         await asyncio.sleep(hold)
 
-    async def done(self, hold: float = 0.4, sound: str = "chime"):
+    async def done(self, hold: float = 0.4, sound: str | None = None):
+        # Silent by default. Only the four events that change something for Alex get a sound.
         await self.page.evaluate("() => window.done()")
-        self.cue(sound)
+        if sound:
+            self.cue(sound)
         await asyncio.sleep(hold)
 
     async def caption(self, text: str, hold: float = 0.8, side: bool = False):
@@ -65,8 +67,8 @@ class Stage:
         await asyncio.sleep(hold)
 
     async def zoom(self, x: float, y: float, s: float, ms: int = 900, hold: float | None = None, cx: float = 800):
+        # Camera moves are silent.
         await self.page.evaluate("([x,y,s,ms,cx]) => window.zoom(x,y,s,ms,cx)", [x, y, s, ms, cx])
-        self.cue("whoosh")
         await asyncio.sleep(ms / 1000 if hold is None else hold)
 
     async def zoom_out(self, ms: int = 800):
@@ -167,7 +169,6 @@ async def main() -> None:
             await asyncio.sleep(0.3)
             s = Stage(page)
             s.frame = frame
-            s.cue("swell")
             await page.evaluate("() => window.scene('title')")
             await asyncio.sleep(1.0)
             await page.evaluate("() => window.scene('stage')")

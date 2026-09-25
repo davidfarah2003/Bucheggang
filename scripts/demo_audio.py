@@ -1,4 +1,4 @@
-"""Synthesize the demo video's sound cues: taps, camera moves, chimes and the outro swell.
+"""Synthesize the demo video's sound cues: soft taps, four event sounds and the outro swell.
 
 The cues are generated in code with numpy so they need no licence. The music bed is a separate
 track (docs/demo/music/, Kevin MacLeod, CC BY 4.0) that scripts/record_demo.py mixes under the cues.
@@ -38,7 +38,8 @@ def cue(kind: str) -> np.ndarray:
     if kind == "tap":
         n = int(0.06 * SR)
         t = np.arange(n) / SR
-        return 0.45 * np.sin(2 * np.pi * 1800 * t) * np.exp(-t * 120) + 0.25 * np.sin(2 * np.pi * 900 * t) * np.exp(-t * 90)
+        # Quiet: a tap marks the pointer, it is not an event.
+        return 0.2 * np.sin(2 * np.pi * 1800 * t) * np.exp(-t * 120) + 0.1 * np.sin(2 * np.pi * 900 * t) * np.exp(-t * 90)
     if kind == "whoosh":
         # Camera moves are silent; a short soft pitch rise reads as motion without noise.
         n = int(0.3 * SR)
