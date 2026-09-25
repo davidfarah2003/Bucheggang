@@ -18,7 +18,9 @@ The Wallet, MCP server and runner must use the same checkout and `LEASH_POLICY_S
 
 The quick start explicitly disables model calls. Enabling them requires the `classifier` dependency group, a model manifest and the separately scoped OpenRouter credential. The demo launch scripts also configure local purchase budgets and can enable models by default. Inspect their settings before running them.
 
-See the [classifier implementation and measurements](eval/classifier/) and [runner configuration](../src/leash/runner/settings.py). The optional `harness` dependency group belongs to the unfinished in-app provider adapter.
+With `LEASH_ENABLE_MODELS=1`, `LEASH_MODEL_MANIFEST` names the model file and `LEASH_BEHAVIOUR_THRESHOLD` sets the CatBoost score at which a purchase gets an uncertain check. The demo scripts use the evaluation manifest with threshold 0.498. The reviewed operating point is the overlay `docs/eval/classifier/model-o4-1pct.json`, which pins the manifest by hash and carries its own cut, so name it in `LEASH_MODEL_MANIFEST` and leave the threshold unset. The provider adapter rejects a Jev probability that is not on the two-decimal grid and a distribution that drifts more than 0.015 from one; a bad response raises and no decision is substituted.
+
+See the [classifier implementation and measurements](eval/classifier/), the [O4 operating point](eval/classifier/o4-operating-point.md) and [runner configuration](../src/leash/runner/settings.py). The optional `harness` dependency group belongs to the unfinished in-app provider adapter.
 
 ## Run the demo as recorded
 
