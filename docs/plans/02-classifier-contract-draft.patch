@@ -1,0 +1,172 @@
+diff --git a/src/leash/contracts/__init__.py b/src/leash/contracts/__init__.py
+index 723ba6a..e19dab7 100644
+--- a/src/leash/contracts/__init__.py
++++ b/src/leash/contracts/__init__.py
+@@ -11,6 +11,13 @@ from .decision import (
+     StepUp,
+     StepUpAnswer,
+ )
++from .classifier import (
++    AssessmentBundle,
++    BehaviorAssessment,
++    HistoryFeatures,
++    JevAnswer,
++    SemanticAssessment,
++)
+ from .event import (
+     Authorization,
+     Event,
+diff --git a/src/leash/contracts/decision.py b/src/leash/contracts/decision.py
+index be04a05..9f00616 100644
+--- a/src/leash/contracts/decision.py
++++ b/src/leash/contracts/decision.py
+@@ -4,6 +4,8 @@ from __future__ import annotations
+ 
+ from typing import Literal
+ 
++from pydantic import model_validator
++
+ from ._base import Contract, NonEmpty, Timestamp
+ from .event import Event
+ 
+@@ -15,7 +17,7 @@ REASON_CODES = frozenset(
+         "unfamiliar_merchant", "lookalike_merchant", "gift_card", "subscription",
+         "protection_plan", "duplicate_order", "requote_after_decline", "velocity", "new_device",
+         "country_blocked", "country_unfamiliar", "no_card_history", "injected_instructions", "customer_confirmation", "customer_declined",
+-        "step_up_timeout", "engine_timeout",
++        "step_up_timeout", "engine_timeout", "model_risk",
+     }
+ )
+ ReasonCode = Literal[
+@@ -25,7 +27,7 @@ ReasonCode = Literal[
+     "unfamiliar_merchant", "lookalike_merchant", "gift_card", "subscription",
+     "protection_plan", "duplicate_order", "requote_after_decline", "velocity", "new_device",
+     "country_blocked", "country_unfamiliar", "no_card_history", "injected_instructions", "customer_confirmation", "customer_declined",
+-    "step_up_timeout", "engine_timeout",
++    "step_up_timeout", "engine_timeout", "model_risk",
+ ]
+ Outcome = Literal["approve", "decline", "step_up"]
+ FactSource = Literal["agent_form", "structured", "merchant_text"]
+@@ -52,8 +54,21 @@ class Check(Contract):
+     name: NonEmpty
+     result: Literal["pass", "fail", "uncertain"]
+     value: str | int | float | None
+-    source: Literal["event", "history", "agent_form", "merchant_text", "state"]
++    source: Literal["event", "history", "agent_form", "merchant_text", "state", "model"]
+     note: str
++    model_id: NonEmpty | None = None
++    artifact_version: NonEmpty | None = None
++
++    @model_validator(mode="after")
++    def model_provenance(self) -> Check:
++        if self.source == "model":
++            if self.result == "fail":
++                raise ValueError("a model check cannot fail a deterministic purchase")
++            if self.model_id is None or self.artifact_version is None:
++                raise ValueError("model check needs model_id and artifact_version")
++        elif self.model_id is not None or self.artifact_version is not None:
++            raise ValueError("non-model check cannot carry model provenance")
++        return self
+ 
+ 
+ class Decision(Contract):
+diff --git a/src/leash/contracts/classifier.py b/src/leash/contracts/classifier.py
+new file mode 100644
+index 0000000..e1533ce
+--- /dev/null
++++ b/src/leash/contracts/classifier.py
+@@ -0,0 +1,94 @@
++"""Shared classifier assessment shapes, pending the engine-owned P1/P2 PR."""
++
++from __future__ import annotations
++
++import math
++from typing import Annotated
++
++from pydantic import Field, model_validator
++
++from ._base import Contract, NonEmpty, Timestamp
++
++
++class HistoryFeatures(Contract):
++    schema_version: NonEmpty
++    customer_id: NonEmpty
++    card_id: NonEmpty
++    as_of: Timestamp
++    values: dict[str, float | None]
++    missing: dict[str, str]
++    support: dict[str, int]
++
++    @model_validator(mode="after")
++    def complete_feature_map(self) -> HistoryFeatures:
++        if set(self.values) != set(self.support):
++            raise ValueError("history feature values and support have different keys")
++        if set(self.missing) != {name for name, value in self.values.items() if value is None}:
++            raise ValueError("history missing reasons do not match undefined values")
++        if any(count < 0 for count in self.support.values()):
++            raise ValueError("history support count is negative")
++        if any(value is not None and not math.isfinite(value) for value in self.values.values()):
++            raise ValueError("history feature value is not finite")
++        return self
++
++
++class BehaviorAssessment(Contract):
++    score: Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
++    model_id: NonEmpty
++    artifact_version: NonEmpty
++    feature_schema_version: NonEmpty
++    support: dict[str, int]
++    escalation_fired: bool
++
++
++class JevAnswer(Contract):
++    question_id: NonEmpty
++    options: dict[str, float]
++    selected: str | None
++
++    @model_validator(mode="after")
++    def valid_distribution(self) -> JevAnswer:
++        if not self.options or any(not math.isfinite(value) or value < 0 or value > 1
++                                   for value in self.options.values()):
++            raise ValueError("Jev answer has invalid probabilities")
++        if not math.isclose(sum(self.options.values()), 1.0, rel_tol=0, abs_tol=1e-6):
++            raise ValueError("Jev answer probabilities do not sum to one")
++        winners = [name for name, value in self.options.items() if value == max(self.options.values())]
++        expected = winners[0] if len(winners) == 1 else None
++        if self.selected != expected:
++            raise ValueError("Jev selected option differs from the local argmax or tie")
++        return self
++
++
++class SemanticAssessment(Contract):
++    requested_model: NonEmpty
++    served_model: NonEmpty
++    prompt_version: NonEmpty
++    answers: Annotated[list[JevAnswer], Field(min_length=1)]
++    latency_ms: Annotated[int, Field(ge=0)]
++
++    @model_validator(mode="after")
++    def unique_questions(self) -> SemanticAssessment:
++        ids = [answer.question_id for answer in self.answers]
++        if len(ids) != len(set(ids)):
++            raise ValueError("Jev assessment repeats a question")
++        return self
++
++
++class AssessmentBundle(Contract):
++    authorization_id: NonEmpty
++    purchase_digest: NonEmpty
++    policy_hash: NonEmpty
++    as_of: Timestamp
++    features: HistoryFeatures
++    behaviour: BehaviorAssessment | None
++    semantic: SemanticAssessment | None
++
++    @model_validator(mode="after")
++    def matching_feature_schema(self) -> AssessmentBundle:
++        if self.features.as_of != self.as_of:
++            raise ValueError("assessment feature timestamp differs from purchase")
++        if (self.behaviour is not None
++                and self.behaviour.feature_schema_version != self.features.schema_version):
++            raise ValueError("assessment model feature schema differs from profile")
++        return self
