@@ -418,7 +418,7 @@ def create_server(
                 raise ToolError(f"PairingUnknown: the pairing is {status}; call connect again")
             if time.monotonic() >= deadline:
                 raise ToolError("PairingTimeout: the customer has not approved this agent in the Wallet yet; call connect again")
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.25)
         try:
             result = identity_store.complete_pairing(pairing["pairing_code"], pairing["verifier"])
         except (PairingPending, PairingUnknown) as exc:
@@ -452,7 +452,7 @@ def create_server(
                 return status
             if time.monotonic() >= deadline:
                 raise ToolError("PolicyPending: the customer has not decided in the Wallet yet; call wait_for_policy again")
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.25)
 
     @server.tool()
     def get_policy_authoring_instructions(instruction: str) -> dict[str, Any]:
@@ -592,7 +592,7 @@ def create_server(
                 return status
             if time.monotonic() >= deadline:
                 raise ToolError("PurchasePending: the customer has not answered in the Wallet yet; call wait_for_purchase again")
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.25)
 
     return server
 

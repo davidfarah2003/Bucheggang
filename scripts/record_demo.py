@@ -140,6 +140,9 @@ async def main() -> None:
     s: Stage | None = None
     record_started = 0.0
     try:
+        # The agent boots the MCP server and the models before any frame is recorded; its connect
+        # call then sits pending in the Wallet until Alex opens the tab.
+        await wait_for_agent(log, "connection request is waiting")
         async with async_playwright() as pw:
             browser = await pw.chromium.launch()
             context = await browser.new_context(
@@ -169,19 +172,17 @@ async def main() -> None:
             await asyncio.sleep(1.0)
             await page.evaluate("() => window.scene('stage')")
             await page.evaluate("() => window.scene('lead', 'Alex sets the rules first.', 'One sentence, before anything is bought.')")
-            await s.zoom(PHONE_CX, 480, 1.35, 600, hold=0.7)
-            await s.type_into("#shop-prompt", INSTRUCTION, per_char=0.003)
+            await s.zoom(PHONE_CX, 480, 1.35, 600, hold=0.5)
+            await s.type_into("#shop-prompt", INSTRUCTION, per_char=0.0015)
 
             # The MCP beat: any agent can plug in, and it does the rest.
             await s.zoom_out(500)
             await page.evaluate("() => window.scene('chips', 'Any agent does the rest.', 'The Wallet is an MCP server. The agent plugs in, drafts the plan, then waits.')")
-            await asyncio.sleep(1.8)
+            await asyncio.sleep(1.5)
             await page.evaluate("() => window.scene('agent')")
             await s.say("user", INSTRUCTION, 0.2)
             await s.say("agent", "On it. Asking your Wallet for permission.", 0.15)
             await s.tool("connect", 'agent_label="Grocery helper"', 0.15)
-
-            await wait_for_agent(log, "connection request is waiting")
             await s.caption("One tap to connect.", 0.4)
             await s.click('nav [data-route="wallet"]', after=0.15)
             await s.frame.wait_for_selector('[data-action="approve-pending-pair"]')
@@ -198,7 +199,7 @@ async def main() -> None:
             await s.frame.wait_for_selector('[data-action="open-draft"]', timeout=15000)
             await s.click('[data-action="open-draft"]', after=0.25)
             await s.zoom(PHONE_CX, 470, 1.45, 500, hold=0.15)
-            await s.caption("Plain-English rules, in Alex's words. Confirmed before the first purchase.", 0.8, side=True)
+            await s.caption("Plain-English rules, in Alex's words. Confirmed before the first purchase.", 0.6, side=True)
             await s.scroll(720, steps=8)
             await s.click('[data-action="answer-question"]', after=0.2)
             await s.click('[data-action="confirm"]', after=0.25)
@@ -217,7 +218,7 @@ async def main() -> None:
             await s.frame.wait_for_selector('[data-action="open-pending"]', timeout=15000)
             await s.click('[data-action="open-pending"]', after=0.25)
             await s.zoom(PHONE_CX, 470, 1.5, 500, hold=0.15)
-            await s.caption("Why it asks: a new device and a risk-model flag. Alex decides, never the agent.", 1.9, side=True)
+            await s.caption("Why it asks: a new device and a risk-model flag. Alex decides, never the agent.", 1.6, side=True)
             await s.click('[data-action="resolve"][data-decision="approve"]', after=0.15)
             await s.zoom_out(400)
             await wait_for_agent(log, "customer answered")
@@ -227,7 +228,7 @@ async def main() -> None:
             await wait_for_agent(log, "agent: done")
             await s.done(0.1)
             s.cue("deny")
-            await s.say("agent", "Declined: shops you already use only, and this card has never bought there.", 0.9)
+            await s.say("agent", "Declined: shops you already use only, and this card has never bought there.", 0.7)
 
             # Why: the decision pipeline and the live probabilities, with the explainer on the left.
             await s.caption("Every decision on record, with the reason.", 0.3)
@@ -239,16 +240,16 @@ async def main() -> None:
             await s.caption("", 0.0)
             await page.evaluate("() => window.scene('tech', 'How the Wallet judges a cart.')")
             await s.zoom(PHONE_CX, 470, 1.6, 500, hold=0.15, cx=1150)
-            await s.scroll(900, steps=10)
-            await asyncio.sleep(2.2)
+            await s.scroll(900, steps=8)
+            await asyncio.sleep(1.8)
             await s.zoom(PHONE_CX, 560, 1.9, 600, hold=0.15, cx=1150)
-            await s.scroll(520, steps=8)
-            await asyncio.sleep(2.4)
+            await s.scroll(520, steps=6)
+            await asyncio.sleep(2.0)
             await s.zoom_out(500)
             await page.evaluate("() => window.hideCursor()")
             s.cue("swell")
             await page.evaluate("() => window.scene('outro', 'Agent on a Leash', 'Your agent buys. Your Wallet decides.')")
-            await asyncio.sleep(1.6)
+            await asyncio.sleep(1.4)
             await context.close()
             await browser.close()
     finally:
