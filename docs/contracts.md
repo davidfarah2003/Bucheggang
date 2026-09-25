@@ -235,6 +235,14 @@ leash.engine.state.record(mandate_id: str, event: Event, accepted: Decision) -> 
 
 `facts=None` leaves every `facts.*` field unknown for legacy callers. An extraction execution failure must raise. The current runner's timeout substitute decisions remain separate P4 work and are a blocker for the model-enabled path; this interface change does not claim to have removed them.
 
+## Runner coordination
+
+`leash.runner.records.customer_lock(customer)` guards enumeration of a customer's owned mandates. Its file is `data/locks/customer/<sha256 of customer>.lock`. `mandate_locks(ids, deadline_at=...)` nests inside it and acquires the sorted unique mandate IDs. An empty set is valid for a customer's first confirmation. Mutation callers hold the customer guard and mandate locks through the accepted write and local persistence, then release in reverse order. They re-read the confirmation set after locking and raise if it changed. Never acquire the customer guard while holding a mandate lock.
+
+`customer_lock` accepts an optional monotonic `stop_at`. `mandate_locks` requires an aware absolute `deadline_at` and can share that `stop_at`. The runner uses one remaining budget across both lock levels. Immutable confirmation metadata may be read first solely to identify the customer; owned-set enumeration and financial-state reads happen inside coordination.
+
+The runner stores durable mutation intents under `data/intents/`, including its persistent pre-dispatch state and separate customer-wide evaluation snapshot. An unresolved intent blocks new dispatch until authoritative read-back and local recovery finish. Models are not enabled by this coordination interface. Policy confirmation must adopt the same helper after this change merges; until that follow-up, confirmation/supersession is not covered by the shared ordering.
+
 ## Runner mandate client
 
 Owned by the runner lane. Called by the policy lane's confirm route and the app's tighten and revoke routes. Every method calls the simulator once and raises `leash.runner.api.ApiError(status, body)` on any non-2xx; there is no retry inside these methods and no fallback.

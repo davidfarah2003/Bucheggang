@@ -178,13 +178,13 @@ class StepUpBook:
 
     def _finish(
         self, step_up: StepUp, decision: Decision, coordinator: Coordinator,
-        *, run_id: str, deadline_at: datetime, evaluated_state: MandateState | None = None,
+        *, run_id: str, mandate_ids: list[str], deadline_at: datetime, evaluated_state: MandateState | None = None,
         policy: dict | None = None, observe_expiry: bool = False,
     ) -> Any:
         """Write ahead, resolve once, and finish the accepted state and history."""
         coordinator.authorization(
             event=step_up.event, decision=decision,
-            state_before=engine_state.load(step_up.event.mandate.mandate_id),
+            state_before=engine_state.load(step_up.event.mandate.mandate_id, customer_mandates=mandate_ids).model_copy(update={"customer_approvals": []}),
             run_id=run_id, deadline_at=deadline_at, step_up=step_up,
             evaluated_state=evaluated_state, policy=policy, observe_expiry=observe_expiry,
         )
@@ -232,7 +232,7 @@ class StepUpBook:
                     "The customer declined this purchase.",
                 )
             return self._finish(
-                step_up, final, coordinator, run_id=run_id, deadline_at=step_up.expires_at,
+                step_up, final, coordinator, run_id=run_id, mandate_ids=mandate_ids, deadline_at=step_up.expires_at,
                 evaluated_state=checked_state, policy=policy,
             )
 
@@ -252,7 +252,7 @@ class StepUpBook:
                     timeout_deadline = step_up.expires_at + timedelta(seconds=EXPIRY_MARGIN_S)
                     observe = now >= timeout_deadline
                     self._finish(
-                        step_up, final, coordinator, run_id=run_id, observe_expiry=observe,
+                        step_up, final, coordinator, run_id=run_id, mandate_ids=mandate_ids, observe_expiry=observe,
                         deadline_at=now + timedelta(seconds=30) if observe else timeout_deadline,
                     )
                     done.append(step_up.authorization_id)
@@ -265,7 +265,7 @@ class StepUpBook:
                     if checked.decision != "decline":
                         raise StepUpError(f"{step_up.authorization_id}: inactive mandate did not produce a decline")
                     self._finish(
-                        step_up, checked, coordinator, run_id=run_id, deadline_at=step_up.expires_at,
+                        step_up, checked, coordinator, run_id=run_id, mandate_ids=mandate_ids, deadline_at=step_up.expires_at,
                         evaluated_state=state, policy=policy,
                     )
                     done.append(step_up.authorization_id)
