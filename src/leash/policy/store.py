@@ -200,13 +200,13 @@ def _validate_draft(
             raise InvalidDraft("answer must be one of the options")
 
 
-def simulator_payload(draft: dict[str, Any]) -> dict[str, Any]:
+def simulator_payload(draft: dict[str, Any], global_rules: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Return only fields accepted by the challenge mandate creation endpoint."""
     return {
         "instruction": draft["instruction"],
         "hard_rules": [
             {key: value for key, value in rule.items() if key in SIMULATOR_RULE_KEYS}
-            for rule in draft["rules"]
+            for rule in [*(global_rules or []), *draft["rules"]]
         ],
         "uncertainty_policy": draft["uncertainty_policy"],
         "guidance": [],
@@ -428,6 +428,9 @@ class DraftStore:
         mandate_id: str,
         confirmed_by: str,
         attempt_id: str,
+        global_version: int,
+        global_hash: str,
+        global_rules: list[dict[str, Any]],
     ) -> dict[str, Any]:
         with self._locked(draft_id) as folder:
             draft = self._assert_current(draft_id, version, hash_value, attempt_id)
@@ -448,6 +451,9 @@ class DraftStore:
                 "mandate_id": mandate_id,
                 "confirmed_by": confirmed_by,
                 "confirmed_at": _now(),
+                "global_version": global_version,
+                "global_hash": global_hash,
+                "global_rules": global_rules,
             }
             try:
                 self._write_exclusive(folder / "confirmation.json", record)
