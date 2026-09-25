@@ -164,7 +164,7 @@ function capturePairLink() {
   const url = new URL(window.location.href);
   if (!url.searchParams.has("pair")) return;
   const codes = url.searchParams.getAll("pair");
-  state.pairLinkError = codes.length !== 1 || !codes[0]?.trim() || hasDraftLink() || hasPurchaseLink() ? "The agent connection link must contain one pairing code and no other Wallet link." : null;
+  state.pairLinkError = codes.length !== 1 || !codes[0]?.trim() || hasDraftLink() || hasPurchaseLink() ? "Use one pairing code only." : null;
   state.pairCode = state.pairLinkError ? null : codes[0].trim();
   for (const name of ["pair", "draft", "draft_id", "authorization_id"]) url.searchParams.delete(name);
   url.hash = "pair";
@@ -453,7 +453,8 @@ function setSession(payload) {
 }
 
 function renderPairEntry(message = state.pairLinkError) {
-  setScreen(`<section class="identity-view"><button type="button" class="back-button" data-route="shop">‹ Shop</button><div class="identity-intro"><span class="section-kicker">AGENT CONNECTION</span><h1>Enter a pairing code</h1><p>Copy the code from your shopping agent. Your Wallet will show its requested access before you decide whether to connect it.</p></div><section class="pair-code-entry"><div class="pair-code-fields"><label for="pair-code">Pairing code</label><input id="pair-code" class="pair-code-input" type="text" maxlength="128" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="pair-code-guidance pair-code-error" placeholder="Paste code from your agent" /><p id="pair-code-guidance">The code only opens an agent request. Entering it does not approve access.</p></div><p id="pair-code-error" class="pair-code-error" role="alert" ${message ? "" : "hidden"}>${message ? esc(message) : ""}</p><div class="pair-code-actions"><button type="button" class="outline-button" data-action="clear-pair-code">Clear</button><button type="button" class="primary-button" data-action="submit-pair-code">Review agent</button></div></section></section>`);
+  setScreen(`<section class="identity-view pair-code-view"><button type="button" class="back-button" data-route="shop">‹ Shop</button><div class="identity-intro"><span class="section-kicker">AGENT CONNECTION</span><h1>Connect an agent</h1><p>Paste the code from your agent. Review its access before you decide.</p></div><section class="pair-code-entry"><div class="pair-code-fields"><label for="pair-code">Pairing code</label><input id="pair-code" class="pair-code-input" type="text" maxlength="128" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="pair-code-guidance pair-code-error" placeholder="Paste code from your agent" /><p id="pair-code-guidance">Entering a code does not approve access.</p></div><p id="pair-code-error" class="pair-code-error" role="alert" ${message ? "" : "hidden"}>${message ? esc(message) : ""}</p><div class="pair-code-actions"><button type="button" class="outline-button" data-action="clear-pair-code">Clear</button><button type="button" class="primary-button" data-action="submit-pair-code">Review agent</button></div></section></section>`);
+  if (message) screen.querySelector("#pair-code").focus();
 }
 
 async function renderPair(serial) {
@@ -467,7 +468,7 @@ async function renderPair(serial) {
     if (serial !== state.serial) return;
     if (error.status !== 404) throw error;
     state.pairCode = null;
-    state.pairLinkError = "This pairing code is unavailable, expired or already used.";
+    state.pairLinkError = "Invalid, expired or used code.";
     renderPairEntry();
     return;
   }
@@ -475,6 +476,9 @@ async function renderPair(serial) {
   state.pairing = pairing;
   state.pairingCode = code;
   setScreen(`<section class="identity-view"><button type="button" class="back-button" data-route="shop">‹ Shop</button><div class="identity-intro"><span class="section-kicker">AGENT CONNECTION</span><h1>Connect this agent?</h1><p>Approving pairs this agent to your local account, ${esc(state.user)}. Only you can approve access in the Wallet.</p></div><section class="identity-card"><h2>${esc(pairing.agent_label)}</h2><p>This agent will be able to:</p><ul class="scope-list"><li>Propose spending plans for you to review (policy:propose)</li><li>Read the status and summary of its plans (policy:read)</li></ul><p>It cannot authorize a plan, answer a purchase review or change your rules.</p><p class="expiry"><span id="pair-remaining"></span><time datetime="${esc(pairing.expires_at)}">${esc(new Date(pairing.expires_at).toLocaleString("en-CH"))}</time></p><div class="agent-actions"><button type="button" class="outline-button" data-action="decline-pair">Not now</button><button type="button" class="primary-button" data-action="approve-pair">Approve connection</button></div></section></section>`);
+  const heading = screen.querySelector(".identity-intro h1");
+  heading.tabIndex = -1;
+  heading.focus();
   const expiry = validTime(pairing.expires_at, "Connection expiry");
   function updateExpiry() {
     if (serial !== state.serial) return;
@@ -1076,7 +1080,7 @@ document.addEventListener("click", async (event) => {
       const code = input.value.trim();
       if (!code || code.length > 128 || /\s/.test(code)) {
         const error = document.querySelector("#pair-code-error");
-        error.textContent = "Enter one pairing code without spaces.";
+        error.textContent = "Enter a code without spaces.";
         error.hidden = false;
         input.focus();
         return;

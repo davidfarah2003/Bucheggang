@@ -72,3 +72,9 @@
 @media (max-width: 359px) {
   .pair-code-entry { padding: 16px; }
 }
+
+@media (max-height: 700px) {
+  .app-shell .pair-code-view { gap: 10px; padding-top: 12px; }
+  .pair-code-entry { gap: 10px; padding: 12px; }
+  .pair-code-fields { gap: 6px; }
+}
