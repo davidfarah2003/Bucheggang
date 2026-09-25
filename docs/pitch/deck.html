@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent on a Leash | Viseca expert pitch</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0b1421; color: #f5f7fb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { min-height: 100vh; }
+    section { display: none; min-height: 100vh; padding: 7vh 8vw 11vh; flex-direction: column; justify-content: center; gap: 2.5rem; }
+    section.active { display: flex; }
+    .eyebrow { color: #72e7cc; font-size: clamp(.8rem, 1.4vw, 1.2rem); font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+    h1, h2, p { margin: 0; }
+    h1, h2 { max-width: 1100px; font-size: clamp(2.7rem, 6vw, 6rem); line-height: 1.08; letter-spacing: -.045em; }
+    p { max-width: 1000px; font-size: clamp(1.25rem, 2.5vw, 2.2rem); line-height: 1.4; color: #d5e0eb; }
+    strong, .accent { color: #72e7cc; }
+    .flow { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; font-size: clamp(1.2rem, 2vw, 2rem); }
+    .box { padding: 1.1rem 1.4rem; border: 1px solid #4c6375; border-radius: 1rem; background: #152638; }
+    .arrow { color: #72e7cc; }
+    .stats { display: flex; flex-wrap: wrap; gap: 1rem; }
+    .stat { flex: 1 1 180px; padding: 1.4rem; border-radius: 1rem; background: #152638; }
+    .stat b { display: block; font-size: clamp(2.5rem, 5vw, 5rem); color: #72e7cc; }
+    .stat span { font-size: clamp(1rem, 1.7vw, 1.5rem); }
+    .small { font-size: clamp(1.05rem, 1.5vw, 1.4rem); color: #c4d3df; }
+    footer { position: fixed; bottom: 2.5vh; left: 8vw; right: 8vw; display: flex; justify-content: space-between; gap: 1rem; color: #a9bdcc; font-size: .9rem; }
+    a { color: #72e7cc; }
+    button { border: 1px solid #72e7cc; border-radius: .5rem; background: #152638; color: #f5f7fb; padding: .35rem .7rem; cursor: pointer; }
+    @media print { section, section.active { display: flex; min-height: 100vh; break-after: page; } footer { display: none; } }
+    @media (max-width: 640px) { section { padding: 5vh 6vw 12vh; } footer { left: 6vw; right: 6vw; } .arrow { display: none; } }
+    @media screen and (max-height: 600px) {
+      section { min-height: 100vh; padding-top: 1rem; padding-bottom: 3.5rem; gap: .8rem; }
+      h1, h2 { font-size: clamp(2rem, 5vw, 3.5rem); }
+      p { font-size: clamp(1rem, 2vw, 1.4rem); }
+      .flow { font-size: clamp(1rem, 1.8vw, 1.4rem); }
+      .box { padding: .65rem .8rem; }
+      .stat { padding: .6rem; }
+      .stat b { font-size: clamp(2rem, 4vw, 3rem); }
+      .small { font-size: 1.05rem; }
+      footer { bottom: .4rem; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section class="active" aria-label="Slide 1">
+    <div class="eyebrow">01 / The problem</div>
+    <h1>Let the agent shop.<br><span class="accent">Keep the customer in control.</span></h1>
+    <p>A shopping agent needs permission to act. A payment credential is too much permission.</p>
+  </section>
+  <section aria-label="Slide 2">
+    <div class="eyebrow">02 / The boundary</div>
+    <h2>A mandate the customer actually sees</h2>
+    <div class="flow"><span class="box">Agent proposes rules</span><span class="arrow">→</span><span class="box">Wallet shows saved draft</span><span class="arrow">→</span><span class="box">Customer confirms</span></div>
+    <p>The agent receives an opaque mandate ID. It cannot confirm the policy for the customer.</p>
+  </section>
+  <section aria-label="Slide 3">
+    <div class="eyebrow">03 / The decision</div>
+    <h2>Every purchase checked against that mandate</h2>
+    <div class="flow"><span class="box">Purchase facts</span><span class="arrow">→</span><span class="box">Policy + history checks</span><span class="arrow">→</span><span class="box">Approve / decline / ask</span></div>
+    <p>Merchant instructions are untrusted data. The Wallet shows the reason when a purchase needs customer attention.</p>
+  </section>
+  <section aria-label="Slide 4">
+    <div class="eyebrow">04 / Measured offline</div>
+    <h2>Public-attempt replay</h2>
+    <div class="stats"><div class="stat"><b>11</b><span>approved</span></div><div class="stat"><b>32</b><span>declined</span></div><div class="stat"><b>2</b><span>step-up pending</span></div></div>
+    <p class="small">45 offline attempts under recorded evaluation policies. 43/45 had an initial decision without step-up. Correctness and ordinary-purchase utility require reconciled labels.</p>
+  </section>
+  <section aria-label="Slide 5">
+    <div class="eyebrow">05 / Live demonstration</div>
+    <h2>Watch the permission and the purchase</h2>
+    <p>Propose a draft through MCP. Confirm the saved policy in the Wallet. Show the simulator's actual decision, evidence and any customer question.</p>
+    <p class="small">Present the observed live outcome. The offline example is not a selectable live purchase or a substitute for a live demonstration.</p>
+  </section>
+  <section aria-label="Slide 6">
+    <div class="eyebrow">06 / The opportunity</div>
+    <h2>Agentic commerce with a customer-held leash</h2>
+    <p>One control layer for bounded delegation, explainable intervention and a trusted customer decision surface.</p>
+    <p class="small">Next evidence: reconciled expected-decision labels, a completed human Wallet step-up and a repeated live run.</p>
+  </section>
+</main>
+<footer><span>Viseca Agent Payment Control Layer · <a href="../eval/report.md">Evaluation report</a></span><span><button id="prev" type="button" aria-label="Previous slide">←</button> <span id="counter">1 / 6</span> <button id="next" type="button" aria-label="Next slide">→</button></span></footer>
+<script>
+  const slides = [...document.querySelectorAll('main section')];
+  let current = 0;
+  function show(index) {
+    current = Math.max(0, Math.min(slides.length - 1, index));
+    slides.forEach((slide, i) => slide.classList.toggle('active', i === current));
+    document.getElementById('counter').textContent = `${current + 1} / ${slides.length}`;
+  }
+  document.getElementById('prev').addEventListener('click', () => show(current - 1));
+  document.getElementById('next').addEventListener('click', () => show(current + 1));
+  document.addEventListener('keydown', event => {
+    if (event.key === 'ArrowRight' || event.key === ' ') show(current + 1);
+    if (event.key === 'ArrowLeft') show(current - 1);
+  });
+</script>
+</body>
+</html>
