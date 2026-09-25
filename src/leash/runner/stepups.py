@@ -221,6 +221,12 @@ class StepUpBook:
                 checked, checked_state, policy = self._checked_decision(step_up, store, mandate_ids, step_up.expires_at)
                 if checked.decision == "decline":
                     final = checked
+                elif checked.decision == "step_up" and not set(checked.reason_codes) <= set(step_up.decision.reason_codes):
+                    new = sorted(set(checked.reason_codes) - set(step_up.decision.reason_codes))
+                    raise StepUpError(
+                        f"step-up {answer.authorization_id}: the recheck raised {new}, which the customer was not asked about; "
+                        "the step-up stays pending until it is answered again or times out"
+                    )
                 else:
                     final = checked.model_copy(update={
                         "decision": "approve", "reason_codes": ["customer_confirmation"],
