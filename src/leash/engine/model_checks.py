@@ -22,7 +22,7 @@ def validate_assessments(
         raise ValueError(f"{auth.authorization_id}: assessment state belongs to another mandate")
     if bundle.authorization_id != auth.authorization_id:
         raise ValueError(f"{auth.authorization_id}: assessment authorization differs")
-    if bundle.purchase_digest != assessment_purchase_digest(event):
+    if bundle.purchase_digest != assessment_purchase_digest(event, bundle.features):
         raise ValueError(f"{auth.authorization_id}: assessment purchase digest differs")
     if bundle.policy_hash != policy.hash:
         raise ValueError(f"{auth.authorization_id}: assessment policy hash differs")

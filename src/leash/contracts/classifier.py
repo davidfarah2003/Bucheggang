@@ -105,13 +105,14 @@ class AssessmentBundle(Contract):
         return self
 
 
-def assessment_purchase_digest(event: Event) -> str:
-    """Canonical binding shared with the producer; no field is sent to a provider here."""
+def assessment_purchase_digest(event: Event, features: HistoryFeatures) -> str:
+    """Bind purchase and feature content locally; this is integrity checking, not authentication."""
     payload = {
         "authorization": event.authorization.model_dump(mode="json"),
         "mandate_id": event.mandate.mandate_id,
         "customer_id": event.mandate.customer_id,
         "card_id": event.mandate.card_id,
+        "features": features.model_dump(mode="json"),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()

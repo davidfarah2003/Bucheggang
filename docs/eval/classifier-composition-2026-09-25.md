@@ -23,7 +23,15 @@ The public attempts were constructed by the existing replay builder. The two sav
 
 One attempted input selection found no recorded initial step-up with zero category support in both scopes. It raised before any provider request. The later step-up check used an actual recorded step-up without that extra condition. No invented purchase or model response was inserted to force a result.
 
-These are four provider/evaluator composition observations. They do not establish accuracy, calibrated payment risk, whole-run latency or a successful customer Wallet journey. A behavioural-model artifact was not supplied or evaluated here.
+These are four provider/evaluator composition observations. They do not establish accuracy, calibrated payment risk, whole-run latency or a successful customer Wallet journey. Those initial comparisons had no behavioural assessment.
+
+## Feature binding and trained artifact
+
+The engine-owner review found that the producer's newer digest included the complete feature map, while the initial shared helper bound only the event. The shared helper now takes `(event, features)` and hashes the same feature-bearing payload. It rejects non-finite values. The producer and consumer digests matched on all four saved inputs; changing a finite feature value after binding raised instead of returning a Decision.
+
+The four original provider responses were composed again with their original feature profiles and the reviewed evaluation-only CatBoost artifact from classifier revision `bfb4df5`. Its SHA-256 was `e4815c5677073c4e985c56f09f045be3d72c4e3ae624b75f9d06870630c828cf`. Historical-decline scores were 0.029953, 0.163918, 0.139567 and 0.084303 in the table's order. Every `escalation_fired` value was false. Outcomes stayed approve, decline, decline and step_up.
+
+No operational threshold was selected or activated, and no provider request was repeated. The JSON evidence preserves the feature-bound recomposition and artifact provenance separately from the original event-only comparison.
 
 ## Model-off and history-only replay
 
@@ -44,6 +52,7 @@ Copies of the actual AU0001 assessment were altered in memory, then passed to th
 - A probability mutated to NaN after model construction: ValidationError.
 - A question duplicated: ValidationError.
 - Selected answer changed away from the unique argmax: ValidationError.
+- A finite feature value changed after its digest was bound: ValueError.
 
 The real adapter also rejected an expired absolute budget with `Jev has no time remaining before the deadline reserve`, before opening HTTP. None of these failures was replaced with a score or business outcome.
 
@@ -59,4 +68,4 @@ After rebasing onto its merge at `0b7c2c1`, all four captured real responses wer
 
 No caller enables models in this change. The history-only bundle has no mandate-state-derived model features; the evaluator still runs deterministic checks against the supplied current state. Final shared-lock rechecks, effective-policy refresh, durable mutation intents and bounded remote writes remain runner work.
 
-The classifier producer must import the shared types, use the canonical purchase digest and enforce required outputs for its startup configuration. `assessments=None` is not permitted as recovery from an assessment failure. A trained behavioural artifact, an approved operating threshold, full runner integration and human-ready live E2E still need their own observed results and reviews.
+The classifier producer must import the shared types, use the canonical purchase digest and enforce required outputs for its startup configuration. `assessments=None` is not permitted as recovery from an assessment failure. An approved operating threshold, full runner integration and human-ready live E2E still need their own observed results and reviews. The fitted artifact exercised above remains evaluation-only and cannot escalate.
