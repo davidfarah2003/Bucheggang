@@ -208,12 +208,39 @@ function validateDraft(draft) {
   text(draft.hash, "Draft hash");
   text(draft.instruction, "Original request");
   if (!Number.isInteger(draft.version)) throw new Error("The saved spending plan has no valid version.");
+  const hashVersion = Object.hasOwn(draft, "hash_version") ? draft.hash_version : 1;
+  const cases = Object.hasOwn(draft, "boundary_cases") ? draft.boundary_cases : [];
+  if (![1, 2].includes(hashVersion) || !Array.isArray(cases)) throw new Error("The saved spending plan has invalid boundary cases.");
+  if ((hashVersion === 1 && cases.length) || (hashVersion === 2 && !cases.length)) throw new Error("The saved spending plan has an invalid hash version.");
+  cases.forEach((item) => {
+    text(item.description, "Boundary case description");
+    if (!["approve", "decline", "step_up"].includes(item.expected)) throw new Error("A boundary case has an unsupported expected outcome.");
+  });
   draft.rules.forEach((rule) => { text(rule.field, "Rule field"); text(rule.plain_english, "Rule description"); });
   draft.open_questions.forEach((question) => {
     text(question.question, "Question");
     if (!Array.isArray(question.options) || !Array.isArray(question.confirming_answers)) throw new Error("The saved spending plan has an invalid question.");
   });
-  return draft;
+  return { ...draft, hash_version: hashVersion, boundary_cases: cases };
+}
+
+function validateBoundaryResults(payload, draft) {
+  if (!payload || !Array.isArray(payload.results)) throw new Error("The Wallet did not return computed boundary results.");
+  if (text(payload.draft_id, "Boundary result draft ID") !== draft.draft_id || payload.version !== draft.version || text(payload.hash, "Boundary result hash") !== draft.hash) throw new Error("The computed boundary results do not match the saved spending plan.");
+  validTime(payload.evaluated_at, "Boundary evaluation time");
+  if (!["proposal", "revision", "confirmation"].includes(payload.phase)) throw new Error("The boundary evaluation has an unknown phase.");
+  text(payload.engine_version, "Boundary engine version");
+  if (payload.results.length !== draft.boundary_cases.length) throw new Error("The computed boundary results do not cover every authored case.");
+  payload.results.forEach((item, index) => {
+    const authored = draft.boundary_cases[index];
+    if (!item || item.case_index !== index || text(item.description, "Boundary result description") !== authored.description || item.expected !== authored.expected) throw new Error("A computed boundary result does not match its authored case.");
+    if (!["approve", "decline", "step_up"].includes(item.observed)) throw new Error("A computed boundary result has an unsupported outcome.");
+    if (item.observed !== item.expected) throw new Error("A computed boundary result differs from the authored expected outcome.");
+    if (!Array.isArray(item.reason_codes)) throw new Error("A computed boundary result has no reason codes.");
+    item.reason_codes.forEach((code) => text(code, "Boundary reason code"));
+    if (!/^[0-9a-f]{64}$/.test(text(item.case_input_hash, "Boundary case input hash"))) throw new Error("A computed boundary result has an invalid case-input hash.");
+  });
+  return payload;
 }
 
 function validateDraftList(items) {
@@ -780,6 +807,11 @@ async function rulesContent(serial) {
   return `<div class="wallet-section"><h2>Rules for your permissions</h2>${detail}${globalPolicyCard(globalPolicy, savedGlobal)}${items.length ? `<section class="permission-list"><h3>Choose a permission</h3>${mandateChoices(items, selected?.mandate_id, "rules")}</section>` : ""}</div>`;
 }
 
+function boundaryResultCards(evaluation) {
+  if (!evaluation.results.length) return `<section class="boundary-results"><h2>Checked purchase cases</h2><p>This plan has no computed purchase cases. Agent-authored examples, when present, are illustrative.</p></section>`;
+  return `<section class="boundary-results"><h2>Checked purchase cases</h2><p>The agent authored these synthetic purchase cases. The Wallet backend evaluated them. No live purchase is shown here.</p><p class="boundary-meta">Checked on ${esc(new Date(evaluation.evaluated_at).toLocaleString("en-CH"))} at ${esc(evaluation.phase)} · engine ${esc(evaluation.engine_version)}</p><div class="boundary-list">${evaluation.results.map((item, index) => `<article class="boundary-card"><span class="boundary-number">CASE ${index + 1}</span><h3>${esc(item.description)}</h3><p>Agent expected: <strong>${esc(item.expected)}</strong></p><p>Backend computed: <strong>${esc(item.observed)}</strong></p>${item.reason_codes.length ? `<p class="boundary-reasons">Reason codes: ${item.reason_codes.map(esc).join(", ")}</p>` : ""}</article>`).join("")}</div></section>`;
+}
+
 async function renderReview(serial) {
   loading("Loading saved spending plan…");
   const id = text(linkedDraftId(), "Draft link");
@@ -798,6 +830,8 @@ async function renderReview(serial) {
     setScreen(`<section class="review-view"><button class="back-button" type="button" data-route="wallet">‹ Wallet</button><div class="page-title"><h1>Spending request ${esc(recorded.state)}</h1></div><p class="review-subtitle">${esc(message)}</p>${recorded.state === "confirmed" ? `<button class="outline-button" type="button" data-action="select-mandate" data-id="${esc(recorded.mandate_id)}" data-tab="active">View permission</button>` : ""}</section>`);
     return;
   }
+  const evaluation = validateBoundaryResults(await walletApi.boundaryResults(id), draft);
+  if (serial !== state.serial) return;
   const cap = purchaseCap(draft.rules);
   const questions = draft.open_questions;
   const ready = questions.every((question) => question.confirming_answers.includes(state.answers[question.question] ?? question.answer));
@@ -805,7 +839,7 @@ async function renderReview(serial) {
     const answer = state.answers[question.question] ?? question.answer;
     return answer && !question.confirming_answers.includes(answer);
   });
-  setScreen(`<section class="review-view"><button class="back-button" type="button" data-route="wallet">‹ Wallet</button><div class="page-title"><h1>Review spending permission</h1></div><p class="review-subtitle">Your Wallet loaded the plan saved by your shopping agent. Only you can authorize it.<span class="review-version">Saved draft version ${esc(draft.version)}.</span></p><section class="review-summary"><span class="section-kicker">YOUR AGENT MAY BUY</span><h2>${esc(productName(draft))}</h2><strong>${cap ? esc(money(cap.amount)) : "No per-purchase cap"}</strong><small>${cap ? cap.strict ? "SPEND MUST STAY BELOW THIS AMOUNT" : "MAXIMUM PER PURCHASE" : "REVIEW ALL RULES BEFORE AUTHORIZING"}</small></section><section class="review-rules"><h2>The limits you'll authorize</h2>${ruleGroups(draft.rules)}<details><summary>Original request</summary><p>${esc(draft.instruction)}</p></details><details><summary>Examples from the agent</summary>${draft.examples.map((example) => `<p><strong>${esc(example.expected)}</strong> · ${esc(example.description)}. ${esc(example.why)}</p>`).join("")}</details></section>
+  setScreen(`<section class="review-view"><button class="back-button" type="button" data-route="wallet">‹ Wallet</button><div class="page-title"><h1>Review spending permission</h1></div><p class="review-subtitle">Your Wallet loaded the plan saved by your shopping agent. Only you can authorize it.<span class="review-version">Saved draft version ${esc(draft.version)}.</span></p><section class="review-summary"><span class="section-kicker">YOUR AGENT MAY BUY</span><h2>${esc(productName(draft))}</h2><strong>${cap ? esc(money(cap.amount)) : "No per-purchase cap"}</strong><small>${cap ? cap.strict ? "SPEND MUST STAY BELOW THIS AMOUNT" : "MAXIMUM PER PURCHASE" : "REVIEW ALL RULES BEFORE AUTHORIZING"}</small></section><section class="review-rules"><h2>The limits you'll authorize</h2>${ruleGroups(draft.rules)}<details><summary>Original request</summary><p>${esc(draft.instruction)}</p></details></section>${boundaryResultCards(evaluation)}${draft.examples.length ? `<section class="agent-examples"><details><summary>Agent-authored examples</summary><p>These descriptions are the agent's claims. The Wallet has not computed their outcomes.</p>${draft.examples.map((example) => `<p><strong>${esc(example.expected)}</strong> · ${esc(example.description)}. ${esc(example.why)}</p>`).join("")}</details></section>` : ""}
     ${questions.length ? `<section class="questions"><h2>Confirm these details</h2>${questions.map((question) => { const selected = state.answers[question.question] ?? question.answer; return `<div class="question"><strong>${esc(question.question)}</strong><div class="choices">${question.options.map((option) => `<button type="button" class="${selected === option ? "selected" : ""}" aria-pressed="${selected === option}" data-action="answer-question" data-question="${esc(question.question)}" data-answer="${esc(option)}">${esc(option)}</button>`).join("")}</div></div>`; }).join("")}${needsRevision ? `<p class="uncertainty-note">Your selection requires a revised plan from the shopping agent before authorization.</p>` : ""}</section>` : ""}<div class="review-spacer"></div><div class="review-actions"><button type="button" class="outline-button" data-action="open-reject">Reject</button><button type="button" class="primary-button" data-action="confirm" ${ready ? "" : "disabled"}>Authorize agent</button></div></section>`);
 }
 
