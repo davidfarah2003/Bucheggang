@@ -20,6 +20,8 @@ Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 HistoryOption = Literal["ordinary", "unusual", "unclear"]
 HISTORY_QUESTIONS = frozenset({"spend_pattern", "activity_pattern"})
 HISTORY_OPTIONS = frozenset({"ordinary", "unusual", "unclear"})
+# Provider probabilities arrive rounded to two decimals; three options may sum to 0.985..1.015.
+PROBABILITY_SUM_TOLERANCE = 0.015
 
 
 class HistoryFeatures(Contract):
@@ -60,7 +62,7 @@ class JevAnswer(Contract):
     def distribution(self) -> "JevAnswer":
         if set(self.options) != HISTORY_OPTIONS:
             raise ValueError("history answer options differ from the requested options")
-        if not math.isclose(sum(self.options.values()), 1.0, rel_tol=0, abs_tol=1e-6):
+        if not math.isclose(sum(self.options.values()), 1.0, rel_tol=0, abs_tol=PROBABILITY_SUM_TOLERANCE):
             raise ValueError("history answer probabilities do not sum to one")
         top = max(self.options.values())
         winners = [option for option, value in self.options.items() if value == top]

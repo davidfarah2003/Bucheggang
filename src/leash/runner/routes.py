@@ -11,6 +11,7 @@ run loop process, so they work from the API process.
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path
@@ -75,6 +76,16 @@ def step_up_router(book: StepUpBook, authenticated_customer: Callable[..., str],
             step_up = book.get(authorization_id)
             if step_up.event.mandate.mandate_id not in confirmations:
                 raise HTTPException(status_code=404, detail=f"no pending step-up {authorization_id}")
+            if book.origin(authorization_id) == "local":
+                from leash.policy.purchases import resolve_local
+
+                if datetime.now(UTC) >= step_up.expires_at:
+                    raise StepUpError(f"step-up {authorization_id} expired at {step_up.expires_at.isoformat()}")
+                if body.decision == "approve":
+                    resolve_local(store, book, step_up, "approve", body.customer_message, reason="customer_confirmation")
+                else:
+                    resolve_local(store, book, step_up, "decline", body.customer_message, reason="customer_declined")
+                return {"authorization_id": authorization_id, "status": "resolved", "decision": body.decision, "origin": "local"}
             return book.answer(body, store)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=f"no pending step-up {authorization_id}") from exc

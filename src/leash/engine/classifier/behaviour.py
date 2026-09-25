@@ -27,9 +27,13 @@ def _sha256(path: Path) -> str:
 
 
 class BehaviorModel:
-    """Explicit evaluation configuration; this class never enables escalation."""
+    """Versioned history model; escalation fires only above an explicit operating threshold."""
 
-    def __init__(self, manifest_path: Path = DEFAULT_MANIFEST):
+    def __init__(self, manifest_path: Path = DEFAULT_MANIFEST, *, threshold: float | None = None):
+        """threshold: the operating point above which a score escalates; None keeps escalation off."""
+        if threshold is not None and (not math.isfinite(threshold) or not 0 < threshold < 1):
+            raise ValueError("behavioural threshold must be a probability strictly between 0 and 1")
+        self.threshold = threshold
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if manifest["feature_schema_version"] != FEATURE_SCHEMA_VERSION:
             raise ValueError("model manifest has an incompatible feature schema")
@@ -96,5 +100,6 @@ class BehaviorModel:
             score=float(calibrated[0, 1]), model_id=self.model_id,
             artifact_version=self.artifact_version,
             feature_schema_version=FEATURE_SCHEMA_VERSION,
-            support=features.support.copy(), escalation_fired=False,
+            support=features.support.copy(),
+            escalation_fired=self.threshold is not None and float(calibrated[0, 1]) >= self.threshold,
         )

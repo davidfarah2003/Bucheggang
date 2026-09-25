@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Iterator
 from uuid import uuid4
 
-SCOPES = ("policy:propose", "policy:read")
+SCOPES = ("policy:propose", "policy:read", "purchase:decide")
 PASSWORD_N, PASSWORD_R, PASSWORD_P, PASSWORD_DKLEN = 1 << 14, 8, 1, 32
 PAIRING_LIFETIME = timedelta(minutes=5)
 SESSION_IDLE_LIFETIME = timedelta(hours=12)
