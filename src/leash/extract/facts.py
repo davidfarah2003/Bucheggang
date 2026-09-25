@@ -53,21 +53,21 @@ def _product_type(name: str) -> str | None:
     return value or None
 
 
-def _return_days(copy: str) -> tuple[int | None, bool]:
+def _return_days(copy: str) -> tuple[int | None, bool, bool]:
     values = {int(m.group(1)) for pattern in _RETURN_PATTERNS for m in pattern.finditer(copy)}
     if _NO_RETURNS.search(copy):
         values.add(0)
     observed = bool(values) or bool(_RETURNS_UNSTATED.search(copy))
-    return (next(iter(values)) if len(values) == 1 else None), observed
+    return (next(iter(values)) if len(values) == 1 else None), observed, len(values) > 1
 
 
-def _size(copy: str) -> str | None:
+def _size(copy: str) -> tuple[str | None, bool]:
     values = {m.group(1).upper() for m in _SIZE.finditer(copy)}
     if not values:
         values.update(f"EU {m.group(1)}" for m in _EU_SIZE.finditer(copy))
     if not values:
         values.update(f"UK {m.group(1)}" for m in _UK_SIZE.finditer(copy))
-    return next(iter(values)) if len(values) == 1 else None
+    return (next(iter(values)) if len(values) == 1 else None), len(values) > 1
 
 
 def extract_item(
@@ -90,23 +90,50 @@ def extract_item(
     title = str(item.get("item_name", ""))
     text = f"{title}. {copy}"
     sources: dict[str, str] = {}
+    conflicts: list[dict[str, str]] = []
 
-    product_type = _product_type(name)
+    # A catalogue entry and an authorization line are separate structured
+    # observations. Disagreement makes product identity unknown, including a
+    # category disagreement when the names happen to match.
+    category_conflict = reference is not None and (
+        str(reference.get("item_category", "")).strip().lower()
+        != str(item.get("item_category", "")).strip().lower()
+    )
+    identity_conflict = reference is not None and (
+        _product_type(str(reference.get("item_name", ""))) != _product_type(title)
+        or category_conflict
+    )
+
+    product_type = None if identity_conflict else _product_type(name)
+    if identity_conflict:
+        conflicts.append({"field": "product_type", "kind": "catalogue_event_mismatch"})
     if product_type is not None:
         sources["product_type"] = "structured" if reference else "merchant_text"
 
-    size = _size(copy)
-    if size is not None or any(pattern.search(copy) for pattern in (_SIZE, _EU_SIZE, _UK_SIZE)):
+    size, size_conflict = _size(copy)
+    if size_conflict:
+        conflicts.append({"field": "size", "kind": "merchant_text_contradiction"})
+    elif size is not None or any(pattern.search(copy) for pattern in (_SIZE, _EU_SIZE, _UK_SIZE)):
         sources["size"] = "merchant_text"
 
-    return_days, return_claim_seen = _return_days(copy)
-    if return_claim_seen:
+    return_days, return_claim_seen, return_conflict = _return_days(copy)
+    if return_conflict:
+        conflicts.append({"field": "return_days", "kind": "merchant_text_contradiction"})
+    elif return_claim_seen:
         sources["return_days"] = "merchant_text"
 
     # Positive flags may come from the trusted catalogue category or text.
     # An absent phrase alone cannot prove a negative.
     is_gift_card = True if category == "gift_card" or _GIFT.search(text) else None
     is_subscription = True if category == "subscriptions" or _SUBSCRIPTION.search(text) else None
+    if category_conflict:
+        categories = {category, str(item.get("item_category", ""))}
+        if "gift_card" in categories:
+            is_gift_card = None
+            conflicts.append({"field": "is_gift_card", "kind": "catalogue_event_mismatch"})
+        if "subscriptions" in categories:
+            is_subscription = None
+            conflicts.append({"field": "is_subscription", "kind": "catalogue_event_mismatch"})
     is_protection_plan = True if _PLAN.search(text) else None
     is_addon = True if _ADDON.search(text) or is_protection_plan else None
     for field, value, structured in (
@@ -155,6 +182,7 @@ def extract_item(
         "contains_instructions": bool(match),
         "excerpt": excerpt,
         "sources": sources,
+        "conflicts": conflicts,
     }
 
 

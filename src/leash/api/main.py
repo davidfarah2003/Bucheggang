@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from ipaddress import IPv6Address, ip_address
+import re
 from urllib.parse import urlsplit
 from typing import Any
 
@@ -30,9 +32,19 @@ class CredentialsBody(BaseModel):
 
 
 def _validate_origin(value: str) -> tuple[str, bool]:
-    if not isinstance(value, str) or not value or value != value.strip():
+    if (
+        not isinstance(value, str)
+        or not value
+        or value != value.strip()
+        or any(char == "\\" or ord(char) < 32 or ord(char) == 127 for char in value)
+    ):
         raise RuntimeError("LEASH_APP_ORIGIN must be an exact HTTP or HTTPS origin")
-    parsed = urlsplit(value)
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError as exc:
+        raise RuntimeError("LEASH_APP_ORIGIN has an invalid host or port") from exc
     if (
         parsed.scheme not in {"http", "https"}
         or not parsed.netloc
@@ -41,8 +53,29 @@ def _validate_origin(value: str) -> tuple[str, bool]:
         or parsed.path
         or parsed.query
         or parsed.fragment
+        or parsed.netloc.endswith(":")
+        or hostname is None
+        or (port is not None and not 1 <= port <= 65535)
+        or f"{parsed.scheme}://{parsed.netloc}" != value
     ):
         raise RuntimeError("LEASH_APP_ORIGIN must be an exact HTTP or HTTPS origin without a path")
+    if parsed.netloc.startswith("["):
+        try:
+            if "%" in hostname:
+                raise ValueError("IPv6 zone identifiers are not supported")
+            IPv6Address(hostname)
+        except ValueError as exc:
+            raise RuntimeError("LEASH_APP_ORIGIN has an invalid IP literal") from exc
+    else:
+        try:
+            ip_address(hostname)
+        except ValueError:
+            labels = hostname.split(".")
+            if len(hostname) > 253 or any(
+                not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
+                for label in labels
+            ):
+                raise RuntimeError("LEASH_APP_ORIGIN has an invalid DNS hostname")
     return value, parsed.scheme == "https"
 
 

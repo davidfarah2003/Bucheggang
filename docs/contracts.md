@@ -35,7 +35,7 @@ created_for         str, the account_id of the agent that proposed it; immutable
                     never sent to the simulator (section "Identity source")
 ```
 
-Hash versions. Version 1 hashes the compact sorted-key JSON of `{instruction, rules, uncertainty_policy}` and stays byte-for-byte what it is today; every existing draft keeps its hash. Version 2 hashes `{hash_version: 2, instruction, rules, uncertainty_policy, boundary_cases}` in the same canonical form (`json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False)`), with each case serialized by `model_dump(mode="json")`. No evaluator version goes into the hash. A draft with `boundary_cases` must carry `hash_version: 2`; `hash_version: 2` with no case is invalid.
+Hash versions. Version 1 hashes the compact sorted-key JSON of `{instruction, rules, uncertainty_policy}` and stays byte-for-byte what it is today; every existing draft keeps its hash. Version 2 hashes `{hash_version: 2, instruction, rules, uncertainty_policy, boundary_cases}` in the same canonical form (`json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False)`), with each case serialized by `model_dump(mode="json")`. No evaluator version goes into the hash. A draft with `boundary_cases` must carry `hash_version: 2`; `hash_version: 2` with no case is invalid. A revision that removes every case moves the draft to `hash_version: 1` with a new version and a version 1 hash.
 
 `BoundaryCase` is an authored purchase the draft must decide as `expected`. Every input is complete and explicit; nothing is read from the packaged data:
 
@@ -46,7 +46,7 @@ why           str
 event         Event, strict, complete
 facts[]       PurchaseFacts, exactly one per event item
 state         MandateState for event.mandate.mandate_id
-history       History, a frozen slice, every row before event.authorization.timestamp
+history       History, a frozen slice, every row on event.authorization.card_id and before its timestamp
 ```
 
 `History` is `{ authorizations: [HistoryAuthorization] }`, and `HistoryAuthorization` is the subset of an `authorization_history.csv` row the engine reads: `authorization_id, card_id, timestamp, transaction_type, status, merchant_id, merchant_name, merchant_country, customer_device_id (str|null)`. Duplicate `authorization_id`s raise. Only rows with `status: approved` and `transaction_type: purchase` count as familiarity; every row counts toward card history.
@@ -149,7 +149,7 @@ customer_approvals[]  { authorization_id, mandate_id, amount_chf, timestamp (sim
 
 `customer_approvals` holds the customer's accepted approvals on other mandates. `leash.engine.state.load(mandate_id, customer_mandates=())` fills it from the state files of the mandates named in `customer_mandates` (the caller passes the customer's confirmed mandate ids from the policy store's confirmations; the default is none, which is the behaviour before this field). A period rule on `authorization.billing_amount_chf` or `state.approvals_count` counts this mandate's approvals plus `customer_approvals` in its window, so a daily or trailing-30-day limit survives supersession; an approval under a superseded or revoked mandate still counts. A rule without `scope: period` stays per mandate. An authorization approved on two mandates raises `StateConflict`. `record` and `_save` drop the list; the file holds only the mandate's own state.
 
-`record(mandate_id, event, accepted)` is idempotent: the same authorization with the same accepted decision changes nothing. Only a Decision the API accepted with `approve` moves `approvals`, taking `billing_amount_chf`, `merchant_id` and the simulated `timestamp` from the event. A `step_up` stays pending until `/resolve` is accepted; the runner then records the final `approve` or `decline` with the same `authorization_id`, which is the one change allowed after a first record. Any other change to a recorded authorization raises. The runner calls `record` only after the API accepted the submit or `/resolve`. `record` does no simulator I/O; it writes `data/state/<mandate_id>.json`, and the engine is its only writer.
+`record(mandate_id, event, accepted)` is idempotent: the same authorization with the same accepted decision changes nothing. Only a Decision the API accepted with `approve` moves `approvals`, taking `billing_amount_chf`, `merchant_id` and the simulated `timestamp` from the event. A `step_up` stays pending until `/resolve` is accepted, or, for a local purchase (section "Purchase input and idempotency"), until the Wallet answers or the book times it out; the runner then records the final `approve` or `decline` with the same `authorization_id`, which is the one change allowed after a first record. Any other change to a recorded authorization raises. The runner calls `record` only after the API accepted the submit or `/resolve`. `record` does no simulator I/O; it writes `data/state/<mandate_id>.json`, and the engine is its only writer.
 
 ## Check and Decision
 
@@ -321,6 +321,8 @@ Served by `leash.api`. Paths and shapes are what the app lane codes against.
 
 All customer routes except `POST /account` and `POST /session` require a valid session cookie and return 401 without one. Every browser mutation, including `POST /account` and `POST /session` and every cookie-authenticated one (confirm, reject, answer, tighten, revoke, `PUT /global-policy`, pairing approve, agent revoke), requires an `Origin` header equal to `LEASH_APP_ORIGIN`, a configured value read at startup (the local demo sets `http://127.0.0.1:<port>`), never derived from the request's `Host`; a missing or different `Origin` is 403. The API sets no CORS headers. The Origin check runs before any session read; the middleware only tests that the cookie is present, and the route's session dependency performs the single session read and `last_seen_at` write. Confirmation, tightening, revocation and step-up answers are only reachable through these authenticated app routes. None of them is an MCP tool. The identity model behind these routes is in the section "Identity source" below.
 
+LEASH_APP_ORIGIN must be the canonical `scheme://netloc`: an HTTP or HTTPS scheme, a valid DNS label set or IP literal, and an optional integer port from 1 to 65535. A trailing colon, backslash, control character, path, query, fragment or non-canonical spelling is rejected at startup by the shared Wallet API and MCP validator.
+
 ## Harness link
 
 The built-in Shopping Harness (plan 04, Later) and any external MCP agent hand the customer to the trusted Wallet for two moments only: confirming a proposed policy and answering a step-up. The link carries one server-persisted identifier and nothing else.
@@ -355,6 +357,184 @@ outcome      get_purchase_status -> { authorization_id, decision, resolved, fina
 
 `reference` is present only for a final `approve` and is what an external processor consumes to take payment; the backend records no charge and makes no order claim. `decision_hash` is the SHA-256 of the canonical accepted `Decision`. A cart or total that differs from what the agent showed the customer is the agent's problem: the engine judges the typed values it receives, and `facts.*` rules apply to the `facts` the agent supplies with `sources[field] = agent_form`.
 
+### Purchase input and idempotency
+
+This subsection fixes what `buy` accepts, how the backend turns it into the `Event` the engine already judges, and what happens when the same purchase is sent twice. It is agreed before any `buy` code; the parked tool stays parked until an implementation PR cites it.
+
+Authority. `buy` and `get_purchase_status` need the scope `purchase:decide`, which is not in the fixed set every pairing grants today. When this subsection is implemented, `begin_pairing` gains an optional `scopes` request limited to the known set, the Wallet's pairing screen shows the requested scopes and the customer approves exactly those, and the agent record carries them; a token without `purchase:decide` calling `buy` raises `Unauthorized("this agent is not paired for purchases")`. Existing tokens are never widened; an agent paired before this lands re-pairs to buy.
+
+Simulator boundary. A purchase decided through `buy` is a local decision of this backend. It creates no simulator authorization, is never submitted to `POST /v1/authorizations/{id}/decision`, and appears in no simulator run or score. In demo mode the simulator originates every attempt, so `buy` stays parked for the submission; the `AGT` id prefix marks a local purchase wherever a decision is listed, and nothing keys behaviour on that prefix.
+
+Input. `buy` takes exactly the fields in the MCP tool table and nothing else; unknown keys raise `InvalidPurchase` naming the key. Every value is typed and checked before the engine sees it:
+
+```
+mandate_id        str, confirmed for the paired agent's account_id, status active; otherwise InvalidPurchase
+purchase_key      str, 16 to 64 characters, the agent's own idempotency key for this purchase attempt
+cart[]            1 to 50 lines; item_id, item_name, item_category non-empty; quantity int >= 1;
+                  unit_price_chf > 0 with at most 2 decimals; item_details str (untrusted merchant text, may be empty)
+merchant          merchant_id, merchant_name, merchant_category, merchant_city non-empty; merchant_mcc 4 digits; merchant_country ISO 3166-1 alpha-2
+delivery_fee_chf  >= 0, at most 2 decimals, default absent means the agent must send 0 explicitly
+total_chf         > 0, at most 2 decimals; must equal sum(quantity * unit_price_chf) + delivery_fee_chf to the cent, else InvalidPurchase("total does not match the cart")
+facts[]           one PurchaseFacts per cart line, same item_id in the same order; sources[field] must be agent_form for every supplied field;
+                  conflicts must be empty (the agent has one source); contains_instructions and excerpt as the agent's own screen of item_details
+```
+
+The backend never fills a missing value. A cart line without a `facts` entry, a `facts` entry whose `item_id` is not in the cart, a `sources` value other than `agent_form`, or a non-empty `conflicts` list is `InvalidPurchase` with the line number.
+
+Event construction. The backend builds the `Event` the engine already takes, so the same `evaluate(event, policy, state, facts, history=...)` runs for a simulator attempt and for an MCP purchase and nothing is keyed on which path produced it:
+
+```
+type                                "authorization.request"
+request_id                          "local-" + the purchase file name (the sha256 hex of the key)
+deadline_at                         timestamp + LEASH_PURCHASE_BUDGET_S, a new setting with no default; this is Event.deadline_at, Runtime has no deadline
+authorization.authorization_id      "AGT" + 13 upper-case base32 characters from 8 random bytes, minted once per accepted purchase_key
+authorization.source_authorization_id  the same value
+authorization.scenario_id           "SCEN0000"   (no simulator scenario; the engine never reads it)
+authorization.replay_order          1            (the engine never reads it)
+authorization.mandate_id            the input mandate_id
+authorization.profile_id, card_id   from the mandate's identity record (below); a mandate without one is InvalidPurchase("mandate has no card on record")
+authorization.initiator_type        "agent"
+authorization.merchant              the input merchant, plus availability "online", recurring_capable "false"
+authorization.timestamp             the backend's clock, UTC, at acceptance of the purchase_key
+authorization.amount, currency      total_chf, "CHF"
+authorization.billing_amount_chf    total_chf
+authorization.items_subtotal        sum(quantity * unit_price_chf)
+authorization.delivery_fee          delivery_fee_chf
+authorization.channel               "ecommerce"
+authorization.customer_device_id    the paired agent_id (the agent is the device)
+authorization.authority_status      "active" (checked above; a revoked mandate is InvalidPurchase before construction)
+authorization.card_status_at_attempt "active"
+authorization.spend_in_period_before_chf  null (the engine derives period spend from MandateState)
+authorization.recent_attempt_count_10m    the number of purchase files on this mandate whose timestamp is within the 10 minutes before this timestamp, decided or not, excluding this one; the engine reads it at checks.py:132
+authorization.fulfillment_method    "delivery"
+authorization.delivery_by           null
+authorization.order_returnable, order_cancellable  "unknown"
+authorization.related_authorization_id, related_authorization_status  null
+authorization.purchase_description  the confirmed draft's instruction
+authorization.items[]               line_no from 1 in cart order; item_id, item_name, item_category, quantity, unit_price = unit_price_chf, currency "CHF", item_details
+mandate                             mandate_id, customer_id, card_id, profile_id from the identity record; status "active"; instruction, hard_rules and uncertainty_policy from the effective policy exactly as policy_context.refresh builds them for a simulator event
+context.approved_spend_in_period_chf  null
+context.recent_authorizations       one RecentAuthorization per decided purchase file on this mandate with a timestamp in the 1440 minutes before this timestamp: authorization_id and timestamp from the file, merchant_id and billing_amount_chf from the Event stored in the file, status "approved" for a final approve, "declined" for a final decline, "pending" for an unanswered step_up; the engine reads it at checks.py:157-159 and rules.py:192; the related-authorization branch at checks.py:166-167 never runs because related_authorization_id is null
+runtime.received_at                 timestamp
+runtime.history_window_minutes      1440
+runtime.context_basis               "run_decisions_and_scenario_timestamps", the only value the type accepts
+```
+
+The purchase file therefore stores the built `Event` next to the `Decision`, so later purchases can build `context` from it without a second source.
+
+Neither `runtime.history_window_minutes` nor `runtime.context_basis` is read by the engine (`rg history_window_minutes src/leash/engine` and `rg context_basis src/leash/engine` are empty at ffdb74b); they are set so the `Event` validates, and their values are fixed here so two backends build the same event.
+
+Identity record. `confirmation.json` holds the draft, the simulator draft ID, the mandate ID and the confirmer, and no card or profile (`store.record_confirmation`). The simulator never returns the card for a mandate; it appears only in the events it delivers, as `mandate.customer_id`, `mandate.card_id` and `mandate.profile_id`. The implementation PR therefore adds `identity.json` to the draft folder, written once by the runner under the mandate lock from the first `Event` it accepts for the mandate, holding exactly those three values, and never overwritten; a later event that carries different values for the same mandate raises before evaluation. `buy` reads it and refuses a mandate that has none. In practice this means an agent can buy on a mandate only after the simulator has delivered at least one attempt for it. The file does not exist today.
+
+`history` is not passed: `evaluate` is called with `history=None`, exactly as the runner calls it (`loop.py` never passes a `History`), so `_history_index` uses the packaged `authorization_history.csv` (`evaluate.py:45-48`, `data.py:115`) and the card's familiarity comes from the same rows as for a simulator attempt. Local purchases never enter that CSV, so a merchant first seen through `buy` stays unfamiliar to the history checks; the duplicate and velocity checks see it through `state` and `context` instead. `state` is the current `MandateState`. The decision is recorded with `leash.engine.state.record` and appears in `GET /mandates/{mandate_id}/decisions`, `GET /decisions/{authorization_id}` and, for a `step_up`, `GET /step-ups/pending`, exactly like a simulator decision.
+
+Local origin. The runner's `Coordinator.authorization` prepares a simulator intent for every decision (`coordinator.py:118-153`), and intents require the originating simulator `run_id` and a verified remote receipt (`intents.py:80`, `:130-134`, `:171`); a local purchase has neither, and no simulator response or run ID is ever invented for it. A local purchase is therefore never passed to `Coordinator.authorization` or to the intent journal. It is finished by `records.recover_accepted(event, decision, accepted_at, accepted, resolution=False, state_before=...)` (`records.py:152-193`) under the mandate lock, with `accepted_at` the backend's clock and `accepted` the object `{ "origin": "local", "purchase_key_file": <file name> }` in place of a simulator receipt. That helper calls `leash.engine.state.record` and writes `data/decisions/<mandate_id>/<authorization_id>.json` with the keys `decision, event, state_before, state_after, accepted_at, accepted` that `records._read` requires (`records.py:208-212`), so the decision appears in `GET /mandates/{mandate_id}/decisions` and `GET /decisions/{authorization_id}` through `records.mandate_history` and `records.decision_detail` unchanged, and `check_consistent` holds. The purchase file gets the `authorization_id` after that write. The MandateState section names the local finish next to `/resolve`; the pure functions `apply` and `record` and the locks `customer_lock` and `mandate_locks` are reused as they are.
+
+Idempotency. `purchase_key` is unique per `(agent_id, mandate_id)`. The backend stores `purchases/<sha256(agent_id + ":" + mandate_id + ":" + purchase_key)>` under the mandate lock, `O_EXCL`, before it evaluates, holding the canonical input hash (SHA-256 of compact sorted-key JSON of the validated input without `purchase_key`) and, once decided, the `authorization_id`:
+
+```
+same key, same input hash, decided       -> the stored Decision and its original reference are returned again, with the original expires_at; no new authorization_id, no second evaluation, no state change, no renewed authority
+same key, same input hash, not yet decided, before deadline_at  -> PurchaseInProgress; the agent polls get_purchase_status with the authorization_id it already holds, or retries after the decision budget
+same key, same input hash, not yet decided, after deadline_at   -> PurchaseFailed("decision was not recorded before <deadline_at>"); the purchase stays undecided for ever, no decision is substituted, and the agent mints a new key
+same key, different input hash           -> PurchaseKeyReused, the purchase is not evaluated; the agent must mint a new key for a changed cart
+new key                                  -> a new purchase, judged on the current state, which includes every earlier accepted decision on the mandate
+```
+
+There is no expiry on a used key within the mandate's life. A revoked or expired mandate rejects every `buy` before the key is looked at, including a repeat of a decided key: the stored Decision is readable through `get_purchase_status`, and a repeat `buy` on a dead mandate is InvalidPurchase. A crash after the key file is written and before the decision is recorded leaves the file without a decision. Nothing recovers it into a decision: `get_purchase_status` and a repeat `buy` report `PurchaseInProgress` until `deadline_at` and `PurchaseFailed` after it, the file is kept as the record of the failure, and the runner's log carries the error that interrupted the evaluation. A decision exists only when the engine produced it or the Wallet answered a step-up.
+
+`step_up`. Same as a simulator step-up: the Wallet answers through `POST /step-ups/{authorization_id}/answer`, or the book times the pending step-up out to `decline` with reason `step_up_timeout` once its `expires_at` has passed, the same rule as for a simulator attempt. A timeout applies only to an accepted pending step-up that a human could have answered, never to an undecided purchase. Today `StepUpBook.answer` and `StepUpBook.sweep` finish through `Coordinator.authorization` (`stepups.py:179-195`), which needs a simulator run, and `answer` raises when the book file has no `run_id` (`stepups.py:216-218`); the book file is `{ step_up, status, resolution }` plus `run_id` (`stepups.py:6-7`, `:158`) and `StepUp` has no origin field (`decision.py:166-170`). The implementation PR adds `origin: "local"` to the book file next to `run_id` for a local step-up, leaves `run_id` absent for it, and gives `answer` and `sweep` a second finish: when the book file carries `origin: "local"`, `_finish` calls `records.recover_accepted(..., resolution=True, accepted={ "origin": "local", ... })` instead of `Coordinator.authorization`, which writes the `<authorization_id>.resolve.json` record and records the final `Decision`; the missing `run_id` check applies only to a file without `origin`. The `origin` key in the book file is the only thing that selects that finish. Nothing in the engine reads it. The agent sees `resolved: false` in `get_purchase_status` and nothing it sends can resolve it. `get_purchase_status` on an `authorization_id` that belongs to another agent's account is `PurchaseUnknown`, the same error as a nonexistent id.
+
+Out of scope for this contract and for the demo: a payment processor, a merchant order, inventory or price lookup by the backend, a `buy` that the backend retries or re-quotes, and any purchase created from the Wallet or the Harness page instead of through a paired agent. `reference` is data for a later processor integration and is not consumed by anything we ship.
+
+
+## Harness provider session
+
+This is the implementation contract for the server-side Shopping Harness adapter. Implementation status is recorded in plan 04. The foundation milestone adds owned storage and GET readback while create and message requests return `provider_unconfigured` before creating a session, starting pairing or reserving a message. Successful creation and execution require the later pairing and provider adapter. The standalone Wallet and external MCP clients keep their current flow. This section does not enable a provider, model-based purchase scoring or a payment processor.
+
+### Provider selection and credentials
+
+The first supported pair is `provider: "anthropic"`, `model: "claude-sonnet-5"`. It is the initial UI selection, but both fields are required in the create request. Unknown provider/model pairs are 422; an unavailable configured pair is 503 `provider_unconfigured`. There is no substitution, alias to another model or automatic provider retry. Other providers named in plan 04 remain unavailable until separately implemented and exercised.
+
+The adapter is disabled unless an operator sets `LEASH_HARNESS_ENABLED=1` after confirming that the host's ignored `.env` contains its Anthropic credential. Unset or `0` leaves it disabled; other values refuse startup. The foundation accessor in `leash.runner.settings` reads only that enable flag, including when it is `1`. The completed adapter adds a separate scoped accessor for the required `ANTHROPIC_API_KEY`; that accessor must never print the key. No credential or optional provider package is loaded while disabled, so the existing Wallet can run without the adapter dependency. When enabled, a missing dependency or credential produces `provider_unconfigured`; it never starts a turn with a different configuration. The implementation uses the official Anthropic Python SDK with automatic retries disabled and the pinned Anthropic endpoint/model. It does not inherit a browser-supplied URL or silently use a different gateway, provider credential or model. The browser, provider messages and tool-visible arguments receive no provider key, agent token or pairing verifier. The release still needs one actual provider request after the operator's credential confirmation; this contract makes no claim that a credential is present.
+
+`LEASH_HARNESS_ENABLED` controls chat/tool execution only. It does not change `LEASH_ENABLE_MODELS`, the deterministic evaluator or the separate Jev release gate. Runtime purchase models remain off.
+
+### Customer routes
+
+All three routes use the existing authenticated customer cookie. Both POST routes require the exact configured Origin, with the existing 401/403 behavior. The server derives the account from the session; no request may supply an account, agent token, MCP endpoint, provider endpoint, phase or customer answer. An unknown or foreign session ID returns the same 404.
+
+| Route | Input and response |
+| --- | --- |
+| `POST /agent-sessions` | `{ client_request_id: UUID, provider: "anthropic", model: "claude-sonnet-5" }` -> 201 `AgentSession` after durable creation, initially `pairing_required`. An identical repeated create key for this account returns the same session, 200; a different payload on that key is 409. Unsupported input is 422 and a disabled or unavailable provider is 503 before creating a session or beginning pairing. |
+| `POST /agent-sessions/{session_id}/messages` | `{ client_message_id: UUID, expected_version: int >= 1, text: str }`, text 1-8000 characters -> 202 `{ session: AgentSession, operation_id }` after the message/operation is durably reserved. The operation performs provider/MCP work asynchronously. Same message ID and same input returns 200 with the original operation ID and the current session snapshot, without executing it again; this lookup precedes the version check. Changed input on an existing ID, a stale version for a new message or a second active operation returns 409. |
+| `GET /agent-sessions/{session_id}` | 200 `AgentSession`. A read-only snapshot, with no provider call, MCP mutation, implicit retry or phase advancement. The browser polls while an operation is running. |
+
+Session-specific request errors return `{ error: { code, stage, message }, session_id: str | null, version: int | null }`; IDs and versions are present only for an already owned session. Authentication and Origin failures retain the existing 401/403 middleware response. A disabled/unavailable-provider create request creates no session; its error is a request-level response. Provider and MCP failures after session creation are persisted in that owned session before its operation stops. A missing operator credential on a turn is `provider_unconfigured` at stage `configuration`, with no provider call. Provider authentication, timeout and malformed-response failures use `provider_auth_error`, `provider_timeout` and `provider_response_invalid`; they do not expose the provider's raw error body. Validation errors do not reserve a message or execute a tool.
+
+`AgentSession` is the browser-safe view below. Unknown fields are rejected on writes. Timestamps are UTC; IDs are server-generated except the two client idempotency IDs. `version` increases on every persisted change. Null IDs mean that no successful tool result has bound such an object yet.
+
+```
+session_id, version, provider, model, created_at, updated_at
+phase: pairing_required | briefing | awaiting_policy_confirmation | confirmed |
+       searching | awaiting_purchase_answer | completed | rejected | failed
+operation: null | { id, client_message_id, status: queued | running | succeeded | failed,
+                    started_at: timestamp | null, finished_at: timestamp | null }
+messages[]: { id, sequence, client_message_id: UUID | null, role: user | assistant,
+              text, status: complete | partial, created_at }
+tool_calls[]: { id, sequence, operation_id, name, status: planned | running | succeeded | failed | unknown,
+                started_at: timestamp | null, finished_at: timestamp | null,
+                summary, draft_id: str | null, authorization_id: str | null }
+errors[]: { id, sequence, operation_id: str | null, stage: configuration | pairing | provider | tool | recovery,
+            code, message, occurred_at }
+connection: { status: pending | connected | revoked | lost, agent_id: str | null,
+              agent_label, scopes: [str], pairing_expires_at: timestamp | null }
+draft_id, mandate_id, authorization_id: str | null
+backend_status: { policy: null | pending | confirmed | rejected,
+                  purchase: null | pending | approve | decline,
+                  observed_at: timestamp | null }
+wallet_link: null | { kind: pairing | policy | purchase, url, expires_at: timestamp | null }
+available_actions: { send_message: bool, open_wallet: bool, search: bool, buy: bool }
+```
+
+Every new message, tool-call entry or error receives one immutable positive `sequence` from the session's shared counter, under its lock. Each array is returned in increasing sequence order, so the UI can interleave them without guessing from timestamps. Updating a tool's status increments the session version and keeps its original sequence. `backend_status` records the latest authoritative observation and its time; it is not a prediction. The next explicit message refreshes the bound object's status before any phase transition or provider call. A Wallet return may show the current object through its existing owned routes and offer Continue; chat text or a cached observation cannot authorize resumption.
+
+Assistant text is provider output, not authoritative workflow state. Tool summaries are server-generated from validated tool results, not a provider's claim that an action happened. The UI displays those separately and renders user, assistant, tool-summary and error content as escaped text, never executable HTML. Errors contain a stable code and a redacted explanation, never raw HTTP headers, credentials, private provider traces or another account's data. Raw tool arguments/results are not copied into this browser view. An approved decision is labelled an authorization result; it is never labelled an order or charge.
+
+### Pairing and server-side custody
+
+Creation reserves the session before beginning a real MCP pairing for a clearly labelled Harness agent. The server keeps the verifier in memory and exposes only the existing Wallet pairing link to the owning browser. The customer approves through the existing Wallet route. A message received while `pairing_required` first checks the authoritative pairing record: if unapproved it returns 409 `waiting_for_pairing` without reserving a provider turn; if approved, the adapter completes pairing through MCP and verifies that the returned account matches the session owner before using the token. A mismatch fails the session without exposing either account's details or using that token.
+
+The MCP credential is sent only by the server-side adapter to the configured trusted MCP endpoint. Neither its value nor the verifier is sent to the provider. They are kept in the live adapter's memory, outside the JSON session store. Loss of that custody on restart fails the affected session with `pairing_required_after_restart`; a fresh session and customer-approved pairing are required. No credential is reconstructed from a digest. Existing drafts remain available in the Wallet. The temporary pairing link is composed from in-memory pairing data and is not stored in clear with the durable transcript.
+
+Policy-only sessions request only the implemented policy scopes. Purchase capability requires the separately agreed purchase scope and customer approval; an existing token is never widened. The adapter validates the current token/account before each privileged tool dispatch. Revocation stops further dispatch and is recorded as an error. Pairing approval, policy confirmation, tightening, revocation and purchase answers are never provider tools.
+
+### Phase enforcement
+
+The server owns transitions. A model response, a chat message such as "I approved", or a browser navigation does not change a mandate or resolve a purchase.
+
+| Phase | Permitted work and transition |
+| --- | --- |
+| `pairing_required` | No provider call or search. The customer uses the existing pairing UI. An explicit message after approved pairing completes the binding and enters `briefing`. |
+| `briefing` | Provider conversation may clarify the instruction and call only implemented policy-authoring/read tools. A successful proposal binds its returned `draft_id`, enters `awaiting_policy_confirmation` and provides the persisted-ID Wallet link. It stops that operation before search or purchase. |
+| `awaiting_policy_confirmation` | No search or purchase. On an explicit new message, the server reads the bound draft's authoritative owned status. Pending returns 409 `waiting_for_policy`; rejected enters `rejected`; confirmed with a mandate ID binds it and enters `confirmed`. A provider claim of confirmation has no effect. |
+| `confirmed` / `searching` | Before each new operation or purchase, recheck the bound mandate's owner and active status. Search is permitted only through an implemented, explicitly configured capability. A server-side inventory/search tool needs its own agreed input/provenance contract and real implementation. Until then `available_actions.search` and `available_actions.buy` are false; no provider-native search tool is exposed. An unavailable search tool raises a persisted error; generated product claims do not stand in for a search. Future results must retain their actual sources and distinguish a discovered offer from a verified final checkout total. |
+| `awaiting_purchase_answer` | A successful implemented `buy` returning step_up binds its authorization ID and supplies the Wallet purchase link. Only authoritative readback after the existing Wallet answer or timeout can produce a final result. No provider call extends the human window or supplies an answer. An explicit message can request readback; pending returns 409 `waiting_for_purchase`. |
+| `completed` / `rejected` / `failed` | Terminal, read-only session. No automatic retry or further tool execution. The customer may create a new session; that does not revive, approve or repeat a prior purchase. |
+
+Before a provider request, the adapter constructs the allowed tool set for the current phase. It waits for a complete provider response and validates every returned tool name and its entire argument object before dispatch. A truncated response or partial tool-argument stream cannot dispatch a tool. Unknown or disallowed tools fail the operation. ID-bearing read/purchase tools must refer to the session's server-bound draft or mandate, not an ID chosen by the model. The adapter exposes no shell, arbitrary HTTP request, arbitrary MCP server, Wallet mutation or credential tool. Pairing tools are adapter-controlled and absent from the provider's tool set.
+
+A session can expose `buy` and purchase readback only after their own reviewed contract and implementation land. A successful buy binds the returned authorization ID: final approve enters `completed`, final decline enters `rejected`, and step_up enters `awaiting_purchase_answer`. Authoritative readback after the Wallet answer or timeout applies the same final transitions. The adapter uses the purchase tool's idempotency and local-versus-simulator origin rules. It never constructs a simulator receipt or invokes simulator decision/resolve endpoints for a local purchase. A failed or pending purchase yields no completed-purchase claim. The remaining search and purchase capabilities may stay unavailable while briefing/proposal support is implemented, and the UI must show that limitation.
+
+### Persistence and failure handling
+
+Session records live under `LEASH_POLICY_STORE/agent-sessions/`, mode 0600, with account ownership set at creation and never changed. A per-session file lock protects version comparison, message-ID reservation and the single active operation. JSON replacements are atomic, with file and parent-directory synchronization before reporting durable acceptance. Creating the account-scoped `client_request_id` mapping is exclusive so concurrent create requests return one session. A mapping left without its session after a crash is a recovery error; it must not create a second session or pairing on replay. Reads never dispatch work. Network calls do not hold the customer's mandate locks; individual MCP policy/purchase mutations retain their existing customer-first locking requirements.
+
+The adapter persists an operation and each tool-call intent before sending it. It records the validated result before the next tool or phase. One operation has a 60-second total deadline, at most eight tool dispatches and a 4096-output-token provider budget per request; exceeding a limit stops the operation and persists an error, with no fabricated assistant result or business decision. SDK retry behavior is disabled. No alternate provider is selected after failure.
+
+A process restart never replays an operation left queued/running or a mutating tool with an unknown outcome. The session becomes `failed` with an explicit recovery error and retains its known IDs and observations. A mutation whose response was lost remains marked `unknown` until a separately defined authoritative readback can establish its outcome; absence of a response is not a decline, approval or timeout. Where a tool has no authoritative reconciliation contract, no result is invented. The browser can still open any known owned draft or purchase in the Wallet.
+
+Implementation order: merge this contract; add the scoped provider configuration and owned session store/routes; implement real MCP pairing and policy tools; add the pinned provider adapter after operator credential confirmation; then wire the Shop UI against observed responses. Search and purchasing each require their capability checks and their own completed integration. The live model-off Wallet demonstration remains independent of this work.
+
 ## Identity source
 
 Ruled 2026-09-25 by the contracts owner on Oskar's direction. This replaces the earlier `LEASH_MCP_TOKENS` capability-map ruling and the shared `LEASH_MCP_TOKEN` bearer; neither ships. It is a local credential system for the demo, and the section ends with what a bank integration replaces.
@@ -374,9 +554,9 @@ Passwords. `hashlib.scrypt` from the standard library, `n=2**14, r=8, p=1, dklen
 
 Sessions. The cookie value is 32 random bytes, URL-safe. Only its SHA-256 is stored. A session expires after 12 hours idle or 24 hours absolute, measured from the record; an expired session is 401 and its file is removed on the failed read. Every login writes a new session; logout deletes the record. Cookie flags: `HttpOnly`, `SameSite=Strict`, `Path=/`. The Wallet API is served on 127.0.0.1 and never through the tunnel, so `Secure` is not set; a deployment that serves HTTPS sets it.
 
-Pairing. `begin_pairing` creates two secrets: a pairing code of 16 random bytes (128 bits) that travels in the link, and a verifier of 32 random bytes (256 bits) that stays with the agent. It stores the code's digest, the verifier's digest, the agent label and the fixed scope set, valid for 5 minutes. The customer opens the link while logged in; the Wallet shows the label, the scopes and the expiry and offers Approve. Approval writes `account_id` and `status: approved` under the file lock. `complete_pairing` takes the code and the verifier, reads the record under the lock, requires `status: approved`, an unexpired record and `sha256(verifier)` equal to the stored digest by constant-time comparison, then, still under the lock, first rewrites the pairing file with `status: consumed` and then writes the agent record with a token of 32 random bytes (256 bits). A crash between the two writes leaves a consumed pairing and no agent: the next `complete_pairing` raises `PairingUnknown` and the agent begins a fresh pairing. A code is therefore completed at most once and no second credential is ever minted for it. The token is returned once, in the tool result over the transport, and is never stored in clear. A wrong verifier and an unknown, expired or consumed code all raise the same `PairingUnknown`; the API side returns 404 for the same states. Expired pairing files are deleted on every `begin_pairing`. Someone who sees the link can approve nothing without the customer's session and can complete nothing without the verifier; the code alone selects the pairing to show and is dead after five minutes or one use. The Wallet serves the pairing page with `Referrer-Policy: no-referrer` and the API never writes the code to a log.
+Pairing. `begin_pairing` creates two secrets: a pairing code of 16 random bytes (128 bits) that travels in the link, and a verifier of 32 random bytes (256 bits) that stays with the agent. It stores the code's digest, the verifier's digest, the agent label and the fixed scope set, valid for 5 minutes. The customer opens the link while logged in, or opens the Pair screen (`/app/#pair`) while logged in and types the pairing code into its code field; either way the Wallet calls `GET /pairing/{code}`, shows the label, the scopes and the expiry and offers Approve, which calls `POST /pairing/{code}/approve`. The typed code goes to the same two routes and nowhere else; no new route exists for it, and the verifier never enters the browser. The link's origin is `LEASH_APP_ORIGIN`, which `leash.policy.mcp_server` reads at startup with the same validation as `leash.api` and refuses to start without, for stdio and streamable HTTP alike. The Wallet must be reachable at that origin from the customer's device: the demo runs the MCP client and the Wallet on one machine with the loopback origin, and a client on another machine needs a Wallet deployed at a trusted origin, never a tunnel opened for it. Approval writes `account_id` and `status: approved` under the file lock. `complete_pairing` takes the code and the verifier, reads the record under the lock, requires `status: approved`, an unexpired record and `sha256(verifier)` equal to the stored digest by constant-time comparison, then, still under the lock, first rewrites the pairing file with `status: consumed` and then writes the agent record with a token of 32 random bytes (256 bits). A crash between the two writes leaves a consumed pairing and no agent: the next `complete_pairing` raises `PairingUnknown` and the agent begins a fresh pairing. A code is therefore completed at most once and no second credential is ever minted for it. The token is returned once, in the tool result over the transport, and is never stored in clear. A wrong verifier and an unknown, expired or consumed code all raise the same `PairingUnknown`; the API side returns 404 for the same states. Expired pairing files are deleted on every `begin_pairing`. Someone who sees the link can approve nothing without the customer's session and can complete nothing without the verifier; the code alone selects the pairing to show and is dead after five minutes or one use. The Wallet serves the pairing page with `Referrer-Policy: no-referrer` and the API never writes the code to a log.
 
-Scopes are one fixed set for every paired agent: `policy:propose` (`propose_task_policy`) and `policy:read` (`get_policy_status`, `get_policy_summary`, `get_policy_authoring_instructions`). `buy` and `get_purchase_status` stay parked. The set is recorded on the agent record and displayed at approval so a later narrowing is a data change.
+Scopes are one fixed set for every paired agent: `policy:propose` (`propose_task_policy`) and `policy:read` (`get_policy_status`, `get_policy_summary`, `get_policy_authoring_instructions`). `buy` and `get_purchase_status` stay parked; when they land, the Authority paragraph of "Purchase input and idempotency" adds `purchase:decide` as an opt-in scope requested at `begin_pairing`, and this fixed set stays the default. The set is recorded on the agent record and displayed at approval so a later narrowing is a data change.
 
 Token presentation. Streamable HTTP: `Authorization: Bearer <agent_token>` on every request. The ASGI middleware no longer rejects requests; it reads the header into the request context. Each tool that needs a principal computes `sha256(token)` and reads exactly the file with that name in `agents/`; there is no scan and no comparison against a list. A missing file, a file that fails to parse, a record whose `account_id` is empty, or `revoked_at` set all raise the same `Unauthorized`; a valid record has `last_used_at` updated. Two agents can never share a digest because the token is 256 random bits, and a collision on write is refused (`O_EXCL`) and raises. Stdio: the process serves one agent; it reads `LEASH_AGENT_TOKEN` from its environment at startup if set, and otherwise holds the token returned by its own `complete_pairing` in memory for the rest of the process. The client helper in `docs/mcp-client.md` sends the token from `LEASH_AGENT_TOKEN`.
 
@@ -394,13 +574,13 @@ Served by `leash.policy.mcp_server` over stdio or streamable HTTP, backed by the
 
 | Tool | Input → returns |
 | --- | --- |
-| `begin_pairing` | `{ agent_label: str }` (1 to 80 characters, shown to the customer) → `{ pairing_code, verifier, expires_at, scopes }`. The agent hands the customer `/app/?pair=<pairing_code>` and keeps `verifier` to itself; it never appears in a link, a log or the Wallet. No token needed |
+| `begin_pairing` | `{ agent_label: str }` (1 to 80 characters, shown to the customer) → `{ pairing_code, verifier, expires_at, scopes, wallet_url }`. `wallet_url` is `<LEASH_APP_ORIGIN>/app/?pair=<pairing_code>`, built from the origin the MCP server read at startup, never from a request `Host`. The agent hands the customer `wallet_url`, or the bare `pairing_code` to type into the Wallet's Pair screen, and keeps `verifier` to itself; it never appears in a link, a log or the Wallet. No token needed |
 | `complete_pairing` | `{ pairing_code: str, verifier: str }` → `{ agent_token, agent_id, account_id, scopes }` exactly once, after the customer approved in the Wallet; before approval raises `PairingPending`; a wrong verifier, an unknown, consumed or expired code all raise the same `PairingUnknown`. No token needed |
 | `get_policy_authoring_instructions` | `{ instruction: str }` → `{ guide, request_instructions }`; `guide` is the `policy://authoring-guide` resource (field vocabulary, rule format, proposal shape, restrictions) |
 | `propose_task_policy` | `{ instruction: str, proposal: { rules: [Rule], examples: [...], open_questions: [...], uncertainty_policy } }` → the stored `PolicyDraft` (`draft_id`, `version: 1`, `hash`, the validated fields). Invalid proposal raises `InvalidDraft` with the reason. The agent then hands the customer `/app/?draft_id=<draft_id>` |
 | `get_policy_status` | `{ draft_id: str }` → `{ draft_id, version, status: pending \| confirmed \| rejected, mandate_id: str \| null, confirmed_at: datetime \| null, rejected_reason: str \| null }`. `mandate_id` is set only when `status` is `confirmed`. Unknown draft raises |
 | `get_policy_summary` | `{ draft_id: str }` → `{ draft_id, version, instruction, plain_english: [str], examples: [{ description, expected, why }], open_questions: [{ question, options, answer: str \| null }], uncertainty_policy }`. The sentences are the same ones the Wallet shows |
-| `buy` | `{ mandate_id: str, cart: [{ item_id, item_name, item_category, item_details, unit_price_chf, quantity }], merchant: { merchant_id, merchant_name, merchant_category, merchant_mcc, merchant_country }, facts: [PurchaseFacts] }` → `Decision` (`approve`, `decline` or `step_up` with `authorization_id`). Parked for the submission: raises `NotImplementedError("purchases arrive through the simulator in demo mode; see plan 01 step 12")`. Scope when it lands: section "Purchase over MCP" |
-| `get_purchase_status` | `{ authorization_id: str }` → `{ authorization_id, decision: Decision, resolved: bool, final: approve \| decline \| null }`; a `step_up` is `resolved: false` until the Wallet answers or it times out. Parked with `buy` |
+| `buy` | `{ mandate_id: str, purchase_key: str, cart: [{ item_id, item_name, item_category, item_details, unit_price_chf, quantity }], merchant: { merchant_id, merchant_name, merchant_category, merchant_mcc, merchant_country, merchant_city }, delivery_fee_chf: number, total_chf: number, facts: [PurchaseFacts] }` (validation, idempotency and the `purchase:decide` scope in section "Purchase over MCP", subsection "Purchase input and idempotency") → `Decision` (`approve`, `decline` or `step_up` with `authorization_id`). Parked for the submission: raises `NotImplementedError("purchases arrive through the simulator in demo mode; see plan 01 step 12")`. Scope when it lands: section "Purchase over MCP" |
+| `get_purchase_status` | `{ authorization_id: str }` → `{ authorization_id, decision: Decision, resolved: bool, final: approve \| decline \| null }`; a `step_up` is `resolved: false` until the Wallet answers or it times out. Needs the `purchase:decide` scope. Parked with `buy` |
 
 `facts` in `buy` is the form the agent's own model fills; the backend checks it deterministically and records `sources[field] = agent_form` for every field the agent supplied. The agent never sends the policy; the backend reads the confirmed policy for `mandate_id` from its own store.

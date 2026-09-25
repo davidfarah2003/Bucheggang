@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## Current operating mode, 25 September 2026
+
+The project owner has ended the multi-agent workflow and directed us to ignore the dates, times and deadlines in older plans. One primary development agent now investigates, plans, implements and verifies work sequentially. Do not spawn builders or reviewers, use the Cotal mesh for coordination, or treat lane ownership and channel procedures below as current instructions. Those sections remain as historical context for the work already merged. Keep the technical contracts, simulator boundaries, verification rules, secret handling and evidence standards below unless the project owner changes them. Check `main` and the working tree before editing; unmerged lane branches and worktrees are not shipped features.
+
 How the Viseca "Agent on a Leash" team works: three people, each running their own agents on the Cotal mesh, one repository. Every agent and every human reads this file before acting.
 
 Deadline: expert-round submission Friday 25 September 2026 at 12:00, main-round final submission at 17:30. The plans in `docs/plans/` are scoped to that.

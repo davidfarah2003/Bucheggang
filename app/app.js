@@ -3,7 +3,7 @@
 const MANDATE_KEY = "viseca.demo.mandateId";
 const MANDATE_OWNER_KEY = "viseca.demo.mandateOwner";
 class DraftLinkError extends Error {}
-class PairLinkError extends Error {}
+class PurchaseLinkError extends Error {}
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const screen = document.querySelector("#screen");
 const overlayRoot = document.querySelector("#overlay-root");
@@ -27,10 +27,13 @@ const state = {
   ownedDrafts: [],
   answers: {},
   mandate: null,
+  globalPolicy: null,
   ownedMandates: [],
   agents: [],
   pairing: null,
   pairingCode: null,
+  pairCode: null,
+  pairLinkError: null,
   pending: [],
   history: [],
   details: new Map(),
@@ -158,19 +161,50 @@ function hasPairLink() {
   return new URLSearchParams(window.location.search).has("pair");
 }
 
+function capturePairLink() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("pair")) return;
+  const codes = url.searchParams.getAll("pair");
+  state.pairLinkError = codes.length !== 1 || !codes[0]?.trim() || hasDraftLink() || hasPurchaseLink() ? "Use one pairing code only." : null;
+  state.pairCode = state.pairLinkError ? null : codes[0].trim();
+  for (const name of ["pair", "draft", "draft_id", "authorization_id"]) url.searchParams.delete(name);
+  url.hash = "pair";
+  window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+}
+
 function pairingCode() {
-  const code = new URLSearchParams(window.location.search).get("pair");
-  if (code === "") throw new PairLinkError("The agent connection link has an empty pairing code.");
-  return text(code, "Agent connection link");
+  return text(state.pairCode, "Agent connection code");
 }
 
 function clearPairLink() {
   const url = new URL(window.location.href);
   url.searchParams.delete("pair");
   window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+  state.pairCode = null;
+  state.pairLinkError = null;
+  state.pairing = null;
+  state.pairingCode = null;
+}
+
+function hasPurchaseLink() {
+  return new URLSearchParams(window.location.search).has("authorization_id");
+}
+
+function linkedPurchaseId() {
+  const query = new URLSearchParams(window.location.search);
+  const ids = query.getAll("authorization_id");
+  if (ids.length !== 1 || !ids[0]?.trim() || hasDraftLink() || hasPairLink()) throw new PurchaseLinkError("The purchase link must contain one pending purchase ID and no other Wallet link.");
+  return ids[0];
+}
+
+function clearPurchaseLink() {
+  const url = new URL(window.location.href);
+  for (const name of ["authorization_id", "draft", "draft_id", "pair"]) url.searchParams.delete(name);
+  window.history.replaceState(null, "", url.pathname + url.search + url.hash);
 }
 
 function requestedRoute(hash = window.location.hash.slice(1)) {
+  if (hasPurchaseLink()) return "purchase";
   if (hasPairLink()) return "pair";
   if (hasDraftLink()) return "review";
   return hash || "shop";
@@ -189,12 +223,39 @@ function validateDraft(draft) {
   text(draft.hash, "Draft hash");
   text(draft.instruction, "Original request");
   if (!Number.isInteger(draft.version)) throw new Error("The saved spending plan has no valid version.");
+  const hashVersion = Object.hasOwn(draft, "hash_version") ? draft.hash_version : 1;
+  const cases = Object.hasOwn(draft, "boundary_cases") ? draft.boundary_cases : [];
+  if (![1, 2].includes(hashVersion) || !Array.isArray(cases)) throw new Error("The saved spending plan has invalid boundary cases.");
+  if ((hashVersion === 1 && cases.length) || (hashVersion === 2 && !cases.length)) throw new Error("The saved spending plan has an invalid hash version.");
+  cases.forEach((item) => {
+    text(item.description, "Boundary case description");
+    if (!["approve", "decline", "step_up"].includes(item.expected)) throw new Error("A boundary case has an unsupported expected outcome.");
+  });
   draft.rules.forEach((rule) => { text(rule.field, "Rule field"); text(rule.plain_english, "Rule description"); });
   draft.open_questions.forEach((question) => {
     text(question.question, "Question");
     if (!Array.isArray(question.options) || !Array.isArray(question.confirming_answers)) throw new Error("The saved spending plan has an invalid question.");
   });
-  return draft;
+  return { ...draft, hash_version: hashVersion, boundary_cases: cases };
+}
+
+function validateBoundaryResults(payload, draft) {
+  if (!payload || !Array.isArray(payload.results)) throw new Error("The Wallet did not return computed boundary results.");
+  if (text(payload.draft_id, "Boundary result draft ID") !== draft.draft_id || payload.version !== draft.version || text(payload.hash, "Boundary result hash") !== draft.hash) throw new Error("The computed boundary results do not match the saved spending plan.");
+  validTime(payload.evaluated_at, "Boundary evaluation time");
+  if (!["proposal", "revision", "confirmation"].includes(payload.phase)) throw new Error("The boundary evaluation has an unknown phase.");
+  text(payload.engine_version, "Boundary engine version");
+  if (payload.results.length !== draft.boundary_cases.length) throw new Error("The computed boundary results do not cover every authored case.");
+  payload.results.forEach((item, index) => {
+    const authored = draft.boundary_cases[index];
+    if (!item || item.case_index !== index || text(item.description, "Boundary result description") !== authored.description || item.expected !== authored.expected) throw new Error("A computed boundary result does not match its authored case.");
+    if (!["approve", "decline", "step_up"].includes(item.observed)) throw new Error("A computed boundary result has an unsupported outcome.");
+    if (item.observed !== item.expected) throw new Error("A computed boundary result differs from the authored expected outcome.");
+    if (!Array.isArray(item.reason_codes)) throw new Error("A computed boundary result has no reason codes.");
+    item.reason_codes.forEach((code) => text(code, "Boundary reason code"));
+    if (!/^[0-9a-f]{64}$/.test(text(item.case_input_hash, "Boundary case input hash"))) throw new Error("A computed boundary result has an invalid case-input hash.");
+  });
+  return payload;
 }
 
 function validateDraftList(items) {
@@ -287,11 +348,12 @@ function normalRoute(route) {
 
 function navigate(route, { keepScroll = false } = {}) {
   route = normalRoute(route);
-  if (!["shop", "wallet", "activity", "review", "pair", "agents"].includes(route)) {
+  if (!["shop", "wallet", "activity", "review", "purchase", "pair", "agents"].includes(route)) {
     setScreen(errorPanel("This page is unavailable", new Error(`Unknown page: ${route}`)));
     return;
   }
   if (state.route === "pair" && route !== "pair") clearPairLink();
+  if (state.route === "purchase" && route !== "purchase") clearPurchaseLink();
   state.route = route;
   state.serial += 1;
   state.pendingSerial += 1;
@@ -307,13 +369,13 @@ function navigate(route, { keepScroll = false } = {}) {
   closeOverlay();
   if (window.location.hash !== `#${route}`) window.history.replaceState(null, "", `#${route}`);
   document.querySelectorAll(".nav-button").forEach((button) => {
-    const selected = button.dataset.route === (["review", "pair", "agents"].includes(route) ? "wallet" : route);
+    const selected = button.dataset.route === (["review", "purchase", "pair", "agents"].includes(route) ? "wallet" : route);
     button.classList.toggle("is-active", selected);
     if (selected) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   });
   if (!keepScroll) window.scrollTo(0, 0);
-  void render();
+  return render();
 }
 
 function sessionExpired(error) {
@@ -356,21 +418,27 @@ async function render() {
     if (state.route === "shop") await renderShop(serial);
     else if (state.route === "wallet") await renderWallet(serial);
     else if (state.route === "review") await renderReview(serial);
+    else if (state.route === "purchase") await renderPurchase(serial);
     else if (state.route === "pair") await renderPair(serial);
     else if (state.route === "agents") await renderAgents(serial);
     else await renderActivity(serial);
   } catch (error) {
     if (serial !== state.serial) return;
     if (error.status === 401) { sessionExpired(error); return; }
-    const linkAction = state.route === "pair" && (error instanceof PairLinkError || error.status === 404) ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Continue without this agent link</button>` : error instanceof DraftLinkError ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this link</button>` : "";
-    const title = state.route === "review" ? "Review spending permission" : state.route === "pair" ? "Connect a shopping agent" : state.route;
+    const linkAction = state.route === "purchase" ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this purchase link</button>` : state.route === "pair" ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Continue without this agent link</button>` : error instanceof DraftLinkError ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this link</button>` : "";
+    const title = state.route === "review" ? "Review spending permission" : state.route === "purchase" ? "Review pending purchase" : state.route === "pair" ? "Connect a shopping agent" : state.route;
     setScreen(`<div class="page-title"><h1>${esc(title)}</h1></div>${errorPanel("This screen could not be loaded", error)}${linkAction}`);
+    if (state.route === "purchase") {
+      const heading = screen.querySelector(".page-title h1");
+      heading.tabIndex = -1;
+      heading.focus();
+    }
   }
 }
 
 function renderLogin() {
   const registering = state.authMode === "register";
-  const context = hasPairLink() ? `${registering ? "Create an account" : "Sign in"} to review an agent connection request.` : `${registering ? "Create an account" : "Sign in"} to review spending permissions sent by your shopping agent.`;
+  const context = hasPurchaseLink() ? `${registering ? "Create an account" : "Sign in"} to review a pending purchase.` : (state.pairCode !== null || state.pairLinkError || requestedRoute() === "pair") ? `${registering ? "Create an account" : "Sign in"} to review an agent connection request.` : `${registering ? "Create an account" : "Sign in"} to review spending permissions sent by your shopping agent.`;
   setScreen(`<section class="identity-view"><div class="identity-intro"><span class="section-kicker">LOCAL DEMO ACCOUNT</span><h1>${registering ? "Create your account" : "Welcome to your Wallet."}</h1><p>${context} This uses a local account, not a Viseca banking login.</p></div><div class="auth-fields"><label for="username">Username</label><input id="username" maxlength="80" autocomplete="username" placeholder="Your username" /><label for="password">Password</label><input id="password" type="password" minlength="8" maxlength="256" autocomplete="${registering ? "new-password" : "current-password"}" /><p class="auth-error" role="alert" hidden></p><button class="primary-button" type="button" data-action="${registering ? "register" : "login"}">${registering ? "Create account" : "Sign in"}</button></div><div class="auth-switch"><span>${registering ? "Already have an account?" : "New here?"}</span><button type="button" class="text-button" data-action="auth-mode" data-mode="${registering ? "login" : "register"}">${registering ? "Sign in" : "Create an account"}</button></div></section>`);
 }
 
@@ -385,14 +453,33 @@ function setSession(payload) {
   state.user = username;
 }
 
+function renderPairEntry(message = state.pairLinkError) {
+  setScreen(`<section class="identity-view pair-code-view"><button type="button" class="back-button" data-route="shop">‹ Shop</button><div class="identity-intro"><span class="section-kicker">AGENT CONNECTION</span><h1>Connect an agent</h1><p>Paste the code from your agent. Review its access before you decide.</p></div><section class="pair-code-entry"><div class="pair-code-fields"><label for="pair-code">Pairing code</label><input id="pair-code" class="pair-code-input" type="text" maxlength="128" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="pair-code-guidance pair-code-error" placeholder="Paste code from your agent" /><p id="pair-code-guidance">Entering a code does not approve access.</p></div><p id="pair-code-error" class="pair-code-error" role="alert" ${message ? "" : "hidden"}>${message ? esc(message) : ""}</p><div class="pair-code-actions"><button type="button" class="outline-button" data-action="clear-pair-code">Clear</button><button type="button" class="primary-button" data-action="submit-pair-code">Review agent</button></div></section></section>`);
+  if (message) screen.querySelector("#pair-code").focus();
+}
+
 async function renderPair(serial) {
+  if (state.pairLinkError || state.pairCode === null) { renderPairEntry(); return; }
   const code = pairingCode();
   loading("Checking agent connection…");
-  const pairing = validatePairing(await walletApi.pairing(code));
+  let pairing;
+  try {
+    pairing = validatePairing(await walletApi.pairing(code));
+  } catch (error) {
+    if (serial !== state.serial) return;
+    if (error.status !== 404) throw error;
+    state.pairCode = null;
+    state.pairLinkError = "Invalid, expired or used code.";
+    renderPairEntry();
+    return;
+  }
   if (serial !== state.serial) return;
   state.pairing = pairing;
   state.pairingCode = code;
   setScreen(`<section class="identity-view"><button type="button" class="back-button" data-route="shop">‹ Shop</button><div class="identity-intro"><span class="section-kicker">AGENT CONNECTION</span><h1>Connect this agent?</h1><p>Approving pairs this agent to your local account, ${esc(state.user)}. Only you can approve access in the Wallet.</p></div><section class="identity-card"><h2>${esc(pairing.agent_label)}</h2><p>This agent will be able to:</p><ul class="scope-list"><li>Propose spending plans for you to review (policy:propose)</li><li>Read the status and summary of its plans (policy:read)</li></ul><p>It cannot authorize a plan, answer a purchase review or change your rules.</p><p class="expiry"><span id="pair-remaining"></span><time datetime="${esc(pairing.expires_at)}">${esc(new Date(pairing.expires_at).toLocaleString("en-CH"))}</time></p><div class="agent-actions"><button type="button" class="outline-button" data-action="decline-pair">Not now</button><button type="button" class="primary-button" data-action="approve-pair">Approve connection</button></div></section></section>`);
+  const heading = screen.querySelector(".identity-intro h1");
+  heading.tabIndex = -1;
+  heading.focus();
   const expiry = validTime(pairing.expires_at, "Connection expiry");
   function updateExpiry() {
     if (serial !== state.serial) return;
@@ -419,6 +506,7 @@ async function renderAgents(serial) {
 
 async function initialize() {
   try {
+    capturePairLink();
     setSession(await walletApi.session());
     navigate(requestedRoute());
   } catch (error) {
@@ -562,14 +650,34 @@ function pendingTitle(evidence) {
   return count === 1 ? "One detail needs a decision" : count ? `${count} details need a decision` : "Review this purchase";
 }
 
-function pendingCard(item) {
+function pendingPurchase(item) {
   text(item.authorization_id, "Pending purchase ID");
-  text(item.expires_at, "Pending purchase deadline");
+  validTime(item.expires_at, "Pending purchase deadline");
   if (!item.event?.authorization?.merchant || !item.decision || !Array.isArray(item.decision.evidence)) throw new Error("A pending purchase is incomplete.");
   const auth = item.event.authorization;
   if (auth.authorization_id !== item.authorization_id || item.decision.authorization_id !== item.authorization_id || item.decision.decision !== "step_up") throw new Error("The pending purchase and its decision do not match.");
-  const merchant = text(auth.merchant.merchant_name, "Pending merchant");
-  return `<button type="button" class="need-card uncertain-card" data-action="open-pending" data-id="${esc(item.authorization_id)}"><span class="section-kicker" aria-live="off">PURCHASE REVIEW · ${esc(pendingTimeLabel(item.expires_at))}</span><strong>${esc(pendingTitle(item.decision.evidence))}</strong><span>${esc(merchant)} · ${esc(money(auth.billing_amount_chf, auth.currency))}</span><small>${esc(item.decision.customer_message)}</small><b aria-hidden="true">›</b></button>`;
+  text(auth.merchant.merchant_name, "Pending merchant");
+  text(item.decision.customer_message, "Purchase review message");
+  return auth;
+}
+
+function pendingCard(item) {
+  const auth = pendingPurchase(item);
+  return `<button type="button" class="need-card uncertain-card" data-action="open-pending" data-id="${esc(item.authorization_id)}"><span class="section-kicker" aria-live="off">PURCHASE REVIEW · ${esc(pendingTimeLabel(item.expires_at))}</span><strong>${esc(pendingTitle(item.decision.evidence))}</strong><span>${esc(auth.merchant.merchant_name)} · ${esc(money(auth.billing_amount_chf, auth.currency))}</span><small>${esc(item.decision.customer_message)}</small><b aria-hidden="true">›</b></button>`;
+}
+
+async function renderPurchase(serial) {
+  loading("Loading pending purchase…");
+  const id = linkedPurchaseId();
+  const pending = await walletApi.pending();
+  if (serial !== state.serial) return;
+  if (!Array.isArray(pending)) throw new Error("The Wallet did not return pending purchases.");
+  const item = pending.find((entry) => entry.authorization_id === id);
+  if (!item) throw new PurchaseLinkError("This purchase is not pending for your account. It may have been answered or timed out.");
+  const auth = pendingPurchase(item);
+  const items = auth.items.map((entry) => text(entry.item_name, "Purchase item")).join(" + ");
+  state.pending = pending;
+  setScreen(`<section class="linked-purchase-view"><button type="button" class="back-button" data-route="shop">‹ Shop</button><div class="linked-purchase-intro"><span class="section-kicker">PURCHASE REVIEW</span><h1>Review pending purchase</h1><p>Your Wallet loaded this pending purchase for your account. Your answer applies only to this purchase.</p></div><section class="linked-purchase-summary"><h2>${esc(auth.merchant.merchant_name)}</h2><strong>${esc(money(auth.billing_amount_chf, auth.currency))}</strong><p>${esc(items)}</p><p class="linked-purchase-meta">${esc(item.decision.customer_message)}</p><p class="linked-purchase-meta"><time datetime="${esc(item.expires_at)}">${esc(new Date(item.expires_at).toLocaleString("en-CH"))}</time> · ${esc(pendingTimeLabel(item.expires_at))}</p></section><div class="linked-purchase-actions"><button type="button" class="outline-button" data-action="reload">Refresh status</button><button type="button" class="primary-button" data-action="open-pending" data-id="${esc(id)}">Review decision</button></div></section>`);
 }
 
 async function refreshPending() {
@@ -702,11 +810,15 @@ async function activeContent(serial) {
 
 function globalPolicyCard(policy, savedGlobal) {
   let notice = "";
-  if (!savedGlobal) notice = "Changes to account-wide rules apply to the next confirmed permission.";
+  if (!savedGlobal) notice = "";
   else if (savedGlobal.version < policy.version) notice = `This permission uses version ${savedGlobal.version}. Version ${policy.version} will apply to your next confirmed permission.`;
   else if (savedGlobal.version > policy.version) notice = `This permission was confirmed with version ${savedGlobal.version}, but the current account-wide record reports version ${policy.version}. Check the saved rules before another confirmation.`;
   else if (savedGlobal.hash !== policy.hash) notice = `This permission and the current account-wide record both report version ${policy.version}, but their rule hashes differ. Check the saved rules before another confirmation.`;
-  return `<section class="rule-group"><h3>Account-wide rules · version ${policy.version}</h3>${policy.rules.length ? policy.rules.map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("") : `<p>No account-wide rules are saved for this local customer.</p>`}<p>${notice ? `${esc(notice)} ` : ""}Account-wide editing is not available in this Wallet view. Saved period limits count approved purchases across your confirmed permissions.</p></section>`;
+  const capRules = policy.rules.filter((rule) => rule.field === "authorization.billing_amount_chf" && rule.scope === "period" && rule.period_days === 7);
+  const editable = capRules.length === 0 || (capRules.length === 1 && capRules[0].operator === "<=" && capRules[0].currency === "CHF" && typeof capRules[0].value === "number");
+  const cap = capRules.length ? capRules[0] : null;
+  const editor = editable ? `<div class="global-cap-editor"><label for="global-seven-day-cap">Seven-day approved spend cap (CHF)</label><input id="global-seven-day-cap" type="number" min="0.01" step="0.01" inputmode="decimal" value="${cap ? esc(cap.value) : ""}" placeholder="No cap" /><p>Counts approved purchases across your permissions over the previous seven days, plus the proposed purchase.</p><div class="global-cap-actions"><button type="button" class="outline-button" data-action="save-global-cap">Save cap</button>${cap ? `<button type="button" class="danger-link" data-action="remove-global-cap">Remove cap</button>` : ""}</div></div>` : `<p>This account has a seven-day rule that needs a different editor. Its saved value is shown above.</p>`;
+  return `<section class="rule-group"><h3>Account-wide rules · version ${policy.version}</h3>${policy.rules.length ? policy.rules.map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("") : `<p>No account-wide rules are saved for this local customer.</p>`}<p>${notice ? `${esc(notice)} ` : ""}Changes apply to the next confirmed permission. Existing permissions keep their saved rules.</p>${editor}</section>`;
 }
 
 async function rulesContent(serial) {
@@ -716,6 +828,7 @@ async function rulesContent(serial) {
   ]);
   if (serial !== state.serial) return "";
   state.ownedMandates = items;
+  state.globalPolicy = globalPolicy;
   const id = mandateId();
   const selected = items.find((item) => item.mandate_id === id);
   let detail = `<p class="calm-copy">${items.length ? "Select a permission below to inspect its confirmed rules." : "You have no confirmed permission to inspect."}</p>`;
@@ -732,6 +845,11 @@ async function rulesContent(serial) {
     detail = `<p class="calm-copy">These are the effective rules saved on the selected permission. Later account-wide changes apply to the next confirmation.</p><h3 class="rule-section-heading">Effective rules for this permission</h3>${ruleGroups(effective_policy.rules)}<section class="rule-group"><h3>Missing information</h3><p>${esc(effective_policy.uncertainty_policy === "ask" ? "Ask me before buying" : effective_policy.uncertainty_policy === "decline" ? "Decline the purchase" : "Allow the purchase when evidence is missing")}</p></section><section class="rule-group"><h3>Security</h3><p>Purchase decisions and unfamiliar evidence are checked by the Wallet backend. Your agent cannot change these confirmed rules.</p></section><div class="rule-actions"><button type="button" class="outline-button" data-action="open-tighten" ${mandate.status !== "active" || effective_policy.uncertainty_policy === "decline" ? "disabled" : ""}>Decline uncertain purchases</button><button type="button" class="danger-link" data-action="open-revoke" ${mandate.status !== "active" ? "disabled" : ""}>Revoke this permission</button></div>`;
   }
   return `<div class="wallet-section"><h2>Rules for your permissions</h2>${detail}${globalPolicyCard(globalPolicy, savedGlobal)}${items.length ? `<section class="permission-list"><h3>Choose a permission</h3>${mandateChoices(items, selected?.mandate_id, "rules")}</section>` : ""}</div>`;
+}
+
+function boundaryResultCards(evaluation) {
+  if (!evaluation.results.length) return `<section class="boundary-results"><h2>Checked purchase cases</h2><p>This plan has no computed purchase cases. Agent-authored examples, when present, are illustrative.</p></section>`;
+  return `<section class="boundary-results"><h2>Checked purchase cases</h2><p>The agent authored these synthetic purchase cases. The Wallet backend evaluated them. No live purchase is shown here.</p><p class="boundary-meta">Checked on ${esc(new Date(evaluation.evaluated_at).toLocaleString("en-CH"))} at ${esc(evaluation.phase)} · engine ${esc(evaluation.engine_version)}</p><div class="boundary-list">${evaluation.results.map((item, index) => `<article class="boundary-card"><span class="boundary-number">CASE ${index + 1}</span><h3>${esc(item.description)}</h3><p>Agent expected: <strong>${esc(item.expected)}</strong></p><p>Backend computed: <strong>${esc(item.observed)}</strong></p>${item.reason_codes.length ? `<p class="boundary-reasons">Reason codes: ${item.reason_codes.map(esc).join(", ")}</p>` : ""}</article>`).join("")}</div></section>`;
 }
 
 async function renderReview(serial) {
@@ -752,6 +870,8 @@ async function renderReview(serial) {
     setScreen(`<section class="review-view"><button class="back-button" type="button" data-route="wallet">‹ Wallet</button><div class="page-title"><h1>Spending request ${esc(recorded.state)}</h1></div><p class="review-subtitle">${esc(message)}</p>${recorded.state === "confirmed" ? `<button class="outline-button" type="button" data-action="select-mandate" data-id="${esc(recorded.mandate_id)}" data-tab="active">View permission</button>` : ""}</section>`);
     return;
   }
+  const evaluation = validateBoundaryResults(await walletApi.boundaryResults(id), draft);
+  if (serial !== state.serial) return;
   const cap = purchaseCap(draft.rules);
   const questions = draft.open_questions;
   const ready = questions.every((question) => question.confirming_answers.includes(state.answers[question.question] ?? question.answer));
@@ -759,7 +879,7 @@ async function renderReview(serial) {
     const answer = state.answers[question.question] ?? question.answer;
     return answer && !question.confirming_answers.includes(answer);
   });
-  setScreen(`<section class="review-view"><button class="back-button" type="button" data-route="wallet">‹ Wallet</button><div class="page-title"><h1>Review spending permission</h1></div><p class="review-subtitle">Your Wallet loaded the plan saved by your shopping agent. Only you can authorize it.<span class="review-version">Saved draft version ${esc(draft.version)}.</span></p><section class="review-summary"><span class="section-kicker">YOUR AGENT MAY BUY</span><h2>${esc(productName(draft))}</h2><strong>${cap ? esc(money(cap.amount)) : "No per-purchase cap"}</strong><small>${cap ? cap.strict ? "SPEND MUST STAY BELOW THIS AMOUNT" : "MAXIMUM PER PURCHASE" : "REVIEW ALL RULES BEFORE AUTHORIZING"}</small></section><section class="review-rules"><h2>The limits you'll authorize</h2>${ruleGroups(draft.rules)}<details><summary>Original request</summary><p>${esc(draft.instruction)}</p></details><details><summary>Examples from the agent</summary>${draft.examples.map((example) => `<p><strong>${esc(example.expected)}</strong> · ${esc(example.description)}. ${esc(example.why)}</p>`).join("")}</details></section>
+  setScreen(`<section class="review-view"><button class="back-button" type="button" data-route="wallet">‹ Wallet</button><div class="page-title"><h1>Review spending permission</h1></div><p class="review-subtitle">Your Wallet loaded the plan saved by your shopping agent. Only you can authorize it.<span class="review-version">Saved draft version ${esc(draft.version)}.</span></p><section class="review-summary"><span class="section-kicker">YOUR AGENT MAY BUY</span><h2>${esc(productName(draft))}</h2><strong>${cap ? esc(money(cap.amount)) : "No per-purchase cap"}</strong><small>${cap ? cap.strict ? "SPEND MUST STAY BELOW THIS AMOUNT" : "MAXIMUM PER PURCHASE" : "REVIEW ALL RULES BEFORE AUTHORIZING"}</small></section><section class="review-rules"><h2>The limits you'll authorize</h2>${ruleGroups(draft.rules)}<details><summary>Original request</summary><p>${esc(draft.instruction)}</p></details></section>${boundaryResultCards(evaluation)}${draft.examples.length ? `<section class="agent-examples"><details><summary>Agent-authored examples</summary><p>These descriptions are the agent's claims. The Wallet has not computed their outcomes.</p>${draft.examples.map((example) => `<p><strong>${esc(example.expected)}</strong> · ${esc(example.description)}. ${esc(example.why)}</p>`).join("")}</details></section>` : ""}
     ${questions.length ? `<section class="questions"><h2>Confirm these details</h2>${questions.map((question) => { const selected = state.answers[question.question] ?? question.answer; return `<div class="question"><strong>${esc(question.question)}</strong><div class="choices">${question.options.map((option) => `<button type="button" class="${selected === option ? "selected" : ""}" aria-pressed="${selected === option}" data-action="answer-question" data-question="${esc(question.question)}" data-answer="${esc(option)}">${esc(option)}</button>`).join("")}</div></div>`; }).join("")}${needsRevision ? `<p class="uncertainty-note">Your selection requires a revised plan from the shopping agent before authorization.</p>` : ""}</section>` : ""}<div class="review-spacer"></div><div class="review-actions"><button type="button" class="outline-button" data-action="open-reject">Reject</button><button type="button" class="primary-button" data-action="confirm" ${ready ? "" : "disabled"}>Authorize agent</button></div></section>`);
 }
 
@@ -913,6 +1033,7 @@ async function performResolution(button) {
   await walletApi.answer(id, decision);
   closeOverlay();
   toast(decision === "approve" ? "Your answer was accepted for this purchase." : "Your decline was accepted for this purchase.", "success");
+  if (state.route === "purchase") { navigate("wallet"); return; }
   const refreshed = await refreshPending();
   if (refreshed) schedulePendingRefresh();
 }
@@ -950,6 +1071,31 @@ document.addEventListener("click", async (event) => {
     if (action === "wallet-tab") { state.walletTab = button.dataset.tab; navigate("wallet", { keepScroll: true }); return; }
     if (action === "activity-filter") { state.activityFilter = button.dataset.filter; document.querySelector("#activity-list").innerHTML = activityRows(); document.querySelectorAll(".activity-tabs [role=tab]").forEach((tab) => { const active = tab === button; tab.classList.toggle("selected", active); tab.setAttribute("aria-selected", String(active)); tab.tabIndex = active ? 0 : -1; }); return; }
     if (action === "auth-mode") { if (!["login", "register"].includes(button.dataset.mode)) throw new Error("Unknown account action."); state.authMode = button.dataset.mode; renderLogin(); return; }
+    if (action === "clear-pair-code") {
+      const input = document.querySelector("#pair-code");
+      const error = document.querySelector("#pair-code-error");
+      input.value = "";
+      error.textContent = "";
+      error.hidden = true;
+      state.pairLinkError = null;
+      input.focus();
+      return;
+    }
+    if (action === "submit-pair-code") {
+      const input = document.querySelector("#pair-code");
+      const code = input.value.trim();
+      if (!code || code.length > 128 || /\s/.test(code)) {
+        const error = document.querySelector("#pair-code-error");
+        error.textContent = "Enter a code without spaces.";
+        error.hidden = false;
+        input.focus();
+        return;
+      }
+      state.pairCode = code;
+      state.pairLinkError = null;
+      await navigate("pair");
+      return;
+    }
     if (action === "decline-pair") { clearPairLink(); navigate(requestedRoute("")); return; }
     if (action === "refresh-agents") { void render(); return; }
     if (action === "open-draft") {
@@ -970,7 +1116,7 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "use-example") { const composer = document.querySelector("#shop-prompt"); composer.value = text(button.dataset.example, "Example request"); state.prompt = composer.value; composer.focus(); composer.dispatchEvent(new Event("input", { bubbles: true })); return; }
-    if (action === "account") { openOverlay(`<span class="section-kicker">LOCAL DEMO ACCOUNT</span><h2>${esc(state.user || "Sign in")}</h2><p class="calm-copy">This demo uses a local password account and session cookie. It is not a Viseca banking login.</p>${state.user ? `<div class="agent-actions"><button type="button" class="outline-button" data-route="agents">Connected agents</button><button type="button" class="outline-button" data-action="logout">Sign out</button></div>` : `<button type="button" class="outline-button" data-action="close-overlay">Close</button>`}`, "Account"); return; }
+    if (action === "account") { openOverlay(`<span class="section-kicker">LOCAL DEMO ACCOUNT</span><h2>${esc(state.user || "Sign in")}</h2><p class="calm-copy">This demo uses a local password account and session cookie. It is not a Viseca banking login.</p>${state.user ? `<div class="agent-actions"><button type="button" class="outline-button" data-route="pair">Connect agent</button><button type="button" class="outline-button" data-route="agents">Connected agents</button><button type="button" class="outline-button" data-action="logout">Sign out</button></div>` : `<button type="button" class="outline-button" data-action="close-overlay">Close</button>`}`, "Account"); return; }
     if (action === "open-pending") { openPending(button.dataset.id); return; }
     if (action === "inspector") { inspector(button.dataset.tab); return; }
     if (action === "open-reject") { confirmDialog("Reject this spending plan?", "Your agent will not receive authority from this request.", "reject", "Reject request"); return; }
@@ -1006,7 +1152,20 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "reload") { if (state.user) void render(); else void initialize(); return; }
-    if (action === "clear-invalid-link") { if (state.route === "pair") clearPairLink(); else clearDraftLink(); navigate(requestedRoute("")); return; }
+    if (action === "clear-invalid-link") {
+      const purchase = state.route === "purchase";
+      if (state.route === "pair") clearPairLink();
+      else if (purchase) clearPurchaseLink();
+      else clearDraftLink();
+      await navigate(requestedRoute(""));
+      if (purchase && state.route === "shop") {
+        const heading = screen.querySelector(".shop-view h1");
+        if (!heading) throw new Error("The Shop heading is missing after leaving a purchase link.");
+        heading.tabIndex = -1;
+        heading.focus();
+      }
+      return;
+    }
     button.disabled = true;
     if (action === "select-mandate") {
       const id = text(button.dataset.id, "Selected permission ID");
@@ -1030,6 +1189,7 @@ document.addEventListener("click", async (event) => {
       navigate(requestedRoute());
     } else if (action === "logout") {
       await walletApi.logout();
+      clearPairLink();
       window.sessionStorage.removeItem(MANDATE_KEY);
       window.sessionStorage.removeItem(MANDATE_OWNER_KEY);
       state.pendingSerial += 1;
@@ -1042,6 +1202,7 @@ document.addEventListener("click", async (event) => {
       state.accountId = null;
       state.authMode = "login";
       state.mandate = null;
+      state.globalPolicy = null;
       state.ownedMandates = [];
       state.agents = [];
       state.pairing = null;
@@ -1073,6 +1234,27 @@ document.addEventListener("click", async (event) => {
       closeOverlay();
       navigate("agents");
       toast("Agent access revoked.", "success");
+    } else if (action === "save-global-cap" || action === "remove-global-cap") {
+      const policy = state.globalPolicy;
+      if (!policy || policy.customer !== state.accountId) throw new Error("Reload the account-wide rules before changing them.");
+      const otherRules = policy.rules.filter((rule) => !(rule.field === "authorization.billing_amount_chf" && rule.scope === "period" && rule.period_days === 7));
+      if (policy.rules.length - otherRules.length > 1) throw new Error("This seven-day rule needs a different editor.");
+      let rules = otherRules;
+      if (action === "save-global-cap") {
+        const raw = document.querySelector("#global-seven-day-cap")?.value.trim();
+        const amount = Number(raw);
+        if (!raw || !/^\d+(?:\.\d{1,2})?$/.test(raw) || !Number.isFinite(amount) || amount <= 0) throw new Error("Enter a positive CHF amount with at most two decimal places.");
+        rules = [...otherRules, {
+          field: "authorization.billing_amount_chf", operator: "<=", value: amount,
+          currency: "CHF", scope: "period", period_days: 7,
+          source_text: "Account-wide seven-day approved spending cap set in Wallet",
+        }];
+      }
+      const updated = validateGlobalPolicy(await walletApi.saveGlobalPolicy(policy.version, policy.hash, rules));
+      if (updated.version !== policy.version + 1) throw new Error("The Wallet did not return the next account-wide rule version.");
+      state.globalPolicy = updated;
+      navigate("wallet");
+      toast(action === "save-global-cap" ? "Account-wide cap saved for future permissions." : "Account-wide cap removed for future permissions.", "success");
     } else if (action === "confirm") await performConfirm();
     else if (action === "reject") await performReject();
     else if (action === "resolve") await performResolution(button);
@@ -1099,6 +1281,7 @@ document.addEventListener("click", async (event) => {
     if (error.status === 401) { sessionExpired(error); return; }
     if (error.status === 404 && action === "approve-pair") { void render(); return; }
     if (error.status === 409 && state.route === "review") { state.draft = null; state.answers = {}; void render(); }
+    if (error.status === 409 && (action === "save-global-cap" || action === "remove-global-cap")) { state.globalPolicy = null; void render(); }
     toast(error.message);
     if (action === "resolve") { navigate("wallet"); return; }
     if (button.isConnected) button.disabled = false;
@@ -1176,6 +1359,10 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && ["username", "password"].includes(event.target.id)) {
     event.preventDefault();
     document.querySelector('[data-action="login"], [data-action="register"]').click();
+  }
+  if (event.key === "Enter" && event.target.id === "pair-code") {
+    event.preventDefault();
+    document.querySelector('[data-action="submit-pair-code"]').click();
   }
 });
 

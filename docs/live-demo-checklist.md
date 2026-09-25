@@ -12,6 +12,7 @@ Recorded state: 25 September 2026, before the morning dry run. Unchecked items b
 | Restart with an unanswered step-up | [SCEN0130](eval/live-SCEN0130-2026-09-24.md) | Zero approved spend in that run |
 | Platform expiry while worker was down | [Restart reconciliation](eval/restart-reconcile-2026-09-24.md) | Strictly verified timeout declines only |
 | MCP proposal, status and summary with a real mandate | [MCP transcript](samples/mcp-transcript-scen0002.md) | Does not establish an actual human Wallet step-up answer |
+| Current-checkout paired Wallet and MCP rehearsal | [Local paired rehearsal](eval/takeover-local-rehearsal-2026-09-25.md) | Disposable store; draft rejected without a simulator mandate or human purchase answer |
 
 ## Before a live run
 

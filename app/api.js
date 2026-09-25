@@ -32,6 +32,7 @@ const walletApi = (() => {
     agents: () => request("/agents"),
     revokeAgent: (id) => request(`/agents/${encodeURIComponent(id)}/revoke`, { method: "POST" }),
     draft: (id) => request(`/drafts/${encodeURIComponent(id)}`),
+    boundaryResults: (id) => request(`/drafts/${encodeURIComponent(id)}/boundary-results`),
     drafts: () => request("/drafts?state=all"),
     confirm: (id, version, hash, answers) => request(`/drafts/${encodeURIComponent(id)}/confirm`, {
       method: "POST", body: JSON.stringify({ version, hash, answers }),
@@ -42,6 +43,9 @@ const walletApi = (() => {
     mandate: (id) => request(`/mandates/${encodeURIComponent(id)}`),
     mandates: () => request("/mandates?status=all"),
     globalPolicy: () => request("/global-policy"),
+    saveGlobalPolicy: (version, hash, rules) => request("/global-policy", {
+      method: "PUT", body: JSON.stringify({ expected_version: version, expected_hash: hash, rules }),
+    }),
     tighten: (id) => request(`/mandates/${encodeURIComponent(id)}/tighten`, {
       method: "POST", body: JSON.stringify({ uncertainty_policy: "decline" }),
     }),
