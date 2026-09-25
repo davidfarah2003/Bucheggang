@@ -21,8 +21,10 @@ const state = {
   walletTab: "needs",
   activityFilter: "all",
   draft: null,
+  ownedDrafts: [],
   answers: {},
   mandate: null,
+  ownedMandates: [],
   pending: [],
   history: [],
   details: new Map(),
@@ -123,6 +125,43 @@ function validateDraft(draft) {
   return draft;
 }
 
+function validateDraftList(items) {
+  if (!Array.isArray(items)) throw new Error("The Wallet did not return a list of spending requests.");
+  const seen = new Set();
+  return items.map((item) => {
+    const id = text(item?.draft_id, "Spending request ID");
+    if (seen.has(id)) throw new Error(`The spending request ${id} appears twice.`);
+    seen.add(id);
+    if (!Number.isInteger(item.version) || !Number.isInteger(item.open_questions) || item.open_questions < 0) throw new Error("A spending request has invalid counts or version.");
+    text(item.hash, "Spending request hash");
+    text(item.instruction, "Spending request");
+    if (!["confirming", "confirmed", "rejected"].includes(item.state) || !["ask", "decline", "approve"].includes(item.uncertainty_policy)) throw new Error("A spending request has an unknown state.");
+    if (!Array.isArray(item.plain_english)) throw new Error("A spending request has no rule summaries.");
+    item.plain_english.forEach((rule) => text(rule, "Rule summary"));
+    if (!Number.isFinite(new Date(text(item.created_at, "Request time")).getTime())) throw new Error("A spending request has an invalid time.");
+    if (item.state === "confirmed") text(item.mandate_id, "Confirmed permission ID");
+    else if (item.mandate_id !== null) throw new Error("An unconfirmed request has a permission ID.");
+    return item;
+  });
+}
+
+function validateMandateList(items) {
+  if (!Array.isArray(items)) throw new Error("The Wallet did not return a list of spending permissions.");
+  const seen = new Set();
+  return items.map((item) => {
+    const id = text(item?.mandate_id, "Permission ID");
+    if (seen.has(id)) throw new Error(`The permission ${id} appears twice.`);
+    seen.add(id);
+    text(item.draft_id, "Confirmed request ID");
+    text(item.hash, "Permission hash");
+    text(item.instruction, "Permission request");
+    if (!Number.isInteger(item.version) || !Number.isInteger(item.approvals_count) || item.approvals_count < 0 || !Number.isInteger(item.pending_step_ups) || item.pending_step_ups < 0) throw new Error("A permission has invalid counts or version.");
+    if (!["active", "revoked", "superseded", "expired"].includes(item.status)) throw new Error("A permission has an unknown status.");
+    if (!Number.isFinite(new Date(text(item.confirmed_at, "Confirmation time")).getTime())) throw new Error("A permission has an invalid confirmation time.");
+    return item;
+  });
+}
+
 function validateMandate(payload) {
   if (!payload || !payload.mandate || !payload.draft || !payload.effective_policy || !payload.state) throw new Error("The Wallet returned an incomplete permission.");
   const { mandate, draft, effective_policy, state: usage } = payload;
@@ -196,8 +235,10 @@ function sessionExpired(error) {
   state.timer = null;
   state.user = null;
   state.mandate = null;
+  state.ownedMandates = [];
   state.pending = [];
   state.draft = null;
+  state.ownedDrafts = [];
   state.answers = {};
   state.details.clear();
   state.history = [];
@@ -304,6 +345,22 @@ function walletTabs() {
   ].map(([id, label]) => `<button type="button" role="tab" aria-selected="${state.walletTab === id}" tabindex="${state.walletTab === id ? 0 : -1}" class="${state.walletTab === id ? "selected" : ""}" data-action="wallet-tab" data-tab="${id}">${label}</button>`).join("")}</div>`;
 }
 
+function linkedDraftNeedsDecision() {
+  return Boolean(state.draft && !state.ownedDrafts.some((item) => item.draft_id === state.draft.draft_id));
+}
+
+function ownedRequestCard(item) {
+  const label = item.state === "confirming" ? "Confirmation in progress" : item.state === "confirmed" ? "Confirmed" : "Rejected";
+  const body = `<span class="section-kicker">${esc(label.toUpperCase())}</span><strong>${esc(item.instruction)}</strong>${item.plain_english.length ? `<small>${esc(item.plain_english[0])}</small>` : ""}`;
+  return item.state === "confirmed"
+    ? `<button type="button" class="request-record request-button" data-action="select-mandate" data-id="${esc(item.mandate_id)}" data-tab="active">${body}<span>View permission <span aria-hidden="true">→</span></span></button>`
+    : `<article class="request-record">${body}</article>`;
+}
+
+function mandateChoices(items, selectedId, tab = "active") {
+  return `<div class="mandate-list" role="group" aria-label="Your spending permissions">${items.map((item) => `<button type="button" class="mandate-choice ${item.mandate_id === selectedId ? "is-selected" : ""}" data-action="select-mandate" data-id="${esc(item.mandate_id)}" data-tab="${esc(tab)}" aria-pressed="${item.mandate_id === selectedId}"><span class="section-kicker">${esc(item.status.toUpperCase())}</span><strong>${esc(item.instruction)}</strong><small>${item.approvals_count} approved purchase${item.approvals_count === 1 ? "" : "s"}${item.pending_step_ups ? ` · ${item.pending_step_ups} pending review` : ""}</small></button>`).join("")}</div>`;
+}
+
 function schedulePendingRefresh() {
   window.clearTimeout(state.timer);
   if (state.route !== "wallet" || state.walletTab !== "needs" || !state.user) return;
@@ -328,20 +385,30 @@ async function renderWallet(serial) {
   if (state.walletTab === "needs") schedulePendingRefresh();
 }
 
+function needsHeading(count) {
+  if (count) return `${count} thing${count === 1 ? " needs" : "s need"} you`;
+  return state.ownedDrafts.some((item) => item.state === "confirming") ? "Confirmation in progress" : "You're all caught up";
+}
+
 async function needsContent(serial) {
-  const [draft, pending] = await Promise.all([
-    linkedDraftId() ? walletApi.draft(linkedDraftId()).then(validateDraft) : Promise.resolve(null),
+  const linked = linkedDraftId();
+  const [draft, pending, ownedDrafts] = await Promise.all([
+    linked ? walletApi.draft(linked).then(validateDraft) : Promise.resolve(null),
     walletApi.pending(),
+    walletApi.drafts().then(validateDraftList),
   ]);
   if (serial !== state.serial) return "";
   if (!Array.isArray(pending)) throw new Error("The Wallet did not return a list of pending purchases.");
   state.pending = pending;
   state.draft = draft;
-  document.querySelector("#wallet-indicator").hidden = !(draft || pending.length);
-  return `<div class="wallet-section"><h2 id="needs-heading">${draft || pending.length ? `${(draft ? 1 : 0) + pending.length} thing${(draft ? 1 : 0) + pending.length === 1 ? " needs" : "s need"} you` : "You're all caught up"}</h2>
-    ${draft ? `<button type="button" class="need-card" data-route="review"><span class="section-kicker">SPENDING REQUEST</span><strong>Review shopping plan</strong><span>${esc(productName(draft))}${purchaseCap(draft.rules) ? ` · ${esc(money(purchaseCap(draft.rules).amount))}` : ""}</span><b aria-hidden="true">›</b></button>` : ""}
+  state.ownedDrafts = ownedDrafts;
+  const count = pending.length + (linkedDraftNeedsDecision() ? 1 : 0);
+  document.querySelector("#wallet-indicator").hidden = !count;
+  return `<div class="wallet-section"><h2 id="needs-heading">${esc(needsHeading(count))}</h2>
+    ${linkedDraftNeedsDecision() ? `<button type="button" class="need-card" data-route="review"><span class="section-kicker">SPENDING REQUEST</span><strong>Review shopping plan</strong><span>${esc(productName(draft))}${purchaseCap(draft.rules) ? ` · ${esc(money(purchaseCap(draft.rules).amount))}` : ""}</span><b aria-hidden="true">›</b></button>` : ""}
     <div id="pending-list">${pending.map(pendingCard).join("")}</div>
-    ${draft || pending.length ? "" : `<p class="calm-copy">Spending requests and purchases that need a decision will appear here.</p>`}</div>`;
+    ${count ? "" : `<p class="calm-copy">${ownedDrafts.some((item) => item.state === "confirming") ? "Your confirmation is being checked. It will appear as confirmed when the backend accepts it." : "Spending requests and purchases that need a decision will appear here."}</p>`}
+    ${ownedDrafts.length ? `<section class="request-history"><h3>Recent spending requests</h3>${ownedDrafts.map(ownedRequestCard).join("")}</section>` : ""}</div>`;
 }
 
 function pendingTimeLabel(expiresAt) {
@@ -411,9 +478,9 @@ async function refreshPending() {
         if (deadline) deadline.textContent = "This decision window has closed. Refresh Wallet for the final outcome.";
       }
     }
-    const count = pending.length + (state.draft ? 1 : 0);
+    const count = pending.length + (linkedDraftNeedsDecision() ? 1 : 0);
     const heading = document.querySelector("#needs-heading");
-    const title = count ? `${count} thing${count === 1 ? " needs" : "s need"} you` : "You're all caught up";
+    const title = needsHeading(count);
     if (heading.textContent !== title) heading.textContent = title;
     document.querySelector("#wallet-indicator").hidden = !count;
     return true;
@@ -447,33 +514,67 @@ function ruleGroups(rules) {
 }
 
 async function activeContent(serial) {
-  const id = mandateId();
-  if (!id) return `<div class="wallet-section"><h2>No active spending permission</h2><p class="calm-copy">An external shopping agent can send you a spending plan. Your Wallet will ask you to approve it.</p><button type="button" class="outline-button" data-route="shop">Go to Shop</button></div>`;
-  const payload = validateMandate(await walletApi.mandate(id));
+  const items = validateMandateList(await walletApi.mandates());
   if (serial !== state.serial) return "";
-  state.mandate = payload;
-  const { mandate, draft, effective_policy, state: usage } = payload;
-  const cap = purchaseCap(effective_policy.rules);
-  return `<div class="wallet-section"><h2>Spending permission</h2><section class="permission-card"><span class="section-kicker">${esc(mandate.status.toUpperCase())}</span><h3>${esc(productName(draft))}</h3><strong>${cap ? esc(money(cap.amount)) : "No per-purchase amount limit"}</strong><p>${cap ? cap.strict ? "Each purchase must stay below this amount." : "Maximum per purchase." : "Review the confirmed rules before your agent shops."}</p><div class="permission-stats"><span>Approved purchases</span><b>${usage.approvals.length}</b><span>Approved spend</span><b>${esc(money(usage.approvals.reduce((sum, entry) => sum + entry.amount_chf, 0)))}</b></div></section><p class="calm-copy">${mandate.status === "active" ? "Only the rules you confirmed grant purchasing authority." : `This permission is ${esc(mandate.status)} and cannot authorize new purchases.`}</p><button type="button" class="text-button" data-action="wallet-tab" data-tab="rules">View current rules <span aria-hidden="true">→</span></button></div>`;
+  state.ownedMandates = items;
+  if (!items.length) {
+    state.mandate = null;
+    return `<div class="wallet-section"><h2>No confirmed spending permissions</h2><p class="calm-copy">An external shopping agent can send you a spending plan. Your Wallet will ask you to approve it.</p><button type="button" class="outline-button" data-route="shop">Go to Shop</button></div>`;
+  }
+  const id = mandateId();
+  const selected = items.find((item) => item.mandate_id === id);
+  let detail = `<p class="calm-copy">${id ? "Your saved selection is unavailable to this account. Choose a permission below." : "Choose a permission to see its current limits and recorded spend."}</p>`;
+  state.mandate = null;
+  if (selected) {
+    const response = await walletApi.mandate(id);
+    if (serial !== state.serial) return "";
+    const payload = validateMandate(response);
+    if (payload.mandate.mandate_id !== id) throw new Error("The selected permission does not match the Wallet response.");
+    state.mandate = payload;
+    const { mandate, draft, effective_policy, state: usage } = payload;
+    const cap = purchaseCap(effective_policy.rules);
+    detail = `<section class="permission-card"><span class="section-kicker">${esc(mandate.status.toUpperCase())}</span><h3>${esc(productName(draft))}</h3><strong>${cap ? esc(money(cap.amount)) : "No per-purchase amount limit"}</strong><p>${cap ? cap.strict ? "Each purchase must stay below this amount." : "Maximum per purchase." : "Review the confirmed rules before your agent shops."}</p><div class="permission-stats"><span>Approved purchases</span><b>${usage.approvals.length}</b><span>Approved spend</span><b>${esc(money(usage.approvals.reduce((sum, entry) => sum + entry.amount_chf, 0)))}</b></div></section><p class="calm-copy">${mandate.status === "active" ? "Only the rules you confirmed grant purchasing authority." : `This permission is ${esc(mandate.status)} and cannot authorize new purchases.`}</p><button type="button" class="text-button" data-action="wallet-tab" data-tab="rules">View current rules <span aria-hidden="true">→</span></button>`;
+  }
+  return `<div class="wallet-section"><h2>Spending permissions</h2>${detail}<section class="permission-list"><h3>All permissions</h3>${mandateChoices(items, selected?.mandate_id)}</section></div>`;
 }
 
 async function rulesContent(serial) {
-  const id = mandateId();
-  if (!id) return `<div class="wallet-section"><h2>Rules for your permissions</h2><p class="calm-copy">You have no confirmed permission to inspect. Account-wide defaults are not available in this demo.</p></div>`;
-  const payload = validateMandate(await walletApi.mandate(id));
+  const items = validateMandateList(await walletApi.mandates());
   if (serial !== state.serial) return "";
-  state.mandate = payload;
-  const { mandate, effective_policy } = payload;
-  return `<div class="wallet-section"><h2>Rules for this permission</h2><p class="calm-copy">These limits belong to the spending permission you confirmed. Account-wide defaults are not available in this demo.</p>${ruleGroups(effective_policy.rules)}<section class="rule-group"><h3>Missing information</h3><p>${esc(effective_policy.uncertainty_policy === "ask" ? "Ask me before buying" : effective_policy.uncertainty_policy === "decline" ? "Decline the purchase" : "Allow the purchase when evidence is missing")}</p></section><section class="rule-group"><h3>Security</h3><p>Purchase decisions and unfamiliar evidence are checked by the Wallet backend. Your agent cannot change these confirmed rules.</p></section><div class="rule-actions"><button type="button" class="outline-button" data-action="open-tighten" ${mandate.status !== "active" || effective_policy.uncertainty_policy === "decline" ? "disabled" : ""}>Decline uncertain purchases</button><button type="button" class="danger-link" data-action="open-revoke" ${mandate.status !== "active" ? "disabled" : ""}>Revoke this permission</button></div></div>`;
+  state.ownedMandates = items;
+  const id = mandateId();
+  const selected = items.find((item) => item.mandate_id === id);
+  let detail = `<p class="calm-copy">${items.length ? "Select a permission below to inspect its confirmed rules." : "You have no confirmed permission to inspect."} Account-wide settings cannot be edited in this Wallet view yet.</p>`;
+  state.mandate = null;
+  if (selected) {
+    const response = await walletApi.mandate(id);
+    if (serial !== state.serial) return "";
+    const payload = validateMandate(response);
+    if (payload.mandate.mandate_id !== id) throw new Error("The selected permission does not match the Wallet response.");
+    state.mandate = payload;
+    const { mandate, effective_policy } = payload;
+    detail = `<p class="calm-copy">These limits belong to the spending permission you confirmed. Account-wide settings cannot be edited in this Wallet view yet.</p>${ruleGroups(effective_policy.rules)}<section class="rule-group"><h3>Missing information</h3><p>${esc(effective_policy.uncertainty_policy === "ask" ? "Ask me before buying" : effective_policy.uncertainty_policy === "decline" ? "Decline the purchase" : "Allow the purchase when evidence is missing")}</p></section><section class="rule-group"><h3>Security</h3><p>Purchase decisions and unfamiliar evidence are checked by the Wallet backend. Your agent cannot change these confirmed rules.</p></section><div class="rule-actions"><button type="button" class="outline-button" data-action="open-tighten" ${mandate.status !== "active" || effective_policy.uncertainty_policy === "decline" ? "disabled" : ""}>Decline uncertain purchases</button><button type="button" class="danger-link" data-action="open-revoke" ${mandate.status !== "active" ? "disabled" : ""}>Revoke this permission</button></div>`;
+  }
+  return `<div class="wallet-section"><h2>Rules for your permissions</h2>${detail}${items.length ? `<section class="permission-list"><h3>Choose a permission</h3>${mandateChoices(items, selected?.mandate_id, "rules")}</section>` : ""}</div>`;
 }
 
 async function renderReview(serial) {
   loading("Loading saved spending plan…");
   const id = text(linkedDraftId(), "Draft link");
-  const draft = validateDraft(await walletApi.draft(id));
+  const [draft, ownedDrafts] = await Promise.all([
+    walletApi.draft(id).then(validateDraft),
+    walletApi.drafts().then(validateDraftList),
+  ]);
   if (serial !== state.serial) return;
   if (state.draft?.draft_id !== id || state.draft.version !== draft.version || state.draft.hash !== draft.hash) state.answers = {};
   state.draft = draft;
+  state.ownedDrafts = ownedDrafts;
+  const recorded = ownedDrafts.find((item) => item.draft_id === id);
+  if (recorded) {
+    const message = recorded.state === "confirmed" ? "This request was confirmed. Review its current permission in Wallet." : recorded.state === "rejected" ? "This request was rejected and cannot be authorized." : "Confirmation is in progress. The Wallet will show the result when the backend accepts it.";
+    setScreen(`<section class="review-view"><button class="back-button" type="button" data-route="wallet">‹ Wallet</button><div class="page-title"><h1>Spending request ${esc(recorded.state)}</h1></div><p class="review-subtitle">${esc(message)}</p>${recorded.state === "confirmed" ? `<button class="outline-button" type="button" data-action="select-mandate" data-id="${esc(recorded.mandate_id)}" data-tab="active">View permission</button>` : ""}</section>`);
+    return;
+  }
   const cap = purchaseCap(draft.rules);
   const questions = draft.open_questions;
   const ready = questions.every((question) => question.confirming_answers.includes(state.answers[question.question] ?? question.answer));
@@ -481,7 +582,7 @@ async function renderReview(serial) {
     const answer = state.answers[question.question] ?? question.answer;
     return answer && !question.confirming_answers.includes(answer);
   });
-  setScreen(`<section class="review-view"><button class="back-button" type="button" data-route="wallet">‹ Wallet</button><div class="page-title"><h1>Review spending permission</h1></div><p class="review-subtitle">Your Wallet loaded the plan saved by your shopping agent. Only you can authorize it.</p><section class="review-summary"><span class="section-kicker">YOUR AGENT MAY BUY</span><h2>${esc(productName(draft))}</h2><strong>${cap ? esc(money(cap.amount)) : "No per-purchase cap"}</strong><small>${cap ? cap.strict ? "SPEND MUST STAY BELOW THIS AMOUNT" : "MAXIMUM PER PURCHASE" : "REVIEW ALL RULES BEFORE AUTHORIZING"}</small></section><section class="review-rules"><h2>The limits you'll authorize</h2>${ruleGroups(draft.rules)}<details><summary>Original request</summary><p>${esc(draft.instruction)}</p></details><details><summary>Examples from the agent</summary>${draft.examples.map((example) => `<p><strong>${esc(example.expected)}</strong> · ${esc(example.description)}. ${esc(example.why)}</p>`).join("")}</details></section>
+  setScreen(`<section class="review-view"><button class="back-button" type="button" data-route="wallet">‹ Wallet</button><div class="page-title"><h1>Review spending permission</h1></div><p class="review-subtitle">Your Wallet loaded the plan saved by your shopping agent. Only you can authorize it.<span class="review-version">Saved draft version ${esc(draft.version)}.</span></p><section class="review-summary"><span class="section-kicker">YOUR AGENT MAY BUY</span><h2>${esc(productName(draft))}</h2><strong>${cap ? esc(money(cap.amount)) : "No per-purchase cap"}</strong><small>${cap ? cap.strict ? "SPEND MUST STAY BELOW THIS AMOUNT" : "MAXIMUM PER PURCHASE" : "REVIEW ALL RULES BEFORE AUTHORIZING"}</small></section><section class="review-rules"><h2>The limits you'll authorize</h2>${ruleGroups(draft.rules)}<details><summary>Original request</summary><p>${esc(draft.instruction)}</p></details><details><summary>Examples from the agent</summary>${draft.examples.map((example) => `<p><strong>${esc(example.expected)}</strong> · ${esc(example.description)}. ${esc(example.why)}</p>`).join("")}</details></section>
     ${questions.length ? `<section class="questions"><h2>Confirm these details</h2>${questions.map((question) => { const selected = state.answers[question.question] ?? question.answer; return `<div class="question"><strong>${esc(question.question)}</strong><div class="choices">${question.options.map((option) => `<button type="button" class="${selected === option ? "selected" : ""}" aria-pressed="${selected === option}" data-action="answer-question" data-question="${esc(question.question)}" data-answer="${esc(option)}">${esc(option)}</button>`).join("")}</div></div>`; }).join("")}${needsRevision ? `<p class="uncertainty-note">Your selection requires a revised plan from the shopping agent before authorization.</p>` : ""}</section>` : ""}<div class="review-spacer"></div><div class="review-actions"><button type="button" class="outline-button" data-action="open-reject">Reject</button><button type="button" class="primary-button" data-action="confirm" ${ready ? "" : "disabled"}>Authorize agent</button></div></section>`);
 }
 
@@ -496,12 +597,12 @@ function decisionLabel(decision) {
 }
 
 function activityTabs() {
-  return `<div class="activity-tabs" role="tablist" aria-label="Filter decisions">${[["all", "All"], ["purchases", "Purchases"], ["blocked", "Blocked"]].map(([id, label]) => `<button type="button" role="tab" tabindex="${state.activityFilter === id ? 0 : -1}" aria-selected="${state.activityFilter === id}" class="${state.activityFilter === id ? "selected" : ""}" data-action="activity-filter" data-filter="${id}">${label}</button>`).join("")}</div>`;
+  return `<div class="activity-tabs" role="tablist" aria-label="Filter decisions">${[["all", "All"], ["purchases", "Purchases"], ["blocked", "Declined"]].map(([id, label]) => `<button type="button" role="tab" tabindex="${state.activityFilter === id ? 0 : -1}" aria-selected="${state.activityFilter === id}" class="${state.activityFilter === id ? "selected" : ""}" data-action="activity-filter" data-filter="${id}">${label}</button>`).join("")}</div>`;
 }
 
 function activityRows() {
   const filtered = state.history.filter(({ decision }) => state.activityFilter === "all" || (state.activityFilter === "purchases" ? decision.decision === "approve" : decision.decision === "decline"));
-  if (!filtered.length) return `<section class="wallet-empty"><h2>No ${state.activityFilter === "all" ? "decisions" : state.activityFilter} yet</h2><p>Decisions for this permission will appear here after the backend records them.</p></section>`;
+  if (!filtered.length) return `<section class="wallet-empty"><h2>No ${state.activityFilter === "all" ? "decisions" : state.activityFilter === "blocked" ? "declines" : "purchases"} yet</h2><p>Decisions for this permission will appear here after the backend records them.</p></section>`;
   let lastDay = "";
   return filtered.map(({ decision }) => {
     const payload = state.details.get(decision.authorization_id);
@@ -520,9 +621,12 @@ function activityRows() {
 
 async function renderActivity(serial) {
   const id = mandateId();
-  if (!id) { setScreen(`<section class="activity-view"><div class="page-title"><h1>Activity</h1></div><p class="calm-copy">No confirmed permission is selected. Recorded purchase decisions will appear here.</p></section>`); return; }
+  if (!id) { setScreen(`<section class="activity-view"><div class="page-title"><h1>Activity</h1></div><p class="calm-copy">Choose a spending permission in Wallet to see its recorded purchase decisions.</p><button type="button" class="outline-button" data-action="wallet-tab" data-tab="active">Choose a permission</button></section>`); return; }
   loading("Loading recorded decisions…");
-  await walletApi.mandate(id);
+  const response = await walletApi.mandate(id);
+  if (serial !== state.serial) return;
+  const permission = validateMandate(response);
+  if (permission.mandate.mandate_id !== id) throw new Error("The selected permission does not match the Wallet response.");
   const history = await walletApi.history(id);
   if (!Array.isArray(history)) throw new Error("The Wallet did not return a decision history.");
   history.forEach((entry) => {
@@ -538,7 +642,7 @@ async function renderActivity(serial) {
   })
     .sort((a, b) => new Date(b.decision.decided_at) - new Date(a.decision.decided_at));
   state.details = new Map(details.map((detail) => [detail.decision.authorization_id, detail]));
-  setScreen(`<section class="activity-view"><div class="page-title"><h1>Activity</h1></div>${activityTabs()}<div id="activity-list">${activityRows()}</div><p class="activity-disclaimer">Recorded purchase decisions for the selected permission. Permission changes are not in this history.</p></section>`);
+  setScreen(`<section class="activity-view"><div class="page-title"><h1>Activity</h1></div><p class="calm-copy">For ${esc(productName(permission.draft))}</p><button type="button" class="text-button" data-action="wallet-tab" data-tab="active">Change permission <span aria-hidden="true">→</span></button>${activityTabs()}<div id="activity-list">${activityRows()}</div><p class="activity-disclaimer">Recorded purchase decisions for the selected permission. Permission changes are not in this history.</p></section>`);
 }
 
 function openOverlay(body, title) {
@@ -707,7 +811,21 @@ document.addEventListener("click", async (event) => {
     if (action === "reload") { void render(); return; }
     if (action === "clear-invalid-link") { clearDraftLink(); navigate("shop"); return; }
     button.disabled = true;
-    if (action === "login") {
+    if (action === "select-mandate") {
+      const id = text(button.dataset.id, "Selected permission ID");
+      const tab = button.dataset.tab;
+      if (!["active", "rules"].includes(tab)) throw new Error("Unknown permission destination.");
+      const routeSerial = state.serial;
+      const response = await walletApi.mandate(id);
+      if (routeSerial !== state.serial || !state.user) return;
+      const payload = validateMandate(response);
+      if (payload.mandate.mandate_id !== id) throw new Error("The selected permission does not match the Wallet response.");
+      window.sessionStorage.setItem(MANDATE_KEY, id);
+      window.sessionStorage.setItem(MANDATE_OWNER_KEY, state.user);
+      state.mandate = payload;
+      state.walletTab = tab;
+      navigate("wallet");
+    } else if (action === "login") {
       const username = text(document.querySelector("#username").value.trim(), "Username");
       const session = await walletApi.login(username);
       state.user = text(session.username, "Session username");
@@ -727,8 +845,10 @@ document.addEventListener("click", async (event) => {
       state.serial += 1;
       state.user = null;
       state.mandate = null;
+      state.ownedMandates = [];
       state.pending = [];
       state.draft = null;
+      state.ownedDrafts = [];
       state.answers = {};
       state.history = [];
       state.detail = null;

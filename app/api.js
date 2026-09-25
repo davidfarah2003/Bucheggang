@@ -27,6 +27,7 @@ const walletApi = (() => {
     login: (username) => request("/session", { method: "POST", body: JSON.stringify({ username }) }),
     logout: () => request("/session", { method: "DELETE" }),
     draft: (id) => request(`/drafts/${encodeURIComponent(id)}`),
+    drafts: () => request("/drafts?state=all"),
     confirm: (id, version, hash, answers) => request(`/drafts/${encodeURIComponent(id)}/confirm`, {
       method: "POST", body: JSON.stringify({ version, hash, answers }),
     }),
@@ -34,6 +35,7 @@ const walletApi = (() => {
       method: "POST", body: JSON.stringify({ version, hash, reason }),
     }),
     mandate: (id) => request(`/mandates/${encodeURIComponent(id)}`),
+    mandates: () => request("/mandates?status=all"),
     tighten: (id) => request(`/mandates/${encodeURIComponent(id)}/tighten`, {
       method: "POST", body: JSON.stringify({ uncertainty_policy: "decline" }),
     }),
