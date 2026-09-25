@@ -4,6 +4,7 @@ const MANDATE_KEY = "viseca.demo.mandateId";
 const MANDATE_OWNER_KEY = "viseca.demo.mandateOwner";
 class DraftLinkError extends Error {}
 class PairLinkError extends Error {}
+class PurchaseLinkError extends Error {}
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const screen = document.querySelector("#screen");
 const overlayRoot = document.querySelector("#overlay-root");
@@ -170,7 +171,25 @@ function clearPairLink() {
   window.history.replaceState(null, "", url.pathname + url.search + url.hash);
 }
 
+function hasPurchaseLink() {
+  return new URLSearchParams(window.location.search).has("authorization_id");
+}
+
+function linkedPurchaseId() {
+  const query = new URLSearchParams(window.location.search);
+  const ids = query.getAll("authorization_id");
+  if (ids.length !== 1 || !ids[0]?.trim() || hasDraftLink() || hasPairLink()) throw new PurchaseLinkError("The purchase link must contain one pending purchase ID and no other Wallet link.");
+  return ids[0];
+}
+
+function clearPurchaseLink() {
+  const url = new URL(window.location.href);
+  for (const name of ["authorization_id", "draft", "draft_id", "pair"]) url.searchParams.delete(name);
+  window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+}
+
 function requestedRoute(hash = window.location.hash.slice(1)) {
+  if (hasPurchaseLink()) return "purchase";
   if (hasPairLink()) return "pair";
   if (hasDraftLink()) return "review";
   return hash || "shop";
@@ -287,11 +306,12 @@ function normalRoute(route) {
 
 function navigate(route, { keepScroll = false } = {}) {
   route = normalRoute(route);
-  if (!["shop", "wallet", "activity", "review", "pair", "agents"].includes(route)) {
+  if (!["shop", "wallet", "activity", "review", "purchase", "pair", "agents"].includes(route)) {
     setScreen(errorPanel("This page is unavailable", new Error(`Unknown page: ${route}`)));
     return;
   }
   if (state.route === "pair" && route !== "pair") clearPairLink();
+  if (state.route === "purchase" && route !== "purchase") clearPurchaseLink();
   state.route = route;
   state.serial += 1;
   state.pendingSerial += 1;
@@ -307,13 +327,13 @@ function navigate(route, { keepScroll = false } = {}) {
   closeOverlay();
   if (window.location.hash !== `#${route}`) window.history.replaceState(null, "", `#${route}`);
   document.querySelectorAll(".nav-button").forEach((button) => {
-    const selected = button.dataset.route === (["review", "pair", "agents"].includes(route) ? "wallet" : route);
+    const selected = button.dataset.route === (["review", "purchase", "pair", "agents"].includes(route) ? "wallet" : route);
     button.classList.toggle("is-active", selected);
     if (selected) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   });
   if (!keepScroll) window.scrollTo(0, 0);
-  void render();
+  return render();
 }
 
 function sessionExpired(error) {
@@ -356,21 +376,27 @@ async function render() {
     if (state.route === "shop") await renderShop(serial);
     else if (state.route === "wallet") await renderWallet(serial);
     else if (state.route === "review") await renderReview(serial);
+    else if (state.route === "purchase") await renderPurchase(serial);
     else if (state.route === "pair") await renderPair(serial);
     else if (state.route === "agents") await renderAgents(serial);
     else await renderActivity(serial);
   } catch (error) {
     if (serial !== state.serial) return;
     if (error.status === 401) { sessionExpired(error); return; }
-    const linkAction = state.route === "pair" && (error instanceof PairLinkError || error.status === 404) ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Continue without this agent link</button>` : error instanceof DraftLinkError ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this link</button>` : "";
-    const title = state.route === "review" ? "Review spending permission" : state.route === "pair" ? "Connect a shopping agent" : state.route;
+    const linkAction = state.route === "purchase" ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this purchase link</button>` : state.route === "pair" && (error instanceof PairLinkError || error.status === 404) ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Continue without this agent link</button>` : error instanceof DraftLinkError ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this link</button>` : "";
+    const title = state.route === "review" ? "Review spending permission" : state.route === "purchase" ? "Review pending purchase" : state.route === "pair" ? "Connect a shopping agent" : state.route;
     setScreen(`<div class="page-title"><h1>${esc(title)}</h1></div>${errorPanel("This screen could not be loaded", error)}${linkAction}`);
+    if (state.route === "purchase") {
+      const heading = screen.querySelector(".page-title h1");
+      heading.tabIndex = -1;
+      heading.focus();
+    }
   }
 }
 
 function renderLogin() {
   const registering = state.authMode === "register";
-  const context = hasPairLink() ? `${registering ? "Create an account" : "Sign in"} to review an agent connection request.` : `${registering ? "Create an account" : "Sign in"} to review spending permissions sent by your shopping agent.`;
+  const context = hasPurchaseLink() ? `${registering ? "Create an account" : "Sign in"} to review a pending purchase.` : hasPairLink() ? `${registering ? "Create an account" : "Sign in"} to review an agent connection request.` : `${registering ? "Create an account" : "Sign in"} to review spending permissions sent by your shopping agent.`;
   setScreen(`<section class="identity-view"><div class="identity-intro"><span class="section-kicker">LOCAL DEMO ACCOUNT</span><h1>${registering ? "Create your account" : "Welcome to your Wallet."}</h1><p>${context} This uses a local account, not a Viseca banking login.</p></div><div class="auth-fields"><label for="username">Username</label><input id="username" maxlength="80" autocomplete="username" placeholder="Your username" /><label for="password">Password</label><input id="password" type="password" minlength="8" maxlength="256" autocomplete="${registering ? "new-password" : "current-password"}" /><p class="auth-error" role="alert" hidden></p><button class="primary-button" type="button" data-action="${registering ? "register" : "login"}">${registering ? "Create account" : "Sign in"}</button></div><div class="auth-switch"><span>${registering ? "Already have an account?" : "New here?"}</span><button type="button" class="text-button" data-action="auth-mode" data-mode="${registering ? "login" : "register"}">${registering ? "Sign in" : "Create an account"}</button></div></section>`);
 }
 
@@ -562,14 +588,34 @@ function pendingTitle(evidence) {
   return count === 1 ? "One detail needs a decision" : count ? `${count} details need a decision` : "Review this purchase";
 }
 
-function pendingCard(item) {
+function pendingPurchase(item) {
   text(item.authorization_id, "Pending purchase ID");
-  text(item.expires_at, "Pending purchase deadline");
+  validTime(item.expires_at, "Pending purchase deadline");
   if (!item.event?.authorization?.merchant || !item.decision || !Array.isArray(item.decision.evidence)) throw new Error("A pending purchase is incomplete.");
   const auth = item.event.authorization;
   if (auth.authorization_id !== item.authorization_id || item.decision.authorization_id !== item.authorization_id || item.decision.decision !== "step_up") throw new Error("The pending purchase and its decision do not match.");
-  const merchant = text(auth.merchant.merchant_name, "Pending merchant");
-  return `<button type="button" class="need-card uncertain-card" data-action="open-pending" data-id="${esc(item.authorization_id)}"><span class="section-kicker" aria-live="off">PURCHASE REVIEW · ${esc(pendingTimeLabel(item.expires_at))}</span><strong>${esc(pendingTitle(item.decision.evidence))}</strong><span>${esc(merchant)} · ${esc(money(auth.billing_amount_chf, auth.currency))}</span><small>${esc(item.decision.customer_message)}</small><b aria-hidden="true">›</b></button>`;
+  text(auth.merchant.merchant_name, "Pending merchant");
+  text(item.decision.customer_message, "Purchase review message");
+  return auth;
+}
+
+function pendingCard(item) {
+  const auth = pendingPurchase(item);
+  return `<button type="button" class="need-card uncertain-card" data-action="open-pending" data-id="${esc(item.authorization_id)}"><span class="section-kicker" aria-live="off">PURCHASE REVIEW · ${esc(pendingTimeLabel(item.expires_at))}</span><strong>${esc(pendingTitle(item.decision.evidence))}</strong><span>${esc(auth.merchant.merchant_name)} · ${esc(money(auth.billing_amount_chf, auth.currency))}</span><small>${esc(item.decision.customer_message)}</small><b aria-hidden="true">›</b></button>`;
+}
+
+async function renderPurchase(serial) {
+  loading("Loading pending purchase…");
+  const id = linkedPurchaseId();
+  const pending = await walletApi.pending();
+  if (serial !== state.serial) return;
+  if (!Array.isArray(pending)) throw new Error("The Wallet did not return pending purchases.");
+  const item = pending.find((entry) => entry.authorization_id === id);
+  if (!item) throw new PurchaseLinkError("This purchase is not pending for your account. It may have been answered or timed out.");
+  const auth = pendingPurchase(item);
+  const items = auth.items.map((entry) => text(entry.item_name, "Purchase item")).join(" + ");
+  state.pending = pending;
+  setScreen(`<section class="linked-purchase-view"><button type="button" class="back-button" data-route="shop">‹ Shop</button><div class="linked-purchase-intro"><span class="section-kicker">PURCHASE REVIEW</span><h1>Review pending purchase</h1><p>Your Wallet loaded this pending purchase for your account. Your answer applies only to this purchase.</p></div><section class="linked-purchase-summary"><h2>${esc(auth.merchant.merchant_name)}</h2><strong>${esc(money(auth.billing_amount_chf, auth.currency))}</strong><p>${esc(items)}</p><p class="linked-purchase-meta">${esc(item.decision.customer_message)}</p><p class="linked-purchase-meta"><time datetime="${esc(item.expires_at)}">${esc(new Date(item.expires_at).toLocaleString("en-CH"))}</time> · ${esc(pendingTimeLabel(item.expires_at))}</p></section><div class="linked-purchase-actions"><button type="button" class="outline-button" data-action="reload">Refresh status</button><button type="button" class="primary-button" data-action="open-pending" data-id="${esc(id)}">Review decision</button></div></section>`);
 }
 
 async function refreshPending() {
@@ -913,6 +959,7 @@ async function performResolution(button) {
   await walletApi.answer(id, decision);
   closeOverlay();
   toast(decision === "approve" ? "Your answer was accepted for this purchase." : "Your decline was accepted for this purchase.", "success");
+  if (state.route === "purchase") { navigate("wallet"); return; }
   const refreshed = await refreshPending();
   if (refreshed) schedulePendingRefresh();
 }
@@ -1006,7 +1053,20 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "reload") { if (state.user) void render(); else void initialize(); return; }
-    if (action === "clear-invalid-link") { if (state.route === "pair") clearPairLink(); else clearDraftLink(); navigate(requestedRoute("")); return; }
+    if (action === "clear-invalid-link") {
+      const purchase = state.route === "purchase";
+      if (state.route === "pair") clearPairLink();
+      else if (purchase) clearPurchaseLink();
+      else clearDraftLink();
+      await navigate(requestedRoute(""));
+      if (purchase && state.route === "shop") {
+        const heading = screen.querySelector(".shop-view h1");
+        if (!heading) throw new Error("The Shop heading is missing after leaving a purchase link.");
+        heading.tabIndex = -1;
+        heading.focus();
+      }
+      return;
+    }
     button.disabled = true;
     if (action === "select-mandate") {
       const id = text(button.dataset.id, "Selected permission ID");
