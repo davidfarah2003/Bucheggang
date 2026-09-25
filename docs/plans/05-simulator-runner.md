@@ -1,6 +1,6 @@
 # 05 Simulator runner
 
-- Status: runner implementation and original-theme live reports merged in #31, #32 and #34. Customer route ownership repair is under review. Known verification limits are listed below.
+- Status: runner foundation, replay and original-theme live reports merged in #31, #32 and #34; customer ownership and Activity repairs merged in #41 and #43. Deadline failure handling is implemented on lane/runner-deadlines, pending independent review. Durable remote-operation intents and effective-policy/state rechecks remain open.
 - Owner: David (proposed)
 - Lane: runner. Channel `team.zurichbuchegg.runner`, branch `lane/runner`, worktree `.worktrees/runner`
 - User flow step: everything between "mandate confirmed" and "decision recorded": mandate calls, scenario start, polling, deadlines, decision submission, `/resolve`, state persistence, offline replay
@@ -20,7 +20,7 @@ In:
 - `leash.runner.settings`: base URL and key from `.env`; `GET /v1/bootstrap` at start for the real deadline and human-window values.
 - Mandate client: create, confirm, get, PATCH (tighten), DELETE (revoke). Called by the policy lane's confirm route and the app's tighten and revoke routes.
 - Run loop: `POST /v1/scenario-runs`, then `GET /v1/decision-requests/next?wait=25` in a loop; 204 means check progress and continue; validate the envelope and the event strictly; skip a live ID already in `MandateState.handled` (reconcile, do not resubmit); otherwise call extract with a budget, then `evaluate`, then submit before `deadline_at`.
-- Deadline guard: the budget for extract is `deadline_at - now - 2 s`, capped at 1.5 s; if `evaluate` has not returned 1 s before the deadline (it should take under 50 ms), submit `step_up` with `engine_timeout`. Never miss a deadline silently; log it.
+- Deadline guard: the budget for extract is `deadline_at - now - 2 s`, capped at 1.5 s. Evaluation must return 1 s before the deadline. Either timeout logs and raises without submitting a substitute decision. HTTP submission must finish, including its response body, by `deadline_at`.
 - `step_up` handling: record as pending, expose through `GET /step-ups/pending`; when the app answers, `POST /resolve` and record; when the human window passes with no answer, `POST /resolve` with `decline` and `step_up_timeout`.
 - State persistence after every accepted result (`data/state/<mandate_id>.json`), so a restarted worker reconciles instead of double-counting.
 - Structured log per authorization: received, extract ms, evaluate ms, submitted at, accepted, time to deadline.
@@ -32,8 +32,8 @@ Out:
 
 ## Steps
 
-1. Settings and API client with a 30 s request timeout, matching the organizer's curl helper. No retry on 5xx or anywhere else: a non-2xx raises `ApiError(status, body)` (AGENTS.md section 6). Call `/healthz` and `/v1/bootstrap` once to see them answer.
-2. Mandate client. Try it on the `SCEN0000` instruction (the quickstart's rule) once the key arrives; before that, against a recorded response.
+1. Settings and API client with a 30 s total HTTP budget, shortened by a supplied absolute operation deadline. No retry on 5xx or anywhere else: a non-2xx raises `ApiError(status, body)` (AGENTS.md section 6). Call `/healthz` and `/v1/bootstrap` once to see them answer.
+2. Mandate client. Try it on the `SCEN0000` instruction (the quickstart's rule) once the key arrives. No recorded response substitutes for a live call.
 3. `scripts/replay.py` with the `SCEN0002` fixture draft, then explicit evaluation drafts for all 45 public attempts. Reviewed and merged in #31 at `8cb591a`; commands and assumptions are in [run-replay.md](../run-replay.md).
 4. Run loop and deadline guard. Try it against the live API as soon as the key arrives.
 5. Step-up handling and timeout resolution.
@@ -57,11 +57,11 @@ Out:
 
 These four runs finalized 50 attempts: 49 local declines and one platform-only timeout. No customer answers were sent and no purchase was approved. Missing history on the live cards kept otherwise compliant purchases uncertain, and unanswered step-ups declined after the real timeout. This verifies runner behavior, not purchase-decision accuracy or a successful customer approval journey.
 
-Known limits: the household downtime timeout remains recorded; the pending-state restart check had zero approvals and therefore does not demonstrate preservation of nonzero approved spend; the accepted-submit-before-persistence gap in the task 6 Log remains; runtime smoke evaluators and timeout substitute decisions remain in main and are separate classifier P4 work. A live revocation with requests already queued remains a Friday verification item. Model-enabled runner/app integration stays under the classifier lane's separate review and release hold.
+Known limits: the household downtime timeout remains recorded; the pending-state restart check had zero approvals and therefore does not demonstrate preservation of nonzero approved spend; the accepted-submit-before-persistence gap in the task 6 Log remains; the deadline branch removes runtime smoke evaluators and timeout substitute decisions, with the independent review still pending. HTTP timeouts report unknown remote outcomes; durable intents and reconciliation remain P3 work. A live revocation with requests already queued remains a Friday verification item. Model-enabled runner/app integration stays under the classifier lane's separate review and release hold.
 
 ## Decisions
 
-- After mandate DELETE, decline any purchase still queued for that mandate with `mandate_revoked` and resolve pending step-ups with `decline`. Verify this behavior against the live API on Friday morning before the demo.
+- Simulator runs retain their starting mandate snapshot; PATCH affects later simulator runs (technical_details.md:286,380). Local service policy applies at the time of each new decision, including tightening and revocation. An already accepted purchase is not re-decided. A pending step-up under a revoked mandate resolves to decline with `mandate_revoked`. Platform cancellation is reported only when the API confirms it. This records the engine-owner O3 semantics; shared-lock enforcement and live verification remain P3 work.
 - Reset is disabled on the live API; each demo run creates a fresh mandate and never reuses IDs.
 
 ## Log
@@ -82,3 +82,5 @@ Known limits: the household downtime timeout remains recorded; the pending-state
 2026-09-25 00:28 david_orch: customer ownership repair @0c6152e. Real HTTP against actual completed-run records reproduced an unrelated logged-in user getting 200 for mandate history and decision detail while GET mandate returned404. Shared confirmation lookup now gates history/detail/answer and filters pending by confirmed_by; rerunning the same HTTP reads produced404 for all three, anonymous requests remained401 and pending was empty. StepUpBook.get validated an actual stored step-up identity. No customer answer or simulator mutation. Standalone --serve-port without LEASH_POLICY_STORE failed before starting a run, exit1. Full 45-attempt replay at base4988981 remained11 approve/32 decline/2 step_up, local total p50 0.249ms, p99/max0.583ms. docs/eval/local-app-e2e-2026-09-25.md also records real MCP stdio/HTTP and 400px browser checks, the separate draft-link docs defect, and remaining positive-owner/human-flow limits. Review pending.
 
 2026-09-25 00:34 david_orch: Activity history repair @e6fb2ff. The actual hiking-boots record directory gave19 rows for13 authorization IDs, with step_up rows opening final-decline detail. mandate_history now selects each accepted resolution over its initial submission and keeps both audit files; actual saved records across four completed runs gave84 stored records,49 unique Activity rows, and every decision/state_after matched final detail. An unused ID with no decision/state files returned[] without creating financial state. Missing history with nonempty state raises; reading holds the recording lock. Route ownership still runs before this reader. Full public replay exited0 with11 approve/32 decline/2 step_up; p50 total0.245ms and p99/max0.444ms. No API mutation or invented answer. The newly confirmed-owner HTTP case remains for the human-ready Wallet run. Evidence: docs/eval/activity-history-2026-09-25.md.
+
+2026-09-25 david_orch: deadline-failure implementation on lane/runner-deadlines removes both fixed-output evaluators and timeout substitute decisions. Full public replay through scripts/replay.py and a separate pass through the actual runner extraction/evaluation guards both returned45 rows,11 approve/32 decline/2 step_up. Local replay total p50 0.227ms, p99/max0.420ms. Expired extraction/evaluation/submit/resolve raised before dispatch and without loading simulator settings; occupied worker extraction raised instead of returning missing facts. Real loopback HTTP returned200 and409 as expected; a trickled body exceeded a0.250s total budget and raised ApiTimeout after0.253s, with no retry. Scoped provider settings expose only a repr-hidden api_key. No simulator or model request, human answer, test suite or linter. Evidence: docs/eval/runner-deadlines-2026-09-25.md. Review and live credential rotation remain pending.

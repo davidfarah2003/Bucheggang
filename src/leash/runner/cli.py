@@ -5,19 +5,16 @@
 
 --draft is the confirmed PolicyDraft (JSON) that the mandate was created from.
 
-The evaluate callable is chosen by name from EVALUATORS. "engine" is
-leash.engine.evaluate.evaluate, the one the demo uses. The two smoke evaluators
-decline or step up every purchase; they exercise the run loop and step-up
-handling and the demo never uses them.
+The only evaluator is leash.engine.evaluate.evaluate. A failed operation
+raises and stops the runner without submitting a replacement decision.
 """
 
 import argparse
 import json
 import os
-import time
 from pathlib import Path
 
-from leash.contracts import Decision, Event, MandateState, PolicyDraft, PurchaseFacts
+from leash.contracts import PolicyDraft
 
 from leash.engine import state as state_store
 from leash.engine.evaluate import evaluate as engine_evaluate
@@ -43,57 +40,12 @@ def serve(book: stepups.StepUpBook, port: int, store: DraftStore) -> None:
     threading.Thread(target=server.run, name="step-up-routes", daemon=True).start()
 
 
-def decline_everything_smoke(
-    event: Event, policy: PolicyDraft, state: MandateState, facts: list[PurchaseFacts] | None
-) -> Decision:
-    """Smoke-test evaluator: declines every purchase. Never used in the demo."""
-    started = time.monotonic()
-    return Decision(
-        authorization_id=event.authorization.authorization_id,
-        decision="decline",
-        reason_codes=[],
-        customer_message="Declined by the runner smoke test.",
-        evidence=[],
-        explanation="Runner smoke test: this evaluator declines every purchase to exercise the run loop.",
-        engine_version="runner-smoke-decline-everything",
-        mandate_version=policy.version,
-        elapsed_ms=int((time.monotonic() - started) * 1000),
-        decided_at=loop._now(),
-    )
-
-
-def step_up_everything_smoke(
-    event: Event, policy: PolicyDraft, state: MandateState, facts: list[PurchaseFacts] | None
-) -> Decision:
-    """Smoke-test evaluator: asks the customer about every purchase. Never used in the demo."""
-    started = time.monotonic()
-    return Decision(
-        authorization_id=event.authorization.authorization_id,
-        decision="step_up",
-        reason_codes=["customer_confirmation"],
-        customer_message="Runner smoke test: please confirm or decline this purchase.",
-        evidence=[],
-        explanation="Runner smoke test: this evaluator steps up every purchase to exercise step-up handling.",
-        engine_version="runner-smoke-step-up-everything",
-        mandate_version=policy.version,
-        elapsed_ms=int((time.monotonic() - started) * 1000),
-        decided_at=loop._now(),
-    )
-
-
-EVALUATORS = {
-    "engine": engine_evaluate,
-    "decline_everything_smoke": decline_everything_smoke,
-    "step_up_everything_smoke": step_up_everything_smoke,
-}
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Drive one scenario run against the simulator.")
     parser.add_argument("--scenario", required=True)
     parser.add_argument("--mandate-id", required=True)
     parser.add_argument("--draft", required=True, type=Path, help="confirmed PolicyDraft JSON")
-    parser.add_argument("--evaluate", required=True, choices=sorted(EVALUATORS))
+    parser.add_argument("--evaluate", default="engine", choices=["engine"])
     parser.add_argument("--serve-port", type=int, help="also serve the step-up routes on 127.0.0.1:PORT (local try only)")
     parser.add_argument("--run-id", help="attach to a run that is already started instead of starting one")
     args = parser.parse_args()
@@ -117,10 +69,15 @@ def main() -> None:
     window_s = stepups.human_window_s()
     book = stepups.StepUpBook()
     book.start(args.mandate_id, run["run_id"])
-    if args.serve_port is not None:
-        serve(book, args.serve_port, store)
-    state = loop.run_loop(run["run_id"], EVALUATORS[args.evaluate], policy, args.mandate_id, book, window_s)
-    book.stop()
+    try:
+        if args.serve_port is not None:
+            serve(book, args.serve_port, store)
+        state = loop.run_loop(run["run_id"], engine_evaluate, policy, args.mandate_id, book, window_s)
+    except Exception:
+        loop.log.exception("runner stopped after an operation failed")
+        raise
+    finally:
+        book.stop()
     print("final run:", json.dumps(loop.run_progress(run["run_id"]), default=str))
     print("state:", state.model_dump_json())
 

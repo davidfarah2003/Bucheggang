@@ -12,10 +12,9 @@ Reconcile. Every request reads the saved state with leash.engine.state.load, so 
 restarted worker skips any live authorization ID already in MandateState.handled.
 
 Budgets. Extract gets min(EXTRACT_CAP_S, deadline_at - now - EXTRACT_RESERVE_S).
-If extract does not return inside it, the loop declines with engine_timeout and
-never calls evaluate with invented facts. An exception raised by extract
-propagates. Evaluate must return GUARD_MARGIN_S before deadline_at; if it does
-not, the loop submits step_up with engine_timeout and logs it.
+Evaluate must return GUARD_MARGIN_S before deadline_at. Either budget failure
+raises without a substitute decision. Submission is bounded by deadline_at,
+including its response body. No failed operation is retried.
 """
 
 from __future__ import annotations
@@ -42,7 +41,6 @@ POLL_WAIT_S = 25
 GUARD_MARGIN_S = 1.0
 EXTRACT_CAP_S = 1.5
 EXTRACT_RESERVE_S = 2.0
-RUNNER_VERSION = "runner-0.1"
 # The platform redelivers a pending step-up on every poll and holds the next
 # request back until it resolves. The loop waits this long before polling again.
 PENDING_STEP_UP_PAUSE_S = 1.0
@@ -101,36 +99,20 @@ def poll() -> Envelope | None:
     return Envelope.model_validate(response.json())
 
 
-def _engine_timeout_decision(event: Event, policy: PolicyDraft, started: float) -> Decision:
-    """Evaluate missed the guard: the purchase waits for the customer."""
-    return Decision(
-        authorization_id=event.authorization.authorization_id,
-        decision="step_up",
-        reason_codes=["engine_timeout"],
-        customer_message="We could not finish checking this purchase in time. Please confirm it yourself.",
-        evidence=[],
-        explanation="The decision engine did not return before the deadline guard; the purchase waits for the customer.",
-        engine_version=RUNNER_VERSION,
-        mandate_version=policy.version,
-        elapsed_ms=int((time.monotonic() - started) * 1000),
-        decided_at=_now(),
-    )
+class ProcessingTimeout(RunLoopError):
+    """Extraction or evaluation exceeded its budget; no decision was submitted."""
 
 
-def _extract_timeout_decision(event: Event, policy: PolicyDraft, started: float) -> Decision:
-    """Extract missed its budget: decline, never evaluate on invented facts."""
-    return Decision(
-        authorization_id=event.authorization.authorization_id,
-        decision="decline",
-        reason_codes=["engine_timeout"],
-        customer_message="We could not read this purchase's details in time, so it was declined.",
-        evidence=[],
-        explanation="Fact extraction did not finish inside its budget; the loop declines instead of deciding without facts.",
-        engine_version=RUNNER_VERSION,
-        mandate_version=policy.version,
-        elapsed_ms=int((time.monotonic() - started) * 1000),
-        decided_at=_now(),
-    )
+def _processing_budget(event: Event, reserve_s: float) -> float:
+    if event.deadline_at.utcoffset() is None:
+        raise RunLoopError("event deadline_at must have a timezone")
+    return (event.deadline_at - _now()).total_seconds() - reserve_s
+
+
+def _timeout(event: Event, operation: str) -> ProcessingTimeout:
+    message = f"{event.authorization.authorization_id}: {operation} budget expired; no decision submitted"
+    log.error(message)
+    return ProcessingTimeout(message)
 
 
 def requested_item(policy: PolicyDraft) -> dict[str, str] | None:
@@ -142,17 +124,22 @@ def requested_item(policy: PolicyDraft) -> dict[str, str] | None:
     return requested or None
 
 
-def extract_with_budget(event: Event, policy: PolicyDraft, pool: ThreadPoolExecutor) -> list[PurchaseFacts] | None:
-    """Run extract pass 1. None when it did not return inside its budget; its errors propagate."""
-    budget = min(EXTRACT_CAP_S, (event.deadline_at - _now()).total_seconds() - EXTRACT_RESERVE_S)
+def extract_with_budget(event: Event, policy: PolicyDraft, pool: ThreadPoolExecutor) -> list[PurchaseFacts]:
+    """Return validated facts or raise. A timeout never becomes missing facts."""
+    budget = min(EXTRACT_CAP_S, _processing_budget(event, EXTRACT_RESERVE_S))
     if budget <= 0:
-        return None
+        raise _timeout(event, "extraction")
+    stop_at = time.monotonic() + budget
     future = pool.submit(extract_event, event.model_dump(mode="json"), requested=requested_item(policy))
     try:
-        rows = future.result(timeout=budget)
-    except FutureTimeout:
-        return None
-    return [PurchaseFacts.model_validate(row) for row in rows]
+        rows = future.result(timeout=max(0, stop_at - time.monotonic()))
+    except FutureTimeout as exc:
+        future.cancel()
+        raise _timeout(event, "extraction") from exc
+    facts = [PurchaseFacts.model_validate(row) for row in rows]
+    if time.monotonic() >= stop_at:
+        raise _timeout(event, "extraction")
+    return facts
 
 
 def decide_with_guard(
@@ -162,25 +149,29 @@ def decide_with_guard(
     state: MandateState,
     facts: list[PurchaseFacts],
     pool: ThreadPoolExecutor,
-) -> tuple[Decision, bool]:
-    """Run evaluate; return (decision, guard_fired). Errors from evaluate propagate."""
-    started = time.monotonic()
-    budget = (event.deadline_at - _now()).total_seconds() - GUARD_MARGIN_S
+) -> Decision:
+    """Return the engine result before its guard or raise without a substitute."""
+    budget = _processing_budget(event, GUARD_MARGIN_S)
     if budget <= 0:
-        return _engine_timeout_decision(event, policy, started), True
+        raise _timeout(event, "evaluation")
+    stop_at = time.monotonic() + budget
     future = pool.submit(evaluate, event, policy, state, facts)
     try:
-        decision = future.result(timeout=budget)
-    except FutureTimeout:
-        return _engine_timeout_decision(event, policy, started), True
+        decision = future.result(timeout=max(0, stop_at - time.monotonic()))
+    except FutureTimeout as exc:
+        future.cancel()
+        raise _timeout(event, "evaluation") from exc
+    decision = Decision.model_validate(decision.model_dump(mode="python"))
+    if time.monotonic() >= stop_at:
+        raise _timeout(event, "evaluation")
     if decision.authorization_id != event.authorization.authorization_id:
         raise RunLoopError(
             f"evaluate returned a decision for {decision.authorization_id}, expected {event.authorization.authorization_id}"
         )
-    return decision, False
+    return decision
 
 
-def submit(decision: Decision) -> Any:
+def submit(decision: Decision, *, deadline_at: datetime) -> Any:
     """POST /v1/authorizations/{id}/decision with the live ID in URL and body."""
     body = {
         "authorization_id": decision.authorization_id,
@@ -190,7 +181,7 @@ def submit(decision: Decision) -> Any:
         "evidence": [check.model_dump(mode="json") for check in decision.evidence],
         "engine_version": decision.engine_version,
     }
-    return api.call("POST", f"/v1/authorizations/{decision.authorization_id}/decision", json=body)
+    return api.call("POST", f"/v1/authorizations/{decision.authorization_id}/decision", json=body, deadline_at=deadline_at)
 
 
 def handle(
@@ -228,23 +219,16 @@ def handle(
     facts = extract_with_budget(event, policy, pool)
     extract_ms = int((time.monotonic() - t0) * 1000)
     t1 = time.monotonic()
-    extract_timed_out = facts is None
-    if extract_timed_out:
-        decision, guard_fired = _extract_timeout_decision(event, policy, t0), False
-        log.error("extract missed its budget for %s: declined engine_timeout", auth_id)
-    else:
-        decision, guard_fired = decide_with_guard(evaluate, event, policy, state, facts, pool)
+    decision = decide_with_guard(evaluate, event, policy, state, facts, pool)
     evaluate_ms = int((time.monotonic() - t1) * 1000)
     submitted_at = _now()
-    accepted = submit(decision)
+    accepted = submit(decision, deadline_at=event.deadline_at)
     accepted_at = _now()
     with records.mandate_lock(mandate_id):
         records.record_accepted(event, decision, accepted_at, accepted, resolution=False)
         step_up = (
             book.add(event, decision, expires_at(accepted_at, window_s)) if decision.decision == "step_up" else None
         )
-    if guard_fired:
-        log.error("deadline guard fired for %s: submitted step_up engine_timeout", auth_id)
     _log({
         "authorization_id": auth_id,
         "source_authorization_id": event.authorization.source_authorization_id,
@@ -256,8 +240,8 @@ def handle(
         "ms_to_deadline_at_submit": int((event.deadline_at - submitted_at).total_seconds() * 1000),
         "decision": decision.decision,
         "reason_codes": list(decision.reason_codes),
-        "extract_timed_out": extract_timed_out,
-        "guard_fired": guard_fired,
+        "accepted_at": accepted_at.isoformat(),
+        "ms_to_deadline_at_accept": int((event.deadline_at - accepted_at).total_seconds() * 1000),
         "accepted": accepted,
         "step_up_expires_at": step_up.expires_at.isoformat() if step_up else None,
     })
