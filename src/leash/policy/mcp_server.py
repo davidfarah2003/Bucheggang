@@ -228,11 +228,88 @@ class BearerContext:
             _HTTP_BEARER.reset(marker)
 
 
+SERVER_INSTRUCTIONS = """Leash is the customer's Wallet control layer. You are a shopping agent; the customer gives you a sentence of instructions, you turn it into a policy proposal, the customer confirms it in their Wallet, and only a confirmed mandate lets any purchase be judged. You never confirm, tighten or revoke anything yourself, and you never answer a step-up on the customer's behalf.
+
+Keep it smooth for the customer. They should type one sentence, tap Approve once for pairing, and tap Confirm once in the Wallet. Everything else is your job:
+
+- Do not ask the customer questions in chat that the guide lets you encode as a rule or as an open question in the draft. The Wallet shows open questions with their options, so the customer answers them where they confirm.
+- Shape the policy to the request. A recurring errand ("weekly groceries", "order our household basics") gets a per-order cap, a period cap with period_days, the merchant category and the item category, and no purchase-count rule. A one-off purchase ("buy the monitor I chose", "one grocery item") gets a per-order cap, items.count = 1, state.approvals_count < 1 so the mandate is spent after one approval, and, for an exact item, facts.product_type equal to the customer's own wording plus an open question naming the exact model.
+- Encode only what the customer said. "Shops I use" becomes history.merchant_seen_on_card = true; "ask me when unsure" becomes uncertainty_policy ask; "never buy anything else" becomes items.count or items.category, never a guess at a brand.
+- Prefer one to three open questions with two or three short options each. A question is for a real ambiguity (which model, does household include toiletries), not for something the sentence already settles.
+- Write plain_english as the sentence a person would read on a phone: what is allowed, in their words, one clause each.
+- After proposing, tell the customer in one line that the policy is waiting in their Wallet and what it allows. Then poll; do not re-propose while the draft is pending.
+
+Run the flow in this order, one tool per step:
+
+1. begin_pairing(agent_label) once per session. Give the customer only wallet_url. Keep verifier private; never print it, log it or put it in a URL.
+2. When the customer says they approved you in the Wallet, complete_pairing(pairing_code, verifier). The token stays inside this server process.
+3. get_policy_authoring_instructions(instruction) with the customer's sentence verbatim. Read the returned guide: it lists every allowed field and operator.
+4. propose_task_policy(instruction, proposal). Every rule quotes an exact substring of the instruction as source_text. Do not invent permissions the customer did not state; put anything unclear in open_questions.
+5. Tell the customer the draft is waiting in their Wallet (it opens at <wallet origin>/app/?draft_id=<draft_id>), then poll get_policy_status(draft_id) until state is confirmed (you receive mandate_id) or rejected (you receive the reason and draft a new proposal).
+6. Only after confirmed: search for the product. Purchases are judged by the Wallet against the mandate; buy and get_purchase_status are parked in the demo, where purchase attempts arrive from the organizer's simulator.
+
+Worked example. Instruction: "Do the weekly grocery shopping online at supermarkets I already use. Never spend more than CHF 100 per order or CHF 250 in any 7-day window; groceries and household basics only. If unsure, ask."
+
+proposal = {
+  "rules": [
+    {"field": "authorization.billing_amount_chf", "operator": "<=", "value": 100, "currency": "CHF", "scope": "purchase",
+     "source_text": "CHF 100 per order", "plain_english": "Each order including delivery must cost CHF 100 or less."},
+    {"field": "authorization.billing_amount_chf", "operator": "<=", "value": 250, "currency": "CHF", "scope": "period", "period_days": 7,
+     "source_text": "CHF 250 in any 7-day window", "plain_english": "Approved purchases plus this order must total CHF 250 or less over seven days."},
+    {"field": "authorization.channel", "operator": "=", "value": "ecommerce", "scope": "purchase",
+     "source_text": "shopping online", "plain_english": "Use the ecommerce channel."},
+    {"field": "authorization.merchant.merchant_category", "operator": "=", "value": "groceries", "scope": "purchase",
+     "source_text": "supermarkets", "plain_english": "Use a grocery retailer."},
+    {"field": "items.category", "operator": "=", "value": "groceries", "scope": "purchase",
+     "source_text": "groceries and household basics only", "plain_english": "Every basket line must be a grocery item."},
+    {"field": "history.merchant_seen_on_card", "operator": "=", "value": "true", "scope": "purchase",
+     "source_text": "I already use", "plain_english": "Require a prior approved purchase at this shop on this card."}
+  ],
+  "examples": [
+    {"description": "CHF 84 order at Coop, bought there before", "expected": "approve", "why": "under both limits, known shop, groceries"},
+    {"description": "CHF 120 order at Migros", "expected": "decline", "why": "over the CHF 100 per-order limit"}
+  ],
+  "open_questions": [
+    {"question": "Do household basics include cleaning products and toiletries?",
+     "options": ["Yes, include them", "No, food only"], "confirming_answers": ["Yes, include them", "No, food only"], "answer": null}
+  ],
+  "uncertainty_policy": "ask"
+}
+
+Second example, a one-off exact item. Instruction: "Buy the 27-inch monitor I chose, from a seller I have bought from before, for CHF 400 or less. Do not add anything I did not ask for. Ask me when uncertain."
+
+proposal = {
+  "rules": [
+    {"field": "authorization.billing_amount_chf", "operator": "<=", "value": 400, "currency": "CHF", "scope": "purchase",
+     "source_text": "CHF 400 or less", "plain_english": "The order including delivery must cost CHF 400 or less."},
+    {"field": "facts.product_type", "operator": "=", "value": "27-inch monitor", "scope": "purchase",
+     "source_text": "27-inch monitor", "plain_english": "The item must be the 27-inch monitor you chose."},
+    {"field": "items.count", "operator": "=", "value": 1, "scope": "purchase",
+     "source_text": "Do not add anything I did not ask for", "plain_english": "The cart holds exactly one line."},
+    {"field": "history.merchant_seen_on_card", "operator": "=", "value": "true", "scope": "purchase",
+     "source_text": "a seller I have bought from before", "plain_english": "The seller must already have an approved purchase on this card."},
+    {"field": "state.approvals_count", "operator": "<", "value": 1, "scope": "purchase",
+     "source_text": "Buy the 27-inch monitor I chose", "plain_english": "One approved purchase ends this permission."}
+  ],
+  "examples": [
+    {"description": "CHF 379 monitor at Digitec, bought there before", "expected": "approve", "why": "one line, known seller, under CHF 400"},
+    {"description": "CHF 379 monitor plus a CHF 29 cable", "expected": "decline", "why": "a second line you did not ask for"}
+  ],
+  "open_questions": [
+    {"question": "Which exact model did you choose?", "options": ["Dell U2723QE", "LG 27UP850", "Another model, I will say which"],
+     "confirming_answers": ["Dell U2723QE", "LG 27UP850"], "answer": null}
+  ],
+  "uncertainty_policy": "ask"
+}
+
+The customer sees plain_english, the examples and the open questions in the Wallet and confirms or rejects there. The backend evaluates rules only; examples are your own claims and are shown, not enforced."""
+
+
 class PolicyMCPServer(MCPServer):
     """Policy authoring MCP with per-agent authenticated tools."""
 
     def __init__(self, identities: IdentityStore, stdio_agent_token: str | None = None):
-        super().__init__("Leash Policy Authoring")
+        super().__init__("Leash Policy Authoring", instructions=SERVER_INSTRUCTIONS)
         self.identities = identities
         self.stdio_agent_token = stdio_agent_token
         self.http_transport = False
@@ -273,7 +350,13 @@ def create_server(
 
     @server.tool()
     def begin_pairing(agent_label: str) -> dict[str, Any]:
-        """First, pair this labelled agent in the customer's Wallet. Then propose policy, wait for Wallet confirmation, check status is confirmed, and only then search and authorize. External browsing before confirmation is outside backend control; no agent purchase API is active."""
+        """Step 1 of the Leash flow: start pairing this agent with the customer's Wallet.
+
+        agent_label is the name the customer sees on the approval screen, for example "Grocery helper".
+        Returns pairing_code, verifier, expires_at (5 minutes), scopes and wallet_url. Give the customer
+        only wallet_url. Keep verifier private for complete_pairing; never print it or place it in a URL.
+        Call this once per session; a restart needs a new pairing.
+        """
         try:
             pairing = identity_store.begin_pairing(agent_label)
         except ValueError as exc:
@@ -285,7 +368,14 @@ def create_server(
 
     @server.tool()
     def complete_pairing(pairing_code: str, verifier: str) -> dict[str, Any]:
-        """Exchange an approved pairing and private verifier for one agent token."""
+        """Step 2 of the Leash flow: finish pairing after the customer approved you in the Wallet.
+
+        Pass the pairing_code and verifier from begin_pairing. Returns agent_id, account_id, scopes and
+        agent_token. Over stdio the token is also kept inside this server and authenticates every later
+        tool; over HTTP send it as a Bearer header. Never print or log the token. PairingPending means the
+        customer has not approved yet: wait and retry. PairingUnknown means the code expired or was used:
+        call begin_pairing again.
+        """
         try:
             result = identity_store.complete_pairing(pairing_code, verifier)
         except PairingPending as exc:
@@ -298,7 +388,12 @@ def create_server(
 
     @server.tool()
     def get_policy_authoring_instructions(instruction: str) -> dict[str, Any]:
-        """Get the policy proposal format and request-specific drafting instructions."""
+        """Step 3 of the Leash flow: fetch the proposal format for one customer instruction.
+
+        Pass the customer's sentence verbatim. Returns guide (allowed fields, operators, rule shape,
+        example shape, question shape) and request_instructions. Read the guide before drafting; every
+        rule field and operator must come from it. Requires pairing.
+        """
         server.require_agent("policy:read")
         if not isinstance(instruction, str) or not instruction.strip():
             raise InvalidDraft("instruction is required")
@@ -315,7 +410,17 @@ def create_server(
 
     @server.tool()
     def propose_task_policy(instruction: str, proposal: dict[str, Any]) -> dict[str, Any]:
-        """After pairing, store a proposal for Wallet confirmation. Check policy status is confirmed before searching and authorizing. External browsing before confirmation is outside backend control; no agent purchase API is active, and this tool does not buy anything."""
+        """Step 4 of the Leash flow: store a policy proposal for the customer to confirm in the Wallet.
+
+        instruction is the customer's sentence verbatim. proposal has exactly rules, examples,
+        open_questions and uncertainty_policy (ask, decline or approve), as in the server instructions'
+        worked example. Each rule quotes an exact substring of the instruction as source_text and carries
+        a plain_english sentence the customer reads. Returns the stored draft with draft_id, version and
+        hash. Nothing is authorized by this call: tell the customer the draft is waiting in their Wallet
+        (the Wallet lists it, and it opens at <wallet origin>/app/?draft_id=<draft_id>), then poll
+        get_policy_status. InvalidDraft names the field that failed validation; fix it and resubmit.
+        This tool does not buy anything.
+        """
         agent = server.require_agent("policy:propose")
         try:
             return submit_policy_proposal(store, instruction, proposal, created_for=agent["account_id"])
@@ -332,9 +437,12 @@ def create_server(
 
     @server.tool()
     def get_policy_status(draft_id: str) -> dict[str, Any]:
-        """Poll a proposed draft: pending, confirmed with the mandate_id, or rejected with the reason.
+        """Step 5 of the Leash flow: poll a draft until the customer decides in the Wallet.
 
-        Read-only. Confirmation happens only in the customer's Wallet.
+        Returns state pending, confirmed with mandate_id, or rejected with the customer's reason.
+        Poll every few seconds; do not proceed to shopping on pending. On rejected, read the reason,
+        draft a revised proposal and call propose_task_policy again. Read-only: confirmation happens
+        only in the customer's Wallet, never through this server.
         """
         agent = server.require_agent("policy:read")
         _known(draft_id, agent["account_id"])
@@ -342,7 +450,10 @@ def create_server(
 
     @server.tool()
     def get_policy_summary(draft_id: str) -> dict[str, Any]:
-        """Read back the plain-English rules, examples, open questions and uncertainty setting of a draft."""
+        """Read back what the customer sees for one of your drafts: plain-English rules, examples, open
+        questions with any answers, and the uncertainty setting. Use it to explain the policy to the
+        customer or to check a confirmed mandate before shopping. Read-only.
+        """
         agent = server.require_agent("policy:read")
         _known(draft_id, agent["account_id"])
         return policy_summary(store, draft_id)
@@ -351,13 +462,20 @@ def create_server(
     def buy(
         mandate_id: str, cart: list[CartLine], merchant: CartMerchant, facts: list[PurchaseFacts]
     ) -> dict[str, Any]:
-        """Ask for a purchase decision under a confirmed mandate. Parked: purchases arrive through the simulator."""
+        """Step 6 of the Leash flow, parked in this demo: ask the Wallet to judge a purchase under a
+        confirmed mandate_id. In the demo every purchase attempt arrives from the organizer's simulator
+        and this call raises PurchasesParked. Do not retry it; report to the customer that purchases
+        are judged by the Wallet from the simulator feed.
+        """
         server.require_agent("policy:propose")
         raise PurchasesParked(PARKED_MESSAGE)
 
     @server.tool()
     def get_purchase_status(authorization_id: str) -> dict[str, Any]:
-        """Read the decision and step-up resolution of one purchase. Parked with buy."""
+        """Read the decision (approve, decline or step_up) and step-up resolution of one purchase by
+        authorization_id. Parked with buy in this demo: raises PurchasesParked. A step_up is answered
+        only by the customer in the Wallet, never by you.
+        """
         server.require_agent("policy:read")
         raise PurchasesParked(PARKED_MESSAGE)
 
