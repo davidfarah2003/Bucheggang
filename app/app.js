@@ -807,7 +807,7 @@ async function rulesContent(serial) {
 }
 
 function boundaryResultCards(evaluation) {
-  if (!evaluation.results.length) return `<section class="boundary-results"><h2>Checked purchase cases</h2><p>This plan has no computed purchase cases. The agent's examples below are illustrative.</p></section>`;
+  if (!evaluation.results.length) return `<section class="boundary-results"><h2>Checked purchase cases</h2><p>This plan has no computed purchase cases. Agent-authored examples, when present, are illustrative.</p></section>`;
   return `<section class="boundary-results"><h2>Checked purchase cases</h2><p>The agent authored these synthetic purchase cases. The Wallet backend evaluated them. No live purchase is shown here.</p><p class="boundary-meta">Checked on ${esc(new Date(evaluation.evaluated_at).toLocaleString("en-CH"))} at ${esc(evaluation.phase)} · engine ${esc(evaluation.engine_version)}</p><div class="boundary-list">${evaluation.results.map((item, index) => `<article class="boundary-card"><span class="boundary-number">CASE ${index + 1}</span><h3>${esc(item.description)}</h3><p>Agent expected: <strong>${esc(item.expected)}</strong></p><p>Backend computed: <strong>${esc(item.observed)}</strong></p>${item.reason_codes.length ? `<p class="boundary-reasons">Reason codes: ${item.reason_codes.map(esc).join(", ")}</p>` : ""}</article>`).join("")}</div></section>`;
 }
 
