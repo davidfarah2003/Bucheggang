@@ -43,6 +43,9 @@ const walletApi = (() => {
     mandate: (id) => request(`/mandates/${encodeURIComponent(id)}`),
     mandates: () => request("/mandates?status=all"),
     globalPolicy: () => request("/global-policy"),
+    saveGlobalPolicy: (version, hash, rules) => request("/global-policy", {
+      method: "PUT", body: JSON.stringify({ expected_version: version, expected_hash: hash, rules }),
+    }),
     tighten: (id) => request(`/mandates/${encodeURIComponent(id)}/tighten`, {
       method: "POST", body: JSON.stringify({ uncertainty_policy: "decline" }),
     }),

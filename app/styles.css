@@ -355,6 +355,11 @@ p { margin: 0; line-height: 1.48; }
 .rule-item + .rule-item { padding-top: 13px; border-top: 1px solid var(--line); }
 .rule-check { color: var(--green); font-weight: 750; }
 .rule-actions { display: grid; gap: 14px; margin-top: 2px; }
+.global-cap-editor { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.global-cap-editor label { font-size: 14px; font-weight: 650; }
+.global-cap-editor input { width: 100%; min-height: 47px; padding: 10px 12px; border: 1px solid #d9cfc6; border-radius: 10px; font: inherit; }
+.global-cap-editor > p { color: var(--muted); font-size: 13px; line-height: 1.45; }
+.global-cap-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .danger-link { width: fit-content; padding: 7px 0; border: 0; background: transparent; color: var(--accent); font-weight: 670; }
 .outline-button {
   display: inline-flex;

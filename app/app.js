@@ -27,6 +27,7 @@ const state = {
   ownedDrafts: [],
   answers: {},
   mandate: null,
+  globalPolicy: null,
   ownedMandates: [],
   agents: [],
   pairing: null,
@@ -809,11 +810,15 @@ async function activeContent(serial) {
 
 function globalPolicyCard(policy, savedGlobal) {
   let notice = "";
-  if (!savedGlobal) notice = "Changes to account-wide rules apply to the next confirmed permission.";
+  if (!savedGlobal) notice = "";
   else if (savedGlobal.version < policy.version) notice = `This permission uses version ${savedGlobal.version}. Version ${policy.version} will apply to your next confirmed permission.`;
   else if (savedGlobal.version > policy.version) notice = `This permission was confirmed with version ${savedGlobal.version}, but the current account-wide record reports version ${policy.version}. Check the saved rules before another confirmation.`;
   else if (savedGlobal.hash !== policy.hash) notice = `This permission and the current account-wide record both report version ${policy.version}, but their rule hashes differ. Check the saved rules before another confirmation.`;
-  return `<section class="rule-group"><h3>Account-wide rules · version ${policy.version}</h3>${policy.rules.length ? policy.rules.map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("") : `<p>No account-wide rules are saved for this local customer.</p>`}<p>${notice ? `${esc(notice)} ` : ""}Account-wide editing is not available in this Wallet view. Saved period limits count approved purchases across your confirmed permissions.</p></section>`;
+  const capRules = policy.rules.filter((rule) => rule.field === "authorization.billing_amount_chf" && rule.scope === "period" && rule.period_days === 7);
+  const editable = capRules.length === 0 || (capRules.length === 1 && capRules[0].operator === "<=" && capRules[0].currency === "CHF" && typeof capRules[0].value === "number");
+  const cap = capRules.length ? capRules[0] : null;
+  const editor = editable ? `<div class="global-cap-editor"><label for="global-seven-day-cap">Seven-day approved spend cap (CHF)</label><input id="global-seven-day-cap" type="number" min="0.01" step="0.01" inputmode="decimal" value="${cap ? esc(cap.value) : ""}" placeholder="No cap" /><p>Counts approved purchases across your permissions over the previous seven days, plus the proposed purchase.</p><div class="global-cap-actions"><button type="button" class="outline-button" data-action="save-global-cap">Save cap</button>${cap ? `<button type="button" class="danger-link" data-action="remove-global-cap">Remove cap</button>` : ""}</div></div>` : `<p>This account has a seven-day rule that needs a different editor. Its saved value is shown above.</p>`;
+  return `<section class="rule-group"><h3>Account-wide rules · version ${policy.version}</h3>${policy.rules.length ? policy.rules.map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("") : `<p>No account-wide rules are saved for this local customer.</p>`}<p>${notice ? `${esc(notice)} ` : ""}Changes apply to the next confirmed permission. Existing permissions keep their saved rules.</p>${editor}</section>`;
 }
 
 async function rulesContent(serial) {
@@ -823,6 +828,7 @@ async function rulesContent(serial) {
   ]);
   if (serial !== state.serial) return "";
   state.ownedMandates = items;
+  state.globalPolicy = globalPolicy;
   const id = mandateId();
   const selected = items.find((item) => item.mandate_id === id);
   let detail = `<p class="calm-copy">${items.length ? "Select a permission below to inspect its confirmed rules." : "You have no confirmed permission to inspect."}</p>`;
@@ -1196,6 +1202,7 @@ document.addEventListener("click", async (event) => {
       state.accountId = null;
       state.authMode = "login";
       state.mandate = null;
+      state.globalPolicy = null;
       state.ownedMandates = [];
       state.agents = [];
       state.pairing = null;
@@ -1227,6 +1234,27 @@ document.addEventListener("click", async (event) => {
       closeOverlay();
       navigate("agents");
       toast("Agent access revoked.", "success");
+    } else if (action === "save-global-cap" || action === "remove-global-cap") {
+      const policy = state.globalPolicy;
+      if (!policy || policy.customer !== state.accountId) throw new Error("Reload the account-wide rules before changing them.");
+      const otherRules = policy.rules.filter((rule) => !(rule.field === "authorization.billing_amount_chf" && rule.scope === "period" && rule.period_days === 7));
+      if (policy.rules.length - otherRules.length > 1) throw new Error("This seven-day rule needs a different editor.");
+      let rules = otherRules;
+      if (action === "save-global-cap") {
+        const raw = document.querySelector("#global-seven-day-cap")?.value.trim();
+        const amount = Number(raw);
+        if (!raw || !/^\d+(?:\.\d{1,2})?$/.test(raw) || !Number.isFinite(amount) || amount <= 0) throw new Error("Enter a positive CHF amount with at most two decimal places.");
+        rules = [...otherRules, {
+          field: "authorization.billing_amount_chf", operator: "<=", value: amount,
+          currency: "CHF", scope: "period", period_days: 7,
+          source_text: "Account-wide seven-day approved spending cap set in Wallet",
+        }];
+      }
+      const updated = validateGlobalPolicy(await walletApi.saveGlobalPolicy(policy.version, policy.hash, rules));
+      if (updated.version !== policy.version + 1) throw new Error("The Wallet did not return the next account-wide rule version.");
+      state.globalPolicy = updated;
+      navigate("wallet");
+      toast(action === "save-global-cap" ? "Account-wide cap saved for future permissions." : "Account-wide cap removed for future permissions.", "success");
     } else if (action === "confirm") await performConfirm();
     else if (action === "reject") await performReject();
     else if (action === "resolve") await performResolution(button);
@@ -1253,6 +1281,7 @@ document.addEventListener("click", async (event) => {
     if (error.status === 401) { sessionExpired(error); return; }
     if (error.status === 404 && action === "approve-pair") { void render(); return; }
     if (error.status === 409 && state.route === "review") { state.draft = null; state.answers = {}; void render(); }
+    if (error.status === 409 && (action === "save-global-cap" || action === "remove-global-cap")) { state.globalPolicy = null; void render(); }
     toast(error.message);
     if (action === "resolve") { navigate("wallet"); return; }
     if (button.isConnected) button.disabled = false;
