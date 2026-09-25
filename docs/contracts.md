@@ -447,6 +447,94 @@ There is no expiry on a used key within the mandate's life. A revoked or expired
 Out of scope for this contract and for the demo: a payment processor, a merchant order, inventory or price lookup by the backend, a `buy` that the backend retries or re-quotes, and any purchase created from the Wallet or the Harness page instead of through a paired agent. `reference` is data for a later processor integration and is not consumed by anything we ship.
 
 
+## Harness provider session
+
+This is the implementation contract for the server-side Shopping Harness adapter. These routes do not exist yet. The standalone Wallet and external MCP clients keep their current flow. This section does not enable a provider, model-based purchase scoring or a payment processor.
+
+### Provider selection and credentials
+
+The first supported pair is `provider: "anthropic"`, `model: "claude-sonnet-5"`. It is the initial UI selection, but both fields are required in the create request. Unknown provider/model pairs are 422; an unavailable configured pair is 503 `provider_unconfigured`. There is no substitution, alias to another model or automatic provider retry. Other providers named in plan 04 remain unavailable until separately implemented and exercised.
+
+The adapter is disabled unless an operator sets `LEASH_HARNESS_ENABLED=1` after confirming that the host's ignored `.env` contains its Anthropic credential. Unset or `0` leaves it disabled; other values refuse startup. A new scoped accessor in `leash.runner.settings` reads only the required `ANTHROPIC_API_KEY` for this adapter and never prints it. No credential or optional provider package is loaded while disabled, so the existing Wallet can run without the adapter dependency. When enabled, a missing dependency or credential produces `provider_unconfigured`; it never starts a turn with a different configuration. The implementation uses the official Anthropic Python SDK with automatic retries disabled and the pinned Anthropic endpoint/model. It does not inherit a browser-supplied URL or silently use a different gateway, provider credential or model. The browser, provider messages and tool-visible arguments receive no provider key, agent token or pairing verifier. The release still needs one actual provider request after the operator's credential confirmation; this contract makes no claim that a credential is present.
+
+`LEASH_HARNESS_ENABLED` controls chat/tool execution only. It does not change `LEASH_ENABLE_MODELS`, the deterministic evaluator or the separate Jev release gate. Runtime purchase models remain off.
+
+### Customer routes
+
+All three routes use the existing authenticated customer cookie. Both POST routes require the exact configured Origin, with the existing 401/403 behavior. The server derives the account from the session; no request may supply an account, agent token, MCP endpoint, provider endpoint, phase or customer answer. An unknown or foreign session ID returns the same 404.
+
+| Route | Input and response |
+| --- | --- |
+| `POST /agent-sessions` | `{ client_request_id: UUID, provider: "anthropic", model: "claude-sonnet-5" }` -> 201 `AgentSession` after durable creation, initially `pairing_required`. An identical repeated create key for this account returns the same session, 200; a different payload on that key is 409. Unsupported input is 422 and a disabled or unavailable provider is 503 before creating a session or beginning pairing. |
+| `POST /agent-sessions/{session_id}/messages` | `{ client_message_id: UUID, expected_version: int >= 1, text: str }`, text 1-8000 characters -> 202 `{ session: AgentSession, operation_id }` after the message/operation is durably reserved. The operation performs provider/MCP work asynchronously. Same message ID and same input returns 200 with the original operation ID and the current session snapshot, without executing it again; this lookup precedes the version check. Changed input on an existing ID, a stale version for a new message or a second active operation returns 409. |
+| `GET /agent-sessions/{session_id}` | 200 `AgentSession`. A read-only snapshot, with no provider call, MCP mutation, implicit retry or phase advancement. The browser polls while an operation is running. |
+
+Session-specific request errors return `{ error: { code, stage, message }, session_id: str | null, version: int | null }`; IDs and versions are present only for an already owned session. Authentication and Origin failures retain the existing 401/403 middleware response. A disabled/unavailable-provider create request creates no session; its error is a request-level response. Provider and MCP failures after session creation are persisted in that owned session before its operation stops. A missing operator credential on a turn is `provider_unconfigured` at stage `configuration`, with no provider call. Provider authentication, timeout and malformed-response failures use `provider_auth_error`, `provider_timeout` and `provider_response_invalid`; they do not expose the provider's raw error body. Validation errors do not reserve a message or execute a tool.
+
+`AgentSession` is the browser-safe view below. Unknown fields are rejected on writes. Timestamps are UTC; IDs are server-generated except the two client idempotency IDs. `version` increases on every persisted change. Null IDs mean that no successful tool result has bound such an object yet.
+
+```
+session_id, version, provider, model, created_at, updated_at
+phase: pairing_required | briefing | awaiting_policy_confirmation | confirmed |
+       searching | awaiting_purchase_answer | completed | rejected | failed
+operation: null | { id, client_message_id, status: queued | running | succeeded | failed,
+                    started_at: timestamp | null, finished_at: timestamp | null }
+messages[]: { id, sequence, client_message_id: UUID | null, role: user | assistant,
+              text, status: complete | partial, created_at }
+tool_calls[]: { id, sequence, operation_id, name, status: planned | running | succeeded | failed | unknown,
+                started_at: timestamp | null, finished_at: timestamp | null,
+                summary, draft_id: str | null, authorization_id: str | null }
+errors[]: { id, sequence, operation_id: str | null, stage: configuration | pairing | provider | tool | recovery,
+            code, message, occurred_at }
+connection: { status: pending | connected | revoked | lost, agent_id: str | null,
+              agent_label, scopes: [str], pairing_expires_at: timestamp | null }
+draft_id, mandate_id, authorization_id: str | null
+backend_status: { policy: null | pending | confirmed | rejected,
+                  purchase: null | pending | approve | decline,
+                  observed_at: timestamp | null }
+wallet_link: null | { kind: pairing | policy | purchase, url, expires_at: timestamp | null }
+available_actions: { send_message: bool, open_wallet: bool, search: bool, buy: bool }
+```
+
+Every new message, tool-call entry or error receives one immutable positive `sequence` from the session's shared counter, under its lock. Each array is returned in increasing sequence order, so the UI can interleave them without guessing from timestamps. Updating a tool's status increments the session version and keeps its original sequence. `backend_status` records the latest authoritative observation and its time; it is not a prediction. The next explicit message refreshes the bound object's status before any phase transition or provider call. A Wallet return may show the current object through its existing owned routes and offer Continue; chat text or a cached observation cannot authorize resumption.
+
+Assistant text is provider output, not authoritative workflow state. Tool summaries are server-generated from validated tool results, not a provider's claim that an action happened. The UI displays those separately and renders user, assistant, tool-summary and error content as escaped text, never executable HTML. Errors contain a stable code and a redacted explanation, never raw HTTP headers, credentials, private provider traces or another account's data. Raw tool arguments/results are not copied into this browser view. An approved decision is labelled an authorization result; it is never labelled an order or charge.
+
+### Pairing and server-side custody
+
+Creation reserves the session before beginning a real MCP pairing for a clearly labelled Harness agent. The server keeps the verifier in memory and exposes only the existing Wallet pairing link to the owning browser. The customer approves through the existing Wallet route. A message received while `pairing_required` first checks the authoritative pairing record: if unapproved it returns 409 `waiting_for_pairing` without reserving a provider turn; if approved, the adapter completes pairing through MCP and verifies that the returned account matches the session owner before using the token. A mismatch fails the session without exposing either account's details or using that token.
+
+The MCP credential is sent only by the server-side adapter to the configured trusted MCP endpoint. Neither its value nor the verifier is sent to the provider. They are kept in the live adapter's memory, outside the JSON session store. Loss of that custody on restart fails the affected session with `pairing_required_after_restart`; a fresh session and customer-approved pairing are required. No credential is reconstructed from a digest. Existing drafts remain available in the Wallet. The temporary pairing link is composed from in-memory pairing data and is not stored in clear with the durable transcript.
+
+Policy-only sessions request only the implemented policy scopes. Purchase capability requires the separately agreed purchase scope and customer approval; an existing token is never widened. The adapter validates the current token/account before each privileged tool dispatch. Revocation stops further dispatch and is recorded as an error. Pairing approval, policy confirmation, tightening, revocation and purchase answers are never provider tools.
+
+### Phase enforcement
+
+The server owns transitions. A model response, a chat message such as "I approved", or a browser navigation does not change a mandate or resolve a purchase.
+
+| Phase | Permitted work and transition |
+| --- | --- |
+| `pairing_required` | No provider call or search. The customer uses the existing pairing UI. An explicit message after approved pairing completes the binding and enters `briefing`. |
+| `briefing` | Provider conversation may clarify the instruction and call only implemented policy-authoring/read tools. A successful proposal binds its returned `draft_id`, enters `awaiting_policy_confirmation` and provides the persisted-ID Wallet link. It stops that operation before search or purchase. |
+| `awaiting_policy_confirmation` | No search or purchase. On an explicit new message, the server reads the bound draft's authoritative owned status. Pending returns 409 `waiting_for_policy`; rejected enters `rejected`; confirmed with a mandate ID binds it and enters `confirmed`. A provider claim of confirmation has no effect. |
+| `confirmed` / `searching` | Before each new operation or purchase, recheck the bound mandate's owner and active status. Search is permitted only through an implemented, explicitly configured capability. A server-side inventory/search tool needs its own agreed input/provenance contract and real implementation. Until then `available_actions.search` and `available_actions.buy` are false; no provider-native search tool is exposed. An unavailable search tool raises a persisted error; generated product claims do not stand in for a search. Future results must retain their actual sources and distinguish a discovered offer from a verified final checkout total. |
+| `awaiting_purchase_answer` | A successful implemented `buy` returning step_up binds its authorization ID and supplies the Wallet purchase link. Only authoritative readback after the existing Wallet answer or timeout can produce a final result. No provider call extends the human window or supplies an answer. An explicit message can request readback; pending returns 409 `waiting_for_purchase`. |
+| `completed` / `rejected` / `failed` | Terminal, read-only session. No automatic retry or further tool execution. The customer may create a new session; that does not revive, approve or repeat a prior purchase. |
+
+Before a provider request, the adapter constructs the allowed tool set for the current phase. It waits for a complete provider response and validates every returned tool name and its entire argument object before dispatch. A truncated response or partial tool-argument stream cannot dispatch a tool. Unknown or disallowed tools fail the operation. ID-bearing read/purchase tools must refer to the session's server-bound draft or mandate, not an ID chosen by the model. The adapter exposes no shell, arbitrary HTTP request, arbitrary MCP server, Wallet mutation or credential tool. Pairing tools are adapter-controlled and absent from the provider's tool set.
+
+A session can expose `buy` and purchase readback only after their own reviewed contract and implementation land. A successful buy binds the returned authorization ID: final approve enters `completed`, final decline enters `rejected`, and step_up enters `awaiting_purchase_answer`. Authoritative readback after the Wallet answer or timeout applies the same final transitions. The adapter uses the purchase tool's idempotency and local-versus-simulator origin rules. It never constructs a simulator receipt or invokes simulator decision/resolve endpoints for a local purchase. A failed or pending purchase yields no completed-purchase claim. The remaining search and purchase capabilities may stay unavailable while briefing/proposal support is implemented, and the UI must show that limitation.
+
+### Persistence and failure handling
+
+Session records live under `LEASH_POLICY_STORE/agent-sessions/`, mode 0600, with account ownership set at creation and never changed. A per-session file lock protects version comparison, message-ID reservation and the single active operation. JSON replacements are atomic, with file and parent-directory synchronization before reporting durable acceptance. Creating the account-scoped `client_request_id` mapping is exclusive so concurrent create requests return one session. A mapping left without its session after a crash is a recovery error; it must not create a second session or pairing on replay. Reads never dispatch work. Network calls do not hold the customer's mandate locks; individual MCP policy/purchase mutations retain their existing customer-first locking requirements.
+
+The adapter persists an operation and each tool-call intent before sending it. It records the validated result before the next tool or phase. One operation has a 60-second total deadline, at most eight tool dispatches and a 4096-output-token provider budget per request; exceeding a limit stops the operation and persists an error, with no fabricated assistant result or business decision. SDK retry behavior is disabled. No alternate provider is selected after failure.
+
+A process restart never replays an operation left queued/running or a mutating tool with an unknown outcome. The session becomes `failed` with an explicit recovery error and retains its known IDs and observations. A mutation whose response was lost remains marked `unknown` until a separately defined authoritative readback can establish its outcome; absence of a response is not a decline, approval or timeout. Where a tool has no authoritative reconciliation contract, no result is invented. The browser can still open any known owned draft or purchase in the Wallet.
+
+Implementation order: merge this contract; add the scoped provider configuration and owned session store/routes; implement real MCP pairing and policy tools; add the pinned provider adapter after operator credential confirmation; then wire the Shop UI against observed responses. Search and purchasing each require their capability checks and their own completed integration. The live model-off Wallet demonstration remains independent of this work.
+
 ## Identity source
 
 Ruled 2026-09-25 by the contracts owner on Oskar's direction. This replaces the earlier `LEASH_MCP_TOKENS` capability-map ruling and the shared `LEASH_MCP_TOKEN` bearer; neither ships. It is a local credential system for the demo, and the section ends with what a bank integration replaces.
