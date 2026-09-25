@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, StrictInt
 
 from .confirmation import MandateClient, confirm_policy
-from .ownership import owned_drafts
+from .ownership import customer_mandate_locks, owned_drafts
 from .global_policy import GlobalPolicyConflict, GlobalPolicyStore, validate_rules
 from .store import DraftConflict, DraftStore, InvalidDraft
 
@@ -59,12 +59,15 @@ def policy_router(
         if not body.expected_hash:
             raise HTTPException(status_code=422, detail="expected_hash is required")
         try:
-            rules = validate_rules(body.rules)
-            return global_policies.replace(customer, body.expected_version, body.expected_hash, rules)
+            with customer_mandate_locks(store, customer):
+                rules = validate_rules(body.rules)
+                return global_policies.replace(customer, body.expected_version, body.expected_hash, rules)
         except GlobalPolicyConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except (InvalidDraft, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @router.get("/drafts")
     def list_drafts(
@@ -113,23 +116,27 @@ def policy_router(
         if not customer:
             raise HTTPException(status_code=401, detail="customer login is required")
         try:
-            store.assert_owner(draft_id, customer)
-            return confirm_policy(
-                store,
-                mandates,
-                draft_id,
-                version=body.version,
-                hash_value=body.hash,
-                answers=body.answers,
-                confirmed_by=customer,
-                global_policy=global_policies.read(customer),
-            )
+            with customer_mandate_locks(store, customer):
+                store.assert_owner(draft_id, customer)
+                global_snapshot = global_policies.read(customer)
+                return confirm_policy(
+                    store,
+                    mandates,
+                    draft_id,
+                    version=body.version,
+                    hash_value=body.hash,
+                    answers=body.answers,
+                    confirmed_by=customer,
+                    global_policy=global_snapshot,
+                )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="draft was not found") from exc
         except DraftConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except InvalidDraft as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @router.post("/drafts/{draft_id}/reject", status_code=204)
     def reject(

@@ -249,7 +249,7 @@ def create_server(
 
     @server.tool()
     def begin_pairing(agent_label: str) -> dict[str, Any]:
-        """Start a short-lived Wallet pairing for this MCP client."""
+        """First, pair this labelled shopping agent in the customer's Wallet."""
         try:
             return identity_store.begin_pairing(agent_label)
         except ValueError as exc:
@@ -285,7 +285,7 @@ def create_server(
 
     @server.tool()
     def propose_task_policy(instruction: str, proposal: dict[str, Any]) -> dict[str, Any]:
-        """Validate and store a policy JSON proposed by the calling agent for app review."""
+        """After pairing, validate and store a proposal for Wallet confirmation; this does not buy anything."""
         agent = server.require_agent("policy:propose")
         try:
             return submit_policy_proposal(store, instruction, proposal, created_for=agent["account_id"])

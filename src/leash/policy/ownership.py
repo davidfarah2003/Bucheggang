@@ -1,6 +1,25 @@
 """Customer ownership comes from immutable draft authorship and confirmations."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
+
 from .store import DraftStore, InvalidDraft
+
+
+@contextmanager
+def customer_mandate_locks(store: DraftStore, customer: str) -> Iterator[dict[str, dict]]:
+    """Lock a customer's owned set in the runner's customer-first order."""
+    from leash.runner.records import customer_lock, mandate_locks
+
+    with customer_lock(customer):
+        confirmations = owned_confirmations(store, customer)
+        mandate_ids = sorted(confirmations)
+        deadline_at = datetime.now(UTC) + timedelta(seconds=30)
+        with mandate_locks(mandate_ids, deadline_at=deadline_at):
+            if owned_confirmations(store, customer) != confirmations:
+                raise RuntimeError("customer confirmation set changed while acquiring mandate locks")
+            yield confirmations
 
 
 def owned_confirmations(store: DraftStore, customer: str) -> dict[str, dict]:
