@@ -76,12 +76,22 @@ class Approval(Contract):
     timestamp: Timestamp  # simulated time of the purchase
 
 
+class CustomerApproval(Contract):
+    """An accepted approval on another mandate of the same customer, for cross-mandate period rules."""
+
+    authorization_id: NonEmpty
+    mandate_id: NonEmpty
+    amount_chf: float
+    timestamp: Timestamp  # simulated time of the purchase
+
+
 class MandateState(Contract):
     mandate_id: NonEmpty
     approvals: list[Approval] = []
     handled: dict[str, Decision] = {}
     pending_step_ups: list[str] = []
     declined: list[str] = []
+    customer_approvals: list[CustomerApproval] = []  # filled by state.load, never by record
 
 
 class StepUp(Contract):

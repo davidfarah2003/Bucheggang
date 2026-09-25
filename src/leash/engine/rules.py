@@ -84,11 +84,16 @@ def _limit_chf(rule: AnyRule, field: str, ctx: RuleContext) -> float:
 
 
 def _in_window(ctx: RuleContext, days: int) -> list:
-    """Accepted approvals in the trailing `days` of simulated time, this purchase excluded."""
+    """Accepted approvals in the trailing `days` of simulated time, this purchase excluded.
+
+    Counts this mandate's approvals and `state.customer_approvals`, the customer's
+    accepted approvals on other mandates, so a period limit survives supersession.
+    """
     now = ctx.event.authorization.timestamp
     start = now - timedelta(days=days)
     own = ctx.event.authorization.authorization_id
-    return [a for a in ctx.state.approvals if start < a.timestamp <= now and a.authorization_id != own]
+    return [a for a in [*ctx.state.approvals, *ctx.state.customer_approvals]
+            if start < a.timestamp <= now and a.authorization_id != own]
 
 
 def _prior_approvals(ctx: RuleContext) -> list:
