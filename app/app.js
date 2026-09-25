@@ -9,7 +9,7 @@ const overlayRoot = document.querySelector("#overlay-root");
 const toastRoot = document.querySelector("#toast-root");
 const examples = [
   "Find a 27-inch USB-C monitor below CHF 400 with excellent colour accuracy",
-  "Book a morning train from Zürich to Milan with a window seat",
+  "Find a morning train from Zürich to Milan with a window seat",
   "Find a compact blue birthday gift around CHF 80",
   "Get foldable black noise-cancelling headphones below CHF 300",
   "Find blue EU 43 running shoes with at least 14-day returns",
