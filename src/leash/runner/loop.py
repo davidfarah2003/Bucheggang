@@ -134,6 +134,8 @@ def extract_with_budget(
     try:
         rows = future.result(timeout=max(0, stop_at - time.monotonic()))
     except FutureTimeout as exc:
+        if future.done() and not future.cancelled() and future.exception() is exc:
+            raise
         future.cancel()
         raise _timeout(event, "extraction") from exc
     facts = [PurchaseFacts.model_validate(row) for row in rows]
@@ -161,6 +163,8 @@ def decide_with_guard(
     try:
         decision = future.result(timeout=max(0, stop_at - time.monotonic()))
     except FutureTimeout as exc:
+        if future.done() and not future.cancelled() and future.exception() is exc:
+            raise
         future.cancel()
         raise _timeout(event, "evaluation") from exc
     decision = Decision.model_validate(decision.model_dump(mode="python"))

@@ -35,7 +35,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from leash.contracts import Decision, Event, MandateState, StepUp, StepUpAnswer
+from leash.contracts import Decision, Event, MandateState, PolicyDraft, StepUp, StepUpAnswer
 from leash.engine import state as engine_state
 from leash.policy.store import DraftStore
 
@@ -164,22 +164,34 @@ class StepUpBook:
         self, step_up: StepUp, store: DraftStore, mandate_ids: list[str], deadline_at: datetime,
         *, budget: DecisionBudget | None = None,
     ) -> tuple[Decision, MandateState, dict]:
-        from .loop import EXTRACT_RESERVE_S, extract_with_budget, decide_with_guard
-
         operation = DecisionBudget.until(deadline_at) if budget is None else budget
         state = engine_state.load(step_up.event.mandate.mandate_id, customer_mandates=mandate_ids)
+        if state.handled.get(step_up.authorization_id) != step_up.decision:
+            raise StepUpError(f"{step_up.authorization_id}: saved state differs from the pending decision")
+        event, policy = policy_context.refresh(store, step_up.event, deadline_at=operation.wall_deadline(reserve_s=2))
+        checked = self._evaluate_pending(step_up, event, policy, state, operation)
+        return checked, state, policy.model_dump(mode="json")
+
+    def _evaluate_pending(
+        self, step_up: StepUp, event: Event, policy: PolicyDraft,
+        state: MandateState, budget: DecisionBudget,
+    ) -> Decision:
+        """Evaluate the same pending purchase with current permissions and the human budget."""
+        from .loop import EXTRACT_RESERVE_S, extract_with_budget, decide_with_guard
+
+        if (event.authorization != step_up.event.authorization
+                or event.mandate.mandate_id != step_up.event.mandate.mandate_id):
+            raise StepUpError(f"{step_up.authorization_id}: pending purchase changed before recheck")
         if state.handled.get(step_up.authorization_id) != step_up.decision:
             raise StepUpError(f"{step_up.authorization_id}: saved state differs from the pending decision")
         unchecked = state.model_copy(deep=True)
         del unchecked.handled[step_up.authorization_id]
         unchecked.pending_step_ups.remove(step_up.authorization_id)
-        event, policy = policy_context.refresh(store, step_up.event, deadline_at=operation.wall_deadline(reserve_s=2))
-        event.deadline_at = operation.wall_deadline()
+        current = event.model_copy(update={"deadline_at": budget.wall_deadline()})
         with ThreadPoolExecutor(max_workers=1) as pool:
             reserve = MODEL_CAP_S + MODEL_RESERVE_S if isinstance(self.evaluator, ModelEvaluator) else EXTRACT_RESERVE_S
-            facts = extract_with_budget(event, policy, pool, budget=operation, reserve_s=reserve)
-            checked = decide_with_guard(self.evaluator, event, policy, unchecked, facts, pool, budget=operation)
-        return checked, state, policy.model_dump(mode="json")
+            facts = extract_with_budget(current, policy, pool, budget=budget, reserve_s=reserve)
+            return decide_with_guard(self.evaluator, current, policy, unchecked, facts, pool, budget=budget)
 
     def _finish(
         self, step_up: StepUp, decision: Decision, coordinator: Coordinator,
