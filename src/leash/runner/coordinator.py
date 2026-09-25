@@ -38,8 +38,12 @@ class Coordinator:
                 current, current_ids = confirmation(self.store, mandate_id)
                 if current != record or current_ids != mandate_ids:
                     raise UnresolvedMutation(f"{mandate_id}: customer confirmation set changed while acquiring locks")
+                from leash.policy.purchases import recover_local_purchases
+
                 for owned_id in mandate_ids:
-                    for intent in self.journal.pending(owned_id):
+                    pending = self.journal.pending(owned_id)
+                    recover_local_purchases(owned_id, self.book, remote_pending=bool(pending))
+                    for intent in pending:
                         accepted = self.journal.reconcile(intent, deadline_at=deadline_at)
                         self.record(accepted)
                     records.check_consistent(owned_id)

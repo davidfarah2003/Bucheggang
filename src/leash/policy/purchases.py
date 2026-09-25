@@ -380,20 +380,20 @@ class PurchaseDesk:
             except Exception as exc:
                 raise PurchaseFailed(f"{auth_id}: {type(exc).__name__}: {exc}") from exc
             accepted_at = datetime.now(UTC)
-            records.recover_accepted(event, decision, accepted_at, {"origin": "local", "purchase_key_file": digest},
-                                     resolution=False, state_before=before)
+            step_up = None
             if decision.decision == "step_up":
                 step_up = StepUp(authorization_id=auth_id, decision=decision, event=event,
                                  expires_at=expires_at(accepted_at, window_s))
-                records.write_atomic(self.book._path(mandate_id, auth_id), {
-                    "step_up": step_up.model_dump(mode="json"), "status": "pending",
-                    "resolution": None, "origin": "local",
-                    "facts": [fact.model_dump(mode="json") for fact in validated["facts"]],
-                })
             saved = json.loads(path.read_text())
-            saved["authorization_id"] = auth_id
-            saved["decision"] = decision.decision
+            saved["recording"] = {
+                "decision": decision.model_dump(mode="json"),
+                "state_before": before.model_dump(mode="json"),
+                "accepted_at": accepted_at.isoformat(),
+                "step_up": step_up.model_dump(mode="json") if step_up else None,
+                "facts": [fact.model_dump(mode="json") for fact in validated["facts"]],
+            }
             records.write_atomic(path, saved)
+            _finish_purchase_record(path, saved, self.book)
             return self._status_of(auth_id, mandate_id)
 
     def _status_of(self, authorization_id: str, mandate_id: str) -> dict[str, Any]:
@@ -425,8 +425,116 @@ class PurchaseDesk:
         return self._status_of(authorization_id, mandate_id)
 
 
+def _recording_values(saved: dict, event: Event) -> tuple[Decision, MandateState, datetime]:
+    recording = saved["recording"]
+    decision = Decision.model_validate(recording["decision"])
+    before = MandateState.model_validate(recording["state_before"])
+    accepted_at = datetime.fromisoformat(recording["accepted_at"])
+    if (decision.authorization_id != event.authorization.authorization_id
+            or before.mandate_id != event.mandate.mandate_id
+            or event.authorization.mandate_id != before.mandate_id or before.customer_approvals):
+        raise PurchaseFailed("local recording has inconsistent purchase or state identities")
+    if accepted_at.utcoffset() is None or accepted_at > datetime.now(UTC):
+        raise PurchaseFailed("local recording has an invalid acceptance time")
+    return decision, before, accepted_at
+
+
+def _finish_purchase_record(path: Path, saved: dict, book: StepUpBook) -> None:
+    """Finish an already evaluated local purchase. Caller holds the owned mandate locks."""
+    event = Event.model_validate(saved["event"])
+    decision, before, accepted_at = _recording_values(saved, event)
+    mandate_id, auth_id = event.mandate.mandate_id, decision.authorization_id
+    if (path.parent.name != mandate_id or path.stem != saved["purchase_key_file"]
+            or saved["mandate_id"] != mandate_id or saved["authorization_id"] is not None
+            or saved["decision"] is not None):
+        raise PurchaseFailed(f"{auth_id}: unfinished purchase identity differs from its file")
+    pending = None
+    if decision.decision == "step_up":
+        step_up = StepUp.model_validate(saved["recording"]["step_up"])
+        facts = [PurchaseFacts.model_validate(fact) for fact in saved["recording"]["facts"]]
+        if (step_up.event != event or step_up.decision != decision
+                or step_up.authorization_id != auth_id or step_up.expires_at <= accepted_at
+                or [fact.item_id for fact in facts] != [item.item_id for item in event.authorization.items]
+                or any(fact.conflicts or any(source != "agent_form" for source in fact.sources.values()) for fact in facts)):
+            raise PurchaseFailed(f"{auth_id}: pending purchase differs from its evaluated result")
+        pending = {
+            "step_up": step_up.model_dump(mode="json"), "status": "pending", "resolution": None,
+            "origin": "local", "facts": [fact.model_dump(mode="json") for fact in facts],
+        }
+        step_path = book._path(mandate_id, auth_id)
+        if step_path.exists() and json.loads(step_path.read_text()) != pending:
+            raise PurchaseFailed(f"{auth_id}: saved pending purchase differs from its recording")
+    elif saved["recording"]["step_up"] is not None:
+        raise PurchaseFailed(f"{auth_id}: final purchase cannot have a pending question")
+    records.recover_accepted(event, decision, accepted_at,
+                             {"origin": "local", "purchase_key_file": path.stem},
+                             resolution=False, state_before=before)
+    if pending is not None:
+        records.write_atomic(book._path(mandate_id, auth_id), pending)
+    completed = {**saved, "authorization_id": auth_id, "decision": decision.decision}
+    del completed["recording"]
+    records.write_atomic(path, completed)
+
+
+def _finish_resolution_record(path: Path, saved: dict) -> None:
+    """Persist an already checked Wallet answer or timeout without evaluating again."""
+    step_up = StepUp.model_validate(saved["step_up"])
+    decision, before, accepted_at = _recording_values(saved, step_up.event)
+    auth_id = step_up.authorization_id
+    accepted = saved["recording"]["accepted"]
+    reason = accepted.get("resolution")
+    reasons = {"customer_confirmation": "approve", "customer_declined": "decline",
+               "step_up_timeout": "decline", "policy_recheck_declined": "decline"}
+    if (saved.get("origin") != "local" or saved["status"] != "pending"
+            or path.parent.name != before.mandate_id or path.stem != auth_id
+            or before.handled.get(auth_id) != step_up.decision or auth_id not in before.pending_step_ups
+            or accepted.get("origin") != "local" or reason not in reasons
+            or decision.decision != reasons[reason]):
+        raise PurchaseFailed(f"{auth_id}: local resolution differs from its pending purchase")
+    if ((reason == "step_up_timeout" and accepted_at < step_up.expires_at)
+            or (reason != "step_up_timeout" and accepted_at >= step_up.expires_at)):
+        raise PurchaseFailed(f"{auth_id}: local resolution was recorded outside its response window")
+    records.recover_accepted(step_up.event, decision, accepted_at, accepted,
+                             resolution=True, state_before=before)
+    completed = {**saved, "status": "resolved", "resolution": {
+        "decision": decision.model_dump(mode="json"), "accepted": accepted,
+        "accepted_at": accepted_at.isoformat(),
+    }}
+    del completed["recording"]
+    records.write_atomic(path, completed)
+
+
+def recover_local_purchases(mandate_id: str, book: StepUpBook, *, remote_pending: bool = False) -> None:
+    """Complete write-ahead local results before another owned mutation can run."""
+    from leash.runner.intents import UnresolvedMutation
+
+    unfinished = []
+    for root, finish in ((PURCHASES_DIR, _finish_purchase_record), (book.root, _finish_resolution_record)):
+        for path in sorted((root / records._safe(mandate_id, "mandate_id")).glob("*.json")):
+            saved = json.loads(path.read_text())
+            if "recording" in saved:
+                unfinished.append((path, saved, finish))
+    if len(unfinished) > 1 or (unfinished and remote_pending):
+        raise UnresolvedMutation(f"{mandate_id}: multiple unfinished recordings; ordering is unknown")
+    for path, saved, finish in unfinished:
+        if finish is _finish_purchase_record:
+            finish(path, saved, book)
+        else:
+            finish(path, saved)
+
+
 def timeout_local_step_ups(store: DraftStore, book: StepUpBook) -> list[str]:
-    """Decline every expired local step-up. Called by the Wallet API's sweeper."""
+    """Recover completed local evaluations, then decline expired local step-ups."""
+    from leash.runner.coordinator import Coordinator
+
+    unfinished = set()
+    for root in (PURCHASES_DIR, book.root):
+        for path in root.glob("*/*.json"):
+            if "recording" in json.loads(path.read_text()):
+                unfinished.add(path.parent.name)
+    for mandate_id in sorted(unfinished):
+        with Coordinator(store, book).locked(mandate_id, deadline_at=datetime.now(UTC) + timedelta(seconds=30)):
+            pass
     done = []
     for path in book.root.glob("*/*.json"):
         saved = json.loads(path.read_text())
@@ -529,9 +637,13 @@ def resolve_local(store: DraftStore, book: StepUpBook, step_up: StepUp, outcome:
             raise StepUpError(f"{auth_id}: local resolution budget expired before recording")
         before = state.model_copy(update={"customer_approvals": []})
         accepted_at = datetime.now(UTC)
+        if reason != "step_up_timeout" and accepted_at >= step_up.expires_at:
+            raise StepUpError(f"{auth_id}: the customer response window expired before recording")
         accepted = {"origin": "local", "resolution": reason if final.decision == outcome else "policy_recheck_declined"}
-        records.recover_accepted(step_up.event, final, accepted_at, accepted, resolution=True, state_before=before)
-        saved["status"] = "resolved"
-        saved["resolution"] = {"decision": final.model_dump(mode="json"), "accepted": accepted, "accepted_at": accepted_at.isoformat()}
+        saved["recording"] = {
+            "decision": final.model_dump(mode="json"), "state_before": before.model_dump(mode="json"),
+            "accepted": accepted, "accepted_at": accepted_at.isoformat(),
+        }
         records.write_atomic(path, saved)
+        _finish_resolution_record(path, saved)
     return auth_id

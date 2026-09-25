@@ -1,0 +1,126 @@
+{
+  "source_head": "a92b4d07e3b2a441ccaccf7e801a98a2886bce95",
+  "runtime_sha256": {
+    "src/leash/policy/purchases.py": "bfc77a6f8d667981681ed9acb7aa61e0507ae4ab34ac54c71749955953e760e0",
+    "src/leash/runner/coordinator.py": "9798924134244dd16fb2e43c95a39ddd13552f7e10c77c914c1dda205d0866d0"
+  },
+  "scope": "Offline public-input evaluation and real file/process recovery; no Wallet confirmation or customer answer.",
+  "observations": [
+    {
+      "decision": "approve",
+      "interruption": "state",
+      "child_exit": 17,
+      "recovery_calls": 2,
+      "history_records": 1,
+      "approval_count": 1,
+      "pending_count": 0,
+      "result": "recorded_once"
+    },
+    {
+      "decision": "approve",
+      "interruption": "history",
+      "child_exit": 18,
+      "recovery_calls": 2,
+      "history_records": 1,
+      "approval_count": 1,
+      "pending_count": 0,
+      "result": "recorded_once"
+    },
+    {
+      "decision": "step_up",
+      "interruption": "state",
+      "child_exit": 17,
+      "recovery_calls": 2,
+      "history_records": 1,
+      "approval_count": 2,
+      "pending_count": 1,
+      "result": "recorded_once"
+    },
+    {
+      "decision": "step_up",
+      "interruption": "history",
+      "child_exit": 18,
+      "recovery_calls": 2,
+      "history_records": 1,
+      "approval_count": 2,
+      "pending_count": 1,
+      "result": "recorded_once"
+    }
+  ],
+  "simulator_settings_calls": 0,
+  "provider_settings_calls": 0,
+  "customer_answers": 0,
+  "timeout_recovery": {
+    "scope": "Offline public-input pending records after their actual expiry, no human answers.",
+    "observations": [
+      {
+        "interruption": "state",
+        "child_exit": 17,
+        "recovery_calls": 2,
+        "decision": "decline",
+        "reason_codes": [
+          "step_up_timeout"
+        ],
+        "original_expiry": "2026-09-25T12:51:00.488209+00:00",
+        "history_records": 2,
+        "pending_count": 0,
+        "new_approvals": 0
+      },
+      {
+        "interruption": "history",
+        "child_exit": 18,
+        "recovery_calls": 2,
+        "decision": "decline",
+        "reason_codes": [
+          "step_up_timeout"
+        ],
+        "original_expiry": "2026-09-25T12:51:05.010632+00:00",
+        "history_records": 2,
+        "pending_count": 0,
+        "new_approvals": 0
+      }
+    ],
+    "simulator_settings_calls": 0,
+    "provider_settings_calls": 0,
+    "customer_answers": 0
+  },
+  "guards": {
+    "observations": [
+      {
+        "case": "mandate_identity",
+        "error": "AU0001: unfinished purchase identity differs from its file",
+        "files_unchanged": true
+      },
+      {
+        "case": "decision_identity",
+        "error": "local recording has inconsistent purchase or state identities",
+        "files_unchanged": true
+      },
+      {
+        "case": "no_evaluated_result",
+        "files_unchanged": true,
+        "authorization_id": null
+      }
+    ],
+    "simulator_settings_calls": 0,
+    "provider_settings_calls": 0,
+    "customer_answers": 0
+  },
+  "replay": {
+    "rows": 45,
+    "decisions": {
+      "approve": 11,
+      "decline": 32,
+      "step_up": 2
+    },
+    "decision_reason_parity": true
+  },
+  "manual_wallet": {
+    "source": "feb1ed7501ce98eae64c91b0560d146010b3b524",
+    "stage": "connect",
+    "outcome": "PairingTimeout",
+    "purchases": 0,
+    "customer_answers_by_driver": 0,
+    "server_shutdown": "configured_window_elapsed"
+  }
+}
