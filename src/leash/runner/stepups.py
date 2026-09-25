@@ -189,6 +189,11 @@ class StepUpBook:
             raise StepUpError(f"{step_up.authorization_id}: pending purchase changed before recheck")
         if state.handled.get(step_up.authorization_id) != step_up.decision:
             raise StepUpError(f"{step_up.authorization_id}: saved state differs from the pending decision")
+        if any(rule.scope == "period" for rule in policy.rules) and any(
+            approval.timestamp > event.authorization.timestamp
+            for approval in [*state.approvals, *state.customer_approvals]
+        ):
+            raise StepUpError(f"{step_up.authorization_id}: newer approved spending requires a fresh purchase request")
         unchecked = state.model_copy(deep=True)
         del unchecked.handled[step_up.authorization_id]
         unchecked.pending_step_ups.remove(step_up.authorization_id)

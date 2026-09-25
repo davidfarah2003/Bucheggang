@@ -85,7 +85,10 @@ def step_up_router(book: StepUpBook, authenticated_customer: Callable[..., str],
                     resolve_local(store, book, step_up, "approve", body.customer_message, reason="customer_confirmation")
                 else:
                     resolve_local(store, book, step_up, "decline", body.customer_message, reason="customer_declined")
-                return {"authorization_id": authorization_id, "status": "resolved", "decision": body.decision, "origin": "local"}
+                recorded = records.decision_detail(authorization_id)["decision"]
+                if recorded.decision == "step_up":
+                    raise StepUpError(f"{authorization_id}: local resolution has no recorded final decision")
+                return {"authorization_id": authorization_id, "status": "resolved", "decision": recorded.decision, "origin": "local"}
             return book.answer(body, store)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=f"no pending step-up {authorization_id}") from exc

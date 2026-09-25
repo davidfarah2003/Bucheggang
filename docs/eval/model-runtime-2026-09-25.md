@@ -23,7 +23,7 @@ The run used the settings currently selected by the demo launch scripts: a 20-se
 
 `decide_with_guard` called the production evaluator for each purchase. Hard policy failures returned before model dispatch. Successful model responses passed the current provider, distribution and purchase-binding validation. The client did not renormalize probabilities, retry a failed call or substitute another model. Current validation permits the documented provider-rounding tolerance; this is not the earlier strict-sum configuration.
 
-The purchase inputs came from the public data pack. Approvals were projected into in-memory replay state, and step-ups remained pending. No simulator run, persisted purchase, Wallet confirmation or customer answer was created. These results cover the evaluation path with real model calls. They do not establish complete MCP transport, purchase recovery or human Wallet verification. The earlier failed batches used a different probability-sum contract and remain in their original evidence record. The evaluation-label choice is still pending.
+The purchase inputs came from the public data pack. Approvals were projected into in-memory replay state, and step-ups remained pending. No simulator run, persisted purchase, Wallet confirmation or customer answer was created. These results cover the evaluation path with real model calls. They do not establish complete MCP transport, purchase recovery or human Wallet verification. The earlier failed batches used a different probability-sum contract and remain in their original evidence record. The [labelled replay report](report-labelled.md) was added later, after the strict label set was selected.
 
 ## Evidence
 

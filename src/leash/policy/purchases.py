@@ -27,7 +27,7 @@ from leash.engine import state as engine_state
 from leash.policy.store import DraftStore, draft_hash
 from leash.runner import records
 from leash.runner.budget import DecisionBudget
-from leash.runner.evaluation import ModelEvaluator, MODEL_RESERVE_S, load_evaluator
+from leash.runner.evaluation import Evaluate, ModelEvaluator, MODEL_RESERVE_S, load_evaluator
 from leash.runner.loop import decide_with_guard
 from leash.runner.stepups import StepUpBook, StepUpError, expires_at
 
@@ -345,6 +345,13 @@ class PurchaseDesk:
         deadline = now + timedelta(seconds=budget_s)
         coordinator = Coordinator(self.store, self.book)
         with coordinator.locked(mandate_id, deadline_at=deadline) as mandate_ids:
+            from leash.runner import mandates as simulator_mandates
+
+            remote = simulator_mandates.get(mandate_id, deadline_at=deadline)
+            if not isinstance(remote, dict) or remote.get("mandate_id") != mandate_id:
+                raise PurchaseFailed(f"{mandate_id}: simulator returned another mandate")
+            if remote.get("status") != "active":
+                raise InvalidPurchase(f"mandate is {remote.get('status')}")
             path = PURCHASES_DIR / records._safe(mandate_id, "mandate_id") / f"{digest}.json"
             if path.exists():
                 saved = json.loads(path.read_text())
@@ -354,13 +361,6 @@ class PurchaseDesk:
                     raise PurchaseFailed("this purchase_key failed earlier; use a new key")
                 return self._status_of(saved["authorization_id"], mandate_id)
             policy = _effective_policy(self.store, record)
-            from leash.runner import mandates as simulator_mandates
-
-            remote = simulator_mandates.get(mandate_id, deadline_at=deadline)
-            if not isinstance(remote, dict) or remote.get("mandate_id") != mandate_id:
-                raise PurchaseFailed(f"{mandate_id}: simulator returned another mandate")
-            if remote.get("status") != "active":
-                raise InvalidPurchase(f"mandate is {remote.get('status')}")
             earlier = _purchase_files(mandate_id)
             # The agent is the device (contract: the paired agent_id, unique per pairing).
             device_id = agent_id
@@ -388,6 +388,7 @@ class PurchaseDesk:
                 records.write_atomic(self.book._path(mandate_id, auth_id), {
                     "step_up": step_up.model_dump(mode="json"), "status": "pending",
                     "resolution": None, "origin": "local",
+                    "facts": [fact.model_dump(mode="json") for fact in validated["facts"]],
                 })
             saved = json.loads(path.read_text())
             saved["authorization_id"] = auth_id
@@ -439,28 +440,96 @@ def timeout_local_step_ups(store: DraftStore, book: StepUpBook) -> list[str]:
     return done
 
 
+def _recheck_local(
+    step_up: StepUp, event: Event, policy: PolicyDraft, state: MandateState,
+    facts: list[PurchaseFacts], evaluator: Evaluate, budget: DecisionBudget,
+) -> Decision:
+    """Re-evaluate the same local purchase using its recorded agent-form facts."""
+    auth_id = step_up.authorization_id
+    if event.authorization != step_up.event.authorization or event.mandate.mandate_id != step_up.event.mandate.mandate_id:
+        raise StepUpError(f"{auth_id}: pending purchase changed before recheck")
+    if state.handled.get(auth_id) != step_up.decision or auth_id not in state.pending_step_ups:
+        raise StepUpError(f"{auth_id}: saved state differs from the pending decision")
+    if [fact.item_id for fact in facts] != [item.item_id for item in event.authorization.items]:
+        raise StepUpError(f"{auth_id}: recorded facts do not match the pending cart")
+    if any(fact.conflicts or any(source != "agent_form" for source in fact.sources.values()) for fact in facts):
+        raise StepUpError(f"{auth_id}: recorded facts have an invalid source or conflict")
+    if any(rule.scope == "period" for rule in policy.rules) and any(
+        approval.timestamp > event.authorization.timestamp
+        for approval in [*state.approvals, *state.customer_approvals]
+    ):
+        raise StepUpError(f"{auth_id}: newer approved spending requires a fresh purchase request")
+    unchecked = state.model_copy(deep=True)
+    del unchecked.handled[auth_id]
+    unchecked.pending_step_ups.remove(auth_id)
+    current = event.model_copy(update={"deadline_at": budget.wall_deadline()})
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return decide_with_guard(evaluator, current, policy, unchecked, facts, pool, budget=budget)
+
+
 def resolve_local(store: DraftStore, book: StepUpBook, step_up: StepUp, outcome: str, message: str, *, reason: str) -> str:
-    """Finish a local step-up with the customer's answer or a timeout. Caller may hold no locks."""
+    """Finish a local answer after current-policy checks, or record an expired timeout."""
+    from leash.runner import policy_context
     from leash.runner.coordinator import Coordinator
 
+    reasons = {"customer_confirmation": "approve", "customer_declined": "decline", "step_up_timeout": "decline"}
+    if reason not in reasons or reasons[reason] != outcome:
+        raise StepUpError("local resolution reason and outcome differ")
     mandate_id = step_up.event.mandate.mandate_id
     auth_id = step_up.authorization_id
+    deadline = datetime.now(UTC) + timedelta(seconds=30)
+    if reason != "step_up_timeout":
+        deadline = min(deadline, step_up.expires_at)
+    budget = DecisionBudget.until(deadline)
     coordinator = Coordinator(store, book)
-    with coordinator.locked(mandate_id, deadline_at=datetime.now(UTC) + timedelta(seconds=30)) as mandate_ids:
+    with coordinator.locked(mandate_id, deadline_at=deadline) as mandate_ids:
         path = book._path(mandate_id, auth_id)
         saved = json.loads(path.read_text())
-        if saved["status"] != "pending":
+        if saved["status"] == "resolved":
             return auth_id
-        explanation = ("The customer approved this purchase in the Wallet." if outcome == "approve"
-                       else "The customer declined this purchase in the Wallet." if reason == "customer_declined"
-                       else f"No customer answer before {step_up.expires_at.isoformat()}; declined on timeout.")
-        final = step_up.decision.model_copy(update={
-            "decision": outcome, "reason_codes": [reason], "customer_message": message,
-            "explanation": explanation, "decided_at": datetime.now(UTC),
-        })
-        before = engine_state.load(mandate_id, customer_mandates=mandate_ids).model_copy(update={"customer_approvals": []})
+        if saved["status"] != "pending":
+            raise StepUpError(f"{auth_id}: stored local step-up status is invalid")
+        if StepUp.model_validate(saved["step_up"]) != step_up:
+            raise StepUpError(f"{auth_id}: pending purchase changed while acquiring its lock")
+        now = datetime.now(UTC)
+        if reason == "step_up_timeout":
+            if now < step_up.expires_at:
+                raise StepUpError(f"{auth_id}: the pending purchase has not expired")
+        elif now >= step_up.expires_at:
+            raise StepUpError(f"{auth_id}: the customer response window expired")
+        state = engine_state.load(mandate_id, customer_mandates=mandate_ids)
+        if outcome == "approve":
+            if not isinstance(saved.get("facts"), list):
+                raise StepUpError(f"{auth_id}: recorded purchase facts are missing; approval cannot be rechecked")
+            try:
+                facts = [PurchaseFacts.model_validate(value) for value in saved["facts"]]
+            except (TypeError, ValueError) as exc:
+                raise StepUpError(f"{auth_id}: recorded purchase facts are invalid") from exc
+            event, policy = policy_context.refresh(store, step_up.event, deadline_at=budget.wall_deadline(reserve_s=2))
+            checked = _recheck_local(step_up, event, policy, state, facts,
+                                     load_evaluator(cap_s=LOCAL_MODEL_CAP_S), budget)
+            if checked.decision == "decline":
+                final = checked
+            elif checked.decision == "step_up" and not set(checked.reason_codes) <= set(step_up.decision.reason_codes):
+                new = sorted(set(checked.reason_codes) - set(step_up.decision.reason_codes))
+                raise StepUpError(f"{auth_id}: recheck raised {new}, which the customer was not asked about")
+            else:
+                final = checked.model_copy(update={
+                    "decision": "approve", "reason_codes": [reason], "customer_message": message,
+                    "explanation": "The customer approved this purchase. Current permissions, spending and count limits were checked again before resolution.",
+                })
+        else:
+            explanation = ("The customer declined this purchase in the Wallet." if reason == "customer_declined"
+                           else f"No customer answer before {step_up.expires_at.isoformat()}; declined on timeout.")
+            final = step_up.decision.model_copy(update={
+                "decision": "decline", "reason_codes": [reason], "customer_message": message,
+                "explanation": explanation, "decided_at": now,
+            })
+        if budget.remaining() <= 0:
+            raise StepUpError(f"{auth_id}: local resolution budget expired before recording")
+        before = state.model_copy(update={"customer_approvals": []})
         accepted_at = datetime.now(UTC)
-        accepted = {"origin": "local", "resolution": reason}
+        accepted = {"origin": "local", "resolution": reason if final.decision == outcome else "policy_recheck_declined"}
         records.recover_accepted(step_up.event, final, accepted_at, accepted, resolution=True, state_before=before)
         saved["status"] = "resolved"
         saved["resolution"] = {"decision": final.model_dump(mode="json"), "accepted": accepted, "accepted_at": accepted_at.isoformat()}
