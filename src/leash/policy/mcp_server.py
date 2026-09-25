@@ -10,13 +10,14 @@ from contextvars import ContextVar
 import os
 from pathlib import Path
 from typing import Annotated, Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from leash.api.main import _validate_origin
 from leash.contracts import PurchaseFacts
 
 from .identity import IdentityStore, PairingPending, PairingUnknown, Unauthorized
@@ -28,23 +29,6 @@ from .store import (
 
 PROPOSAL_REQUIRED_KEYS = frozenset({"rules", "examples", "open_questions", "uncertainty_policy"})
 PROPOSAL_KEYS = PROPOSAL_REQUIRED_KEYS | {"boundary_cases"}
-
-
-def _validate_app_origin(value: str) -> str:
-    if not isinstance(value, str) or not value or value != value.strip():
-        raise RuntimeError("LEASH_APP_ORIGIN must be an exact HTTP or HTTPS origin")
-    parsed = urlsplit(value)
-    if (
-        parsed.scheme not in {"http", "https"}
-        or not parsed.netloc
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.path
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise RuntimeError("LEASH_APP_ORIGIN must be an exact HTTP or HTTPS origin without a path")
-    return value
 
 
 def authoring_guide() -> dict[str, Any]:
@@ -277,7 +261,7 @@ def create_server(
     *,
     app_origin: str,
 ) -> PolicyMCPServer:
-    wallet_origin = _validate_app_origin(app_origin)
+    wallet_origin, _ = _validate_origin(app_origin)
     identity_store = identities or IdentityStore(store.root)
     server = PolicyMCPServer(identity_store, stdio_agent_token)
 
@@ -390,7 +374,7 @@ def main(argv: list[str] | None = None) -> None:
     root = os.environ.get("LEASH_POLICY_STORE")
     if not root:
         raise RuntimeError("LEASH_POLICY_STORE is required for the policy MCP server")
-    app_origin = _validate_app_origin(os.environ.get("LEASH_APP_ORIGIN"))
+    app_origin, _ = _validate_origin(os.environ.get("LEASH_APP_ORIGIN"))
     store = DraftStore(Path(root))
 
     identities = IdentityStore(store.root)
