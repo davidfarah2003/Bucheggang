@@ -1,0 +1,126 @@
+.identity-view {
+  display: grid;
+  align-content: start;
+  gap: 22px;
+  min-width: 0;
+  padding: 28px 24px 40px;
+}
+
+.identity-intro {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.identity-intro p,
+.identity-card p,
+.agent-card p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.auth-fields,
+.auth-switch,
+.identity-card,
+.agents-list,
+.agent-card,
+.agent-meta,
+.agent-actions {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.auth-fields label {
+  display: grid;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.auth-fields input {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.auth-switch {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.auth-switch button,
+.agent-actions button {
+  min-width: 0;
+  min-height: 44px;
+}
+
+.auth-error {
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 13px;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  line-height: 1.45;
+}
+
+.identity-card,
+.agent-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+}
+
+.scope-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding-left: 22px;
+}
+
+.expiry {
+  color: var(--amber);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.agent-meta {
+  margin: 0;
+}
+
+.agent-meta > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 8px;
+}
+
+.agent-meta dt {
+  color: var(--muted);
+}
+
+.agent-meta dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.identity-view,
+.identity-view :is(h1, h2, h3, p, li, dt, dd, button, .auth-error) {
+  overflow-wrap: anywhere;
+}
+
+.identity-view :is(button, input):focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@media (max-width: 359px) {
+  .identity-view { padding-inline: 18px; }
+  .agent-meta > div { grid-template-columns: 1fr; gap: 2px; }
+}

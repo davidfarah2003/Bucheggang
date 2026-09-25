@@ -78,7 +78,7 @@ def create_app(store: DraftStore, mandates: MandateClient, step_up_book: StepUpB
         response.delete_cookie(COOKIE_NAME, path="/")
 
     app.include_router(policy_router(store, mandates, authenticated_customer))
-    app.include_router(mandate_router(store, authenticated_customer, load))
+    app.include_router(mandate_router(store, authenticated_customer, load, step_up_book=step_up_book))
     app.include_router(step_up_router(step_up_book, authenticated_customer, store))
     app.include_router(history_router(authenticated_customer, store))
     mount_customer_app(app)

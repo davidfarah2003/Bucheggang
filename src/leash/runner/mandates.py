@@ -5,6 +5,7 @@ leash.runner.api.ApiError on any non-2xx. No retry, no fallback.
 """
 
 from typing import Any, Mapping
+from datetime import datetime
 
 from leash.policy.store import simulator_payload
 
@@ -42,9 +43,9 @@ def confirm(simulator_draft_id: str) -> str:
     return _require(body, "mandate_id", path)
 
 
-def get(mandate_id: str) -> dict:
+def get(mandate_id: str, *, deadline_at: datetime | None = None) -> dict:
     """GET /v1/mandates/{mandate_id}; the raw stored mandate."""
-    return api.call("GET", f"/v1/mandates/{mandate_id}")
+    return api.call("GET", f"/v1/mandates/{mandate_id}", deadline_at=deadline_at)
 
 
 def tighten(mandate_id: str, patch: dict) -> dict:

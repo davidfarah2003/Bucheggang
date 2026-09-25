@@ -31,13 +31,17 @@ import logging
 import math
 import threading
 from datetime import UTC, datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from leash.contracts import Decision, Event, StepUp, StepUpAnswer
-from leash.contracts.event import Authorization
+from leash.contracts import Decision, Event, MandateState, StepUp, StepUpAnswer
+from leash.engine import state as engine_state
+from leash.engine.evaluate import evaluate
+from leash.policy.store import DraftStore
 
-from . import api, records
+from . import api, records, policy_context
+from .coordinator import Coordinator
 
 EXPIRY_MARGIN_S = 5.0
 SWEEP_INTERVAL_S = 1.0
@@ -154,136 +158,123 @@ class StepUpBook:
         records.write_atomic(path, {"step_up": step_up.model_dump(mode="json"), "status": "pending", "resolution": None})
         return step_up
 
+    def _checked_decision(
+        self, step_up: StepUp, store: DraftStore, mandate_ids: list[str], deadline_at: datetime,
+    ) -> tuple[Decision, MandateState, dict]:
+        from .loop import extract_with_budget, decide_with_guard
+
+        state = engine_state.load(step_up.event.mandate.mandate_id, customer_mandates=mandate_ids)
+        if state.handled.get(step_up.authorization_id) != step_up.decision:
+            raise StepUpError(f"{step_up.authorization_id}: saved state differs from the pending decision")
+        unchecked = state.model_copy(deep=True)
+        del unchecked.handled[step_up.authorization_id]
+        unchecked.pending_step_ups.remove(step_up.authorization_id)
+        event, policy = policy_context.refresh(store, step_up.event, deadline_at=deadline_at - timedelta(seconds=2))
+        event.deadline_at = deadline_at
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            facts = extract_with_budget(event, policy, pool)
+            checked = decide_with_guard(evaluate, event, policy, unchecked, facts, pool)
+        return checked, state, policy.model_dump(mode="json")
+
     def _finish(
-        self, path: Path, step_up: StepUp, outcome: str, reason_codes: list[str], message: str, explanation: str,
-        *, deadline_at: datetime,
+        self, step_up: StepUp, decision: Decision, coordinator: Coordinator,
+        *, run_id: str, mandate_ids: list[str], deadline_at: datetime, evaluated_state: MandateState | None = None,
+        policy: dict | None = None, observe_expiry: bool = False,
     ) -> Any:
-        """Resolve within the human window, then record. Caller holds the mandate lock."""
-        auth_id = step_up.authorization_id
-        accepted = resolve(auth_id, outcome, message, deadline_at=deadline_at)
-        accepted_at = _now()
-        final = Decision(
-            authorization_id=auth_id,
-            decision=outcome,
-            reason_codes=reason_codes,
-            customer_message=message,
-            evidence=step_up.decision.evidence,
-            explanation=explanation,
-            engine_version=step_up.decision.engine_version,
-            mandate_version=step_up.decision.mandate_version,
-            elapsed_ms=step_up.decision.elapsed_ms,
-            decided_at=accepted_at,
+        """Write ahead, resolve once, and finish the accepted state and history."""
+        coordinator.authorization(
+            event=step_up.event, decision=decision,
+            state_before=engine_state.load(step_up.event.mandate.mandate_id, customer_mandates=mandate_ids).model_copy(update={"customer_approvals": []}),
+            run_id=run_id, deadline_at=deadline_at, step_up=step_up,
+            evaluated_state=evaluated_state, policy=policy, observe_expiry=observe_expiry,
         )
-        self._record_resolution(path, step_up, final, accepted_at, accepted)
-        log.info("resolved %s %s %s accepted=%s", auth_id, outcome, reason_codes, accepted)
-        return accepted
+        saved = self._read(self._path(step_up.event.mandate.mandate_id, step_up.authorization_id))
+        recorded = Decision.model_validate(saved["resolution"]["decision"])
+        log.info("resolved %s %s %s", step_up.authorization_id, recorded.decision, recorded.reason_codes)
+        return saved["resolution"]["accepted"]
 
     @staticmethod
-    def _record_resolution(path: Path, step_up: StepUp, final: Decision, accepted_at: datetime, accepted: Any) -> None:
-        records.record_accepted(step_up.event, final, accepted_at, accepted, resolution=True)
-        records.write_atomic(path, {
-            "step_up": step_up.model_dump(mode="json"),
-            "status": "resolved",
-            "resolution": {"decision": final.model_dump(mode="json"), "accepted": accepted, "accepted_at": accepted_at.isoformat()},
-        })
-
-    def _reconcile_expired(self, path: Path, step_up: StepUp, run_id: str) -> None:
-        """Record a verified platform expiry. Never infer an outcome from the 409 alone."""
-        auth_id = step_up.authorization_id
-        rows = api.call("GET", "/v1/authorizations", params={"run_id": run_id})
-        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
-            raise StepUpError("GET /v1/authorizations did not return a list of authorization records")
-        found = [row for row in rows if row.get("authorization_id") == auth_id]
-        if len(found) != 1:
-            raise StepUpError(f"{auth_id}: expected one authoritative authorization, found {len(found)}")
-        accepted = found[0]
-        decision = accepted.get("decision")
-        if (accepted.get("run_id") != run_id or accepted.get("status") != "declined"
-                or accepted.get("decision_source") != "timeout"
-                or accepted.get("reason_codes") != ["step_up_expired"]
-                or not isinstance(decision, dict)
-                or decision.get("authorization_id") != auth_id or decision.get("decision") != "decline"
-                or decision.get("decision_source") != "timeout"
-                or decision.get("reason_codes") != ["step_up_expired"]):
-            raise StepUpError(f"{auth_id}: platform record is not a finalized step-up timeout decline")
-        authorization = Authorization.model_validate(accepted.get("authorization"))
-        if authorization != step_up.event.authorization:
-            raise StepUpError(f"{auth_id}: platform authorization differs from the stored pending event")
-        finalized = accepted.get("finalized_at")
-        if not isinstance(finalized, str):
-            raise StepUpError(f"{auth_id}: platform timeout has no finalized_at")
-        accepted_at = datetime.fromisoformat(finalized.replace("Z", "+00:00"))
-        if accepted_at.tzinfo is None or not step_up.expires_at <= accepted_at <= _now():
-            raise StepUpError(f"{auth_id}: platform finalized_at is outside the expiry-to-now interval")
-        final = Decision(
-            authorization_id=auth_id, decision="decline", reason_codes=["step_up_timeout"],
-            customer_message=decision.get("customer_message"), evidence=decision.get("evidence"),
-            explanation="The simulator expired the unanswered step-up. Recorded its verified timeout decline without resubmitting.",
-            engine_version="simulator-step-up-expiry", mandate_version=step_up.decision.mandate_version,
-            elapsed_ms=0, decided_at=accepted_at,
+    def _final(step_up: StepUp, outcome: str, codes: list[str], message: str, explanation: str) -> Decision:
+        return Decision(
+            authorization_id=step_up.authorization_id, decision=outcome, reason_codes=codes,
+            customer_message=message, evidence=step_up.decision.evidence, explanation=explanation,
+            engine_version=step_up.decision.engine_version, mandate_version=step_up.decision.mandate_version,
+            elapsed_ms=step_up.decision.elapsed_ms, decided_at=_now(),
         )
-        self._record_resolution(path, step_up, final, accepted_at, accepted)
-        log.info("reconciled %s declined decision_source=timeout reason=step_up_expired finalized_at=%s",
-                 auth_id, finalized)
 
-    def answer(self, answer: StepUpAnswer) -> Any:
-        """Send the customer's answer to /resolve and record it. KeyError when unknown."""
-        path = self._find(answer.authorization_id)
-        mandate_id = path.parent.name
-        with records.mandate_lock(mandate_id):
-            record = self._read(path)
-            step_up = record["step_up"]
+    def answer(self, answer: StepUpAnswer, store: DraftStore) -> Any:
+        """Resolve an actual customer answer after checking current permissions and spend."""
+        step_up = self.get(answer.authorization_id)
+        mandate_id = step_up.event.mandate.mandate_id
+        coordinator = Coordinator(store, self)
+        with coordinator.locked(mandate_id, deadline_at=step_up.expires_at) as mandate_ids:
+            record = self._read(self._path(mandate_id, answer.authorization_id))
             if record["status"] != "pending":
                 raise StepUpError(f"step-up {answer.authorization_id} is already resolved")
             if _now() >= step_up.expires_at:
                 raise StepUpError(f"step-up {answer.authorization_id} expired at {step_up.expires_at.isoformat()}")
-            code = "customer_confirmation" if answer.decision == "approve" else "customer_declined"
+            run_id = record.get("run_id")
+            if not isinstance(run_id, str) or not run_id:
+                raise StepUpError(f"step-up {answer.authorization_id} lacks its recorded run identity")
+            checked_state, policy = None, None
+            if answer.decision == "approve":
+                checked, checked_state, policy = self._checked_decision(step_up, store, mandate_ids, step_up.expires_at)
+                if checked.decision == "decline":
+                    final = checked
+                elif checked.decision == "step_up" and not set(checked.reason_codes) <= set(step_up.decision.reason_codes):
+                    new = sorted(set(checked.reason_codes) - set(step_up.decision.reason_codes))
+                    raise StepUpError(
+                        f"step-up {answer.authorization_id}: the recheck raised {new}, which the customer was not asked about; "
+                        "the step-up stays pending until it is answered again or times out"
+                    )
+                else:
+                    final = checked.model_copy(update={
+                        "decision": "approve", "reason_codes": ["customer_confirmation"],
+                        "customer_message": answer.customer_message,
+                        "explanation": "The customer approved this purchase. Current permissions, spending and count limits were checked again before resolution.",
+                    })
+            else:
+                final = self._final(
+                    step_up, "decline", ["customer_declined"], answer.customer_message,
+                    "The customer declined this purchase.",
+                )
             return self._finish(
-                path,
-                step_up,
-                answer.decision,
-                [code],
-                answer.customer_message,
-                f"The customer answered {answer.decision} at {answer.answered_at.isoformat()}.",
-                deadline_at=step_up.expires_at,
+                step_up, final, coordinator, run_id=run_id, mandate_ids=mandate_ids, deadline_at=step_up.expires_at,
+                evaluated_state=checked_state, policy=policy,
             )
 
-    def sweep(self, mandate_id: str, run_id: str) -> list[str]:
-        """Resolve expired step-ups, or reconcile a timeout the platform already recorded."""
+    def sweep(self, mandate_id: str, run_id: str, store: DraftStore) -> list[str]:
+        """Resolve expired or withdrawn permissions, reading back uncertain outcomes."""
         done = []
-        with records.mandate_lock(mandate_id):
-            now = _now()
+        coordinator = Coordinator(store, self)
+        with coordinator.locked(mandate_id, deadline_at=_now() + timedelta(seconds=30)) as mandate_ids:
             for step_up in self.pending(mandate_id):
-                if now < step_up.expires_at:
-                    continue
-                path = self._path(mandate_id, step_up.authorization_id)
-                timeout_deadline = step_up.expires_at + timedelta(seconds=EXPIRY_MARGIN_S)
-                if _now() >= timeout_deadline:
-                    self._reconcile_expired(path, step_up, run_id)
-                    done.append(step_up.authorization_id)
-                    continue
-                try:
-                    self._finish(
-                        path, step_up, "decline", ["step_up_timeout"],
+                now = _now()
+                if now >= step_up.expires_at:
+                    final = self._final(
+                        step_up, "decline", ["step_up_timeout"],
                         "You did not answer in time, so this purchase was declined.",
                         f"No customer answer before {step_up.expires_at.isoformat()}; declined on timeout.",
-                        deadline_at=timeout_deadline,
                     )
-                except api.ApiError as exc:
-                    error = exc.body.get("error") if isinstance(exc.body, dict) else None
-                    if (exc.status != 409 or not isinstance(error, dict)
-                            or error.get("code") != "authorization_not_pending"):
-                        raise
-                    self._reconcile_expired(path, step_up, run_id)
-                done.append(step_up.authorization_id)
+                    timeout_deadline = step_up.expires_at + timedelta(seconds=EXPIRY_MARGIN_S)
+                    observe = now >= timeout_deadline
+                    self._finish(
+                        step_up, final, coordinator, run_id=run_id, mandate_ids=mandate_ids, observe_expiry=observe,
+                        deadline_at=now + timedelta(seconds=30) if observe else timeout_deadline,
+                    )
+                    done.append(step_up.authorization_id)
+                    continue
+                # A pending step_up is resolved only by the customer's answer through the app
+                # route or by the timeout above. A mandate that turns inactive meanwhile waits
+                # for one of those two; the answer path re-evaluates against the inactive mandate.
         return done
 
     # sweeper thread (run loop process only)
 
-    def _sweep_forever(self, mandate_id: str, run_id: str) -> None:
+    def _sweep_forever(self, mandate_id: str, run_id: str, store: DraftStore) -> None:
         try:
             while not self._stop.wait(SWEEP_INTERVAL_S):
-                self.sweep(mandate_id, run_id)
+                self.sweep(mandate_id, run_id, store)
         except BaseException as exc:
             # Kept for the run loop, which re-raises it; the thread then ends.
             self.failure = exc
@@ -294,8 +285,8 @@ class StepUpBook:
         if self.failure is not None:
             raise StepUpError("step-up sweeper failed; pending step-ups are no longer timed out") from self.failure
 
-    def start(self, mandate_id: str, run_id: str) -> None:
-        self._sweeper = threading.Thread(target=self._sweep_forever, args=(mandate_id, run_id), name="step-up-sweeper", daemon=True)
+    def start(self, mandate_id: str, run_id: str, store: DraftStore) -> None:
+        self._sweeper = threading.Thread(target=self._sweep_forever, args=(mandate_id, run_id, store), name="step-up-sweeper", daemon=True)
         self._sweeper.start()
 
     def stop(self) -> None:

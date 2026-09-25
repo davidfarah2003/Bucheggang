@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+from datetime import timedelta
 
 from leash.contracts import PolicyDraft
 
@@ -20,7 +21,8 @@ from leash.engine import state as state_store
 from leash.engine.evaluate import evaluate as engine_evaluate
 from leash.policy.store import DraftStore
 
-from . import loop, records, routes, stepups
+from . import loop, records, routes, stepups, policy_context
+from .coordinator import Coordinator
 
 
 def serve(book: stepups.StepUpBook, port: int, store: DraftStore) -> None:
@@ -50,29 +52,30 @@ def main() -> None:
     parser.add_argument("--run-id", help="attach to a run that is already started instead of starting one")
     args = parser.parse_args()
 
-    if args.serve_port is not None:
-        store_root = os.environ.get("LEASH_POLICY_STORE")
-        if not store_root:
-            raise RuntimeError("--serve-port requires LEASH_POLICY_STORE with the customer confirmations")
-        store = DraftStore(Path(store_root))
+    store_root = os.environ.get("LEASH_POLICY_STORE")
+    if not store_root:
+        raise RuntimeError("runner requires LEASH_POLICY_STORE with the customer confirmations")
+    store = DraftStore(Path(store_root))
     policy = PolicyDraft.model_validate(json.loads(args.draft.read_text()))
     loop.configure_logging()
+    record, _ = policy_context.confirmation(store, args.mandate_id)
+    if record["hash"] != policy.hash or record["version"] != policy.version:
+        raise loop.RunLoopError("supplied draft differs from the stored customer confirmation")
+    book = stepups.StepUpBook()
+    with Coordinator(store, book).locked(args.mandate_id, deadline_at=loop._now() + timedelta(seconds=30)) as ids:
+        start_state = state_store.load(args.mandate_id, customer_mandates=ids)
     run = loop.run_progress(args.run_id) if args.run_id else loop.start_run(args.scenario, args.mandate_id)
     if run["scenario_id"] != args.scenario or run["mandate_id"] != args.mandate_id:
         raise loop.RunLoopError(f"run {run['run_id']} is for {run['scenario_id']}/{run['mandate_id']}")
     print("run:", json.dumps(run, default=str))
-    records.check_consistent(args.mandate_id)
-    with records.mandate_lock(args.mandate_id):
-        start_state = state_store.load(args.mandate_id)
     print("state at start:", json.dumps({"handled": sorted(start_state.handled), "approvals": len(start_state.approvals),
-                                        "pending_step_ups": start_state.pending_step_ups}))
+                                        "pending_step_ups": start_state.pending_step_ups, "customer_approvals": len(start_state.customer_approvals)}))
     window_s = stepups.human_window_s()
-    book = stepups.StepUpBook()
-    book.start(args.mandate_id, run["run_id"])
+    book.start(args.mandate_id, run["run_id"], store)
     try:
         if args.serve_port is not None:
             serve(book, args.serve_port, store)
-        state = loop.run_loop(run["run_id"], engine_evaluate, policy, args.mandate_id, book, window_s)
+        state = loop.run_loop(run["run_id"], engine_evaluate, policy, args.mandate_id, book, window_s, store)
     except Exception:
         loop.log.exception("runner stopped after an operation failed")
         raise
