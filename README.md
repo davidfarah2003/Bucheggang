@@ -101,6 +101,12 @@ Shop currently hands requests to an external MCP client. The in-app provider ada
 
 [Setup guide](docs/setup.md) · [Connect an agent](docs/setup.md#connect-an-agent) · [Replay the public inputs](docs/run-replay.md) · [Design](docs/idea/viseca-agent-control-layer.md)
 
+## Built with Cotal Cloud
+
+We used [Cotal Cloud](https://cotal.ai) to coordinate 3 people and 15 agents across more than 640 commits in under 22 hours. Context passed between agents automatically.
+
+[Cotal on GitHub](https://github.com/Cotal-Ai/Cotal)
+
 ## Contributors
 
 <table>
