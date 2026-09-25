@@ -8,7 +8,7 @@ from .store import DraftConflict, DraftStore, InvalidDraft
 
 
 class MandateClient(Protocol):
-    def create(self, draft: dict[str, Any]) -> str: ...
+    def create(self, draft: dict[str, Any], global_rules: list[dict[str, Any]]) -> str: ...
 
     def confirm(self, simulator_draft_id: str) -> str: ...
 
@@ -70,6 +70,7 @@ def confirm_policy(
     hash_value: str,
     answers: dict[str, str],
     confirmed_by: str,
+    global_policy: dict[str, Any],
 ) -> dict[str, Any]:
     """Create and confirm a simulator mandate after an authenticated app action.
 
@@ -85,7 +86,8 @@ def confirm_policy(
         hash_value=draft["hash"],
         confirmed_by=confirmed_by,
     )
-    simulator_draft_id = mandates.create(draft)
+    global_rules = global_policy["rules"]
+    simulator_draft_id = mandates.create(draft, global_rules)
     store.record_simulator_draft(
         draft_id,
         version=draft["version"],
@@ -102,6 +104,9 @@ def confirm_policy(
         mandate_id=mandate_id,
         confirmed_by=confirmed_by,
         attempt_id=attempt_id,
+        global_version=global_policy["version"],
+        global_hash=global_policy["hash"],
+        global_rules=global_rules,
     )
     return {
         "mandate_id": mandate_id,
@@ -110,4 +115,6 @@ def confirm_policy(
         "hash": draft["hash"],
         "status": "active",
         "confirmed_at": result["confirmation"]["confirmed_at"],
+        "global_policy_version": result["confirmation"]["global_version"],
+        "global_policy_hash": result["confirmation"]["global_hash"],
     }

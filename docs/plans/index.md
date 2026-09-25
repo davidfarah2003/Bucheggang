@@ -1,18 +1,18 @@
 # Plans
 
-One file per lane, numbered in user-flow order. Owners are proposed; change the table when the split is agreed. Every plan ends with a Log that the lane's agents append to; that Log is the lane's memory across sessions.
+One file per lane, numbered in user-flow order. Each plan's Log records implementation and verification. The status below describes the lane as a whole, not the state of every task or an open PR.
 
 Deadline: expert-round submission Friday 25 September 2026 at 12:00, final submission 17:30 (timeline in `AGENTS.md`, section 10).
 
-| # | Plan | Lane | Channel | Owner (proposed) | Status |
+| # | Plan | Lane | Channel | Owner | Status |
 | --- | --- | --- | --- | --- | --- |
-| 01 | [Policy draft and confirmation](01-policy-confirmation.md) | policy | `team.zurichbuchegg.policy` | Oskar | draft |
-| 02 | [Decision engine](02-decision-engine.md) | engine | `team.zurichbuchegg.engine` | David | draft |
-| 03 | [Merchant-text extraction](03-merchant-text-extraction.md) | extract | `team.zurichbuchegg.extract` | Oskar | draft |
-| 04 | [Customer app](04-customer-app.md) | app | `team.zurichbuchegg.app` | Rishabh | draft |
-| 05 | [Simulator runner](05-simulator-runner.md) | runner | `team.zurichbuchegg.runner` | David | draft |
-| 06 | [Evaluation and demo](06-evaluation-and-demo.md) | all | `team.zurichbuchegg` (spine) | everyone; Rishabh drives the pitch | draft |
+| 01 | [Policy draft and confirmation](01-policy-confirmation.md) | policy | `team.zurichbuchegg.policy` | Oskar | in progress |
+| 02 | [Decision engine](02-decision-engine.md) | engine | `team.zurichbuchegg.engine` | David | in progress |
+| 03 | [Merchant-text extraction](03-merchant-text-extraction.md) | extract | `team.zurichbuchegg.extract` | Oskar | in progress |
+| 04 | [Customer app](04-customer-app.md) | app | `team.zurichbuchegg.app` | Rishabh | in progress |
+| 05 | [Simulator runner](05-simulator-runner.md) | runner | `team.zurichbuchegg.runner` | David | in progress |
+| 06 | [Evaluation and demo](06-evaluation-and-demo.md) | all | `team.zurichbuchegg` (spine) | everyone; Rishabh drives the pitch | in progress |
 
-Build order: 02 and 05 first (the demo depends on both), 01 and 03 in parallel with them, 04 as soon as 01 has a fixture draft to show, 06's labels tonight by two people.
+For the merged local Wallet entry point and shared policy store, see [run-wallet.md](../run-wallet.md) and [mcp-client.md](../mcp-client.md). The authenticated customer-owned `GET /drafts` and `GET /mandates` list routes landed in policy PR #48. Policy PR #52 made draft file publication atomic and tightened proposal validation. Neither merge completes the outstanding live customer flow. Open PRs and held work remain outside this index's shipped status.
 
 Status values: `draft`, `agreed`, `in progress`, `done`, `dropped`.

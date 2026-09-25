@@ -49,6 +49,10 @@ NUMBER_FIELDS = frozenset(
     {"authorization.billing_amount_chf", "authorization.items_subtotal", "authorization.delivery_fee",
      "items.count", "facts.return_days", "state.approvals_count"}
 )
+PERIOD_FIELDS = frozenset({"authorization.billing_amount_chf", "state.approvals_count"})
+MONEY_FIELDS = frozenset(
+    {"authorization.billing_amount_chf", "authorization.items_subtotal", "authorization.delivery_fee"}
+)
 BOOLEAN_STRING_FIELDS = frozenset(
     {"facts.is_gift_card", "facts.is_subscription", "facts.is_protection_plan",
      "facts.is_addon", "history.merchant_seen_on_card", "history.device_seen_on_card"}
@@ -117,10 +121,18 @@ def _validate_rule(rule: dict[str, Any], instruction: str) -> None:
         values = value if isinstance(value, list) else [value]
         if any(item not in {"true", "false"} for item in values):
             raise InvalidDraft(f"{rule['field']} needs 'true' or 'false'")
-    if rule.get("scope") == "period" and rule["field"] not in NUMBER_FIELDS:
-        raise InvalidDraft("period scope requires a numeric field")
+    if rule["operator"] in {"<", "<=", ">", ">="} and rule["field"] not in NUMBER_FIELDS:
+        raise InvalidDraft("numeric comparison requires a numeric field")
+    if rule["operator"] in {"in", "not_in"} and not isinstance(value, list):
+        raise InvalidDraft("in and not_in require a string list")
+    if rule["operator"] in {"=", "!="} and isinstance(value, list):
+        raise InvalidDraft("= and != require one value")
+    if rule.get("scope") == "period" and rule["field"] not in PERIOD_FIELDS:
+        raise InvalidDraft(f"period scope is not supported for {rule['field']}")
     if "currency" in rule and rule["currency"] not in CURRENCIES:
         raise InvalidDraft("unsupported currency")
+    if "currency" in rule and rule["field"] not in MONEY_FIELDS:
+        raise InvalidDraft("currency only applies to money fields")
     if "scope" in rule and rule["scope"] not in {"purchase", "period"}:
         raise InvalidDraft("unsupported rule scope")
     if "period_days" in rule and (
@@ -129,6 +141,8 @@ def _validate_rule(rule: dict[str, Any], instruction: str) -> None:
         raise InvalidDraft("period_days must be a positive integer")
     if rule.get("scope") == "period" and "period_days" not in rule:
         raise InvalidDraft("period rules need period_days")
+    if "period_days" in rule and rule.get("scope") != "period":
+        raise InvalidDraft("period_days requires period scope")
     source = rule.get("source_text")
     if not isinstance(source, str) or not source or source not in instruction:
         raise InvalidDraft("each rule must quote a phrase from the instruction")
@@ -186,13 +200,13 @@ def _validate_draft(
             raise InvalidDraft("answer must be one of the options")
 
 
-def simulator_payload(draft: dict[str, Any]) -> dict[str, Any]:
+def simulator_payload(draft: dict[str, Any], global_rules: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Return only fields accepted by the challenge mandate creation endpoint."""
     return {
         "instruction": draft["instruction"],
         "hard_rules": [
             {key: value for key, value in rule.items() if key in SIMULATOR_RULE_KEYS}
-            for rule in draft["rules"]
+            for rule in [*(global_rules or []), *draft["rules"]]
         ],
         "uncertainty_policy": draft["uncertainty_policy"],
         "guidance": [],
@@ -233,15 +247,18 @@ class DraftStore:
     @staticmethod
     def _write_exclusive(path: Path, value: dict[str, Any]) -> None:
         data = json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2).encode("utf-8") + b"\n"
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        temporary = path.parent / f".{path.name}.{uuid4().hex}.tmp"
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
             with os.fdopen(descriptor, "wb") as stream:
                 stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
-        except BaseException:
-            path.unlink(missing_ok=True)
-            raise
+            # The final name must only become visible after the whole JSON is on disk.
+            # link preserves O_EXCL semantics when two writers race for one version.
+            os.link(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def _audit(self, folder: Path, event: str, **details: Any) -> None:
         entry = {"event": event, "at": _now(), **details}
@@ -411,6 +428,9 @@ class DraftStore:
         mandate_id: str,
         confirmed_by: str,
         attempt_id: str,
+        global_version: int,
+        global_hash: str,
+        global_rules: list[dict[str, Any]],
     ) -> dict[str, Any]:
         with self._locked(draft_id) as folder:
             draft = self._assert_current(draft_id, version, hash_value, attempt_id)
@@ -431,6 +451,9 @@ class DraftStore:
                 "mandate_id": mandate_id,
                 "confirmed_by": confirmed_by,
                 "confirmed_at": _now(),
+                "global_version": global_version,
+                "global_hash": global_hash,
+                "global_rules": global_rules,
             }
             try:
                 self._write_exclusive(folder / "confirmation.json", record)

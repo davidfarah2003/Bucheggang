@@ -116,7 +116,10 @@ approvals[]           { authorization_id, merchant_id, amount_chf, timestamp (si
 handled               { authorization_id: accepted Decision }
 pending_step_ups      [authorization_id]
 declined              [authorization_id]
+customer_approvals[]  { authorization_id, mandate_id, amount_chf, timestamp (simulated) }   derived, never saved
 ```
+
+`customer_approvals` holds the customer's accepted approvals on other mandates. `leash.engine.state.load(mandate_id, customer_mandates=())` fills it from the state files of the mandates named in `customer_mandates` (the caller passes the customer's confirmed mandate ids from the policy store's confirmations; the default is none, which is the behaviour before this field). A period rule on `authorization.billing_amount_chf` or `state.approvals_count` counts this mandate's approvals plus `customer_approvals` in its window, so a daily or trailing-30-day limit survives supersession; an approval under a superseded or revoked mandate still counts. A rule without `scope: period` stays per mandate. An authorization approved on two mandates raises `StateConflict`. `record` and `_save` drop the list; the file holds only the mandate's own state.
 
 `record(mandate_id, event, accepted)` is idempotent: the same authorization with the same accepted decision changes nothing. Only a Decision the API accepted with `approve` moves `approvals`, taking `billing_amount_chf`, `merchant_id` and the simulated `timestamp` from the event. A `step_up` stays pending until `/resolve` is accepted; the runner then records the final `approve` or `decline` with the same `authorization_id`, which is the one change allowed after a first record. Any other change to a recorded authorization raises. The runner calls `record` only after the API accepted the submit or `/resolve`. `record` does no simulator I/O; it writes `data/state/<mandate_id>.json`, and the engine is its only writer.
 
@@ -172,7 +175,7 @@ StepUpAnswer
 ```
 leash.engine.evaluate(event: Event, policy: PolicyDraft, state: MandateState,
                       facts: list[PurchaseFacts] | None) -> Decision      # pure, no I/O
-leash.engine.state.load(mandate_id) -> MandateState
+leash.engine.state.load(mandate_id, customer_mandates=()) -> MandateState   # customer_approvals filled from the named mandates
 leash.engine.state.record(mandate_id: str, event: Event, accepted: Decision) -> MandateState   # idempotent, returns the saved state
 ```
 
@@ -183,14 +186,14 @@ leash.engine.state.record(mandate_id: str, event: Event, accepted: Decision) -> 
 Owned by the runner lane. Called by the policy lane's confirm route and the app's tighten and revoke routes. Every method calls the simulator once and raises `leash.runner.api.ApiError(status, body)` on any non-2xx; there is no retry inside these methods and no fallback.
 
 ```
-leash.runner.mandates.create(draft: PolicyDraft) -> str                       # POST /v1/mandates, returns the simulator draft_id
+leash.runner.mandates.create(draft: PolicyDraft, global_rules: [Rule]) -> str # POST /v1/mandates, returns the simulator draft_id
 leash.runner.mandates.confirm(simulator_draft_id: str) -> str                 # POST /v1/mandates/{draft_id}/confirm with {"confirmed": true}, returns mandate_id
 leash.runner.mandates.get(mandate_id: str) -> dict                            # GET /v1/mandates/{mandate_id}, the raw stored mandate
 leash.runner.mandates.tighten(mandate_id: str, patch: dict) -> dict           # PATCH /v1/mandates/{mandate_id}
 leash.runner.mandates.revoke(mandate_id: str) -> None                         # DELETE /v1/mandates/{mandate_id}
 ```
 
-`create` builds the simulator payload from the draft as described under PolicyDraft above (no `source_text`, no `plain_english`). The policy lane's confirm route calls `create` then `confirm`, and stores the returned `mandate_id` on our `Mandate`. Our `draft_id` and the simulator's `draft_id` are different values; the store keeps both.
+`create` builds the simulator payload from `global_rules + draft.rules` (no `source_text`, no `plain_english`). The policy lane reads one global policy snapshot for the authenticated customer at confirmation, calls `create` then `confirm`, and stores the returned `mandate_id` and exact global policy version, hash and rules on the confirmation record. Our `draft_id` and the simulator's `draft_id` are different values; the store keeps both.
 
 ## Backend HTTP for the app
 
@@ -201,10 +204,14 @@ Served by `leash.api`. Paths and shapes are what the app lane codes against.
 | `POST /session` | `{ username: str }` with 1 to 80 non-whitespace characters → `{ username }` and an HttpOnly `leash_session` cookie for the local demo login |
 | `GET /session` | `{ username }` for the current cookie, or 401 if no valid session exists |
 | `DELETE /session` | 204 and clears the current cookie, or 401 if no valid session exists |
+| `GET /drafts?state=pending|confirmed|rejected|all` | Defaults to `all`; returns customer-owned draft summaries `{ draft_id, version, hash, state: confirming|confirmed|rejected, instruction, plain_english: [str], uncertainty_policy, open_questions: int, created_at, mandate_id: str|null }`. With `state=pending`, only this customer's in-flight confirmations are returned. Drafts without an owner remain available through `GET /drafts/{draft_id}` when the customer already has its URL. Newest first. |
+| `GET /global-policy` | `{ customer, version, hash, rules: [Rule], updated_at }`; missing policy is 200 with version 0, empty rules, their canonical SHA-256 and `updated_at: null` |
+| `PUT /global-policy` | `{ expected_version, expected_hash, rules: [Rule] }` replaces the full list and returns the new record; 409 for a stale version or hash, 422 for invalid rules or duplicate controls. `plain_english` may be omitted and is generated by the server; `source_text` is the caller label. |
 | `GET /drafts/{draft_id}` | `PolicyDraft` |
 | `POST /drafts/{draft_id}/confirm` | `{ version, hash, answers: { question: answer } }` → `Mandate`, or 409 on hash or version mismatch |
 | `POST /drafts/{draft_id}/reject` | `{ version, hash, reason }` → 204, or 409 on hash or version mismatch |
-| `GET /mandates/{mandate_id}` | `{ mandate: Mandate, draft: PolicyDraft, effective_policy: { rules: [Rule], uncertainty_policy }, state: MandateState }`. `draft` is the confirmed draft and never changes; `effective_policy` is what the simulator holds now, read back after a tighten |
+| `GET /mandates?status=active|superseded|revoked|expired|all` | Defaults to `all`; returns customer-owned mandate summaries `{ mandate_id, draft_id, version, hash, status, confirmed_at, instruction, approvals_count, pending_step_ups, global_policy_version, global_policy_hash }`, newest first. Status is read from the simulator; a simulator error is returned to the caller. |
+| `GET /mandates/{mandate_id}` | `{ mandate: Mandate, draft: PolicyDraft, effective_policy: { rules: [Rule], uncertainty_policy }, state: MandateState, global_policy_version, global_policy_hash }`. `draft` is the confirmed draft and never changes; `effective_policy` is what the simulator holds now, read back after a tighten. The global policy metadata is from the confirmation snapshot; edits apply to later confirmations. |
 | `POST /mandates/{mandate_id}/tighten` | `{ rules: [Rule] }` appends to the rule list, or `{ uncertainty_policy: "decline" }`; existing rules are never removed or replaced (the simulator's PATCH rules) → `Mandate` |
 | `POST /mandates/{mandate_id}/revoke` | → `Mandate` (DELETE on the simulator) |
 | `GET /mandates/{mandate_id}/decisions` | `[{ decision: Decision, state_after: MandateState }]`, oldest first |
@@ -216,7 +223,7 @@ All customer routes except `POST /session` require a valid local session cookie 
 
 ## MCP tools
 
-Served by `leash.policy.mcp_server` over stdio, backed by the same `LEASH_POLICY_STORE` directory as `leash.api`. This is the whole agent-facing surface (plan 01, steps 2 and 9 to 12). Every tool raises on bad input; nothing is defaulted. No tool confirms, resolves, tightens or revokes, and no tool returns a rule field or a hash to the agent.
+Served by `leash.policy.mcp_server` over stdio, backed by the same `LEASH_POLICY_STORE` directory as `leash.api`. This is the whole agent-facing surface (plan 01, steps 2 and 9 to 12). Every tool raises on bad input; nothing is defaulted. No tool confirms, resolves, tightens or revokes. `propose_task_policy` returns the full stored `PolicyDraft`, including the rules and hash the agent submitted. The read-only `get_policy_status` and `get_policy_summary` tools return no rule fields or hash.
 
 | Tool | Input → returns |
 | --- | --- |

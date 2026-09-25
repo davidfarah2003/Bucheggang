@@ -1,78 +1,32 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#f5f3ee" />
-    <meta name="description" content="Review and control purchases made by your shopping agent." />
-    <title>Viseca · Agent control</title>
-    <link rel="stylesheet" href="./styles.css" />
-    <script src="./app.js" defer></script>
-  </head>
-  <body>
-    <div class="app-frame">
-      <aside class="rail" aria-label="Main navigation">
-        <a class="brand" href="#home" aria-label="Viseca home">
-          <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
-          <span class="brand-word">viseca<span>+</span></span>
-        </a>
-
-        <div class="rail-label">YOUR WALLET</div>
-        <nav class="primary-nav">
-          <button class="nav-item is-active" type="button" data-route="home">
-            <span class="nav-icon icon-inbox" aria-hidden="true"></span><span>Home</span>
-          </button>
-          <button class="nav-item" type="button" data-route="approvals">
-            <span class="nav-icon icon-shield" aria-hidden="true"></span><span>Approvals</span><span class="nav-count nav-count-muted" id="approval-count">—</span>
-          </button>
-          <button class="nav-item" type="button" data-route="policy">
-            <span class="nav-icon icon-sliders" aria-hidden="true"></span><span>My policy</span>
-          </button>
-          <button class="nav-item" type="button" data-route="activity">
-            <span class="nav-icon icon-clock" aria-hidden="true"></span><span>Activity</span>
-          </button>
-        </nav>
-
-        <div class="rail-bottom">
-          <div class="profile-row">
-            <span class="avatar" id="profile-avatar">?</span>
-            <span class="profile-copy"><strong id="profile-name">Local account</strong><small>Demo account</small></span>
-            <button class="profile-menu" type="button" data-action="logout" hidden>Sign out</button>
-          </div>
-        </div>
-      </aside>
-
-      <div class="workspace">
-        <header class="topbar">
-          <div class="mobile-brand">
-            <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
-            <span class="brand-word">viseca<span>+</span></span>
-          </div>
-          <div class="topbar-context"><span class="status-dot"></span><span>Agent control</span><span class="context-separator">/</span><span id="page-context">Home</span></div>
-          <div class="topbar-actions">
-            <span class="secure-label"><span class="lock-icon" aria-hidden="true"></span>Local demo session</span>
-            <span class="avatar top-avatar" id="top-avatar" aria-label="Local account">?</span>
-            <button class="button button-quiet button-small" type="button" data-action="logout" hidden>Sign out</button>
-          </div>
-        </header>
-
-        <main id="main-content" class="main-content" tabindex="-1">
-          <div id="screen" class="screen" aria-live="polite" aria-busy="true">
-            <div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Loading wallet…</span></div>
-          </div>
-        </main>
-        <footer class="footer-note"><span>Viseca control demo</span><span>Local demo account · no payment credentials stored here</span></footer>
-      </div>
-    </div>
-
-    <nav class="mobile-nav" aria-label="Main navigation">
-      <button class="mobile-nav-item is-active" type="button" data-route="home"><span class="nav-icon icon-inbox" aria-hidden="true"></span><span>Home</span></button>
-      <button class="mobile-nav-item" type="button" data-route="approvals"><span class="nav-icon icon-shield" aria-hidden="true"></span><span>Approvals</span></button>
-      <button class="mobile-nav-item" type="button" data-route="policy"><span class="nav-icon icon-sliders" aria-hidden="true"></span><span>Policy</span></button>
-      <button class="mobile-nav-item" type="button" data-route="activity"><span class="nav-icon icon-clock" aria-hidden="true"></span><span>Activity</span></button>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f7f5f1" />
+  <meta name="description" content="Shop with an agent and review its spending permissions in Viseca Wallet." />
+  <title>Viseca+ | Shop and Wallet</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="./api.js" defer></script>
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <button class="wordmark" type="button" data-route="shop" aria-label="Viseca+ Shop">viseca<span>+</span></button>
+      <button class="account-button" type="button" data-action="account" aria-label="Account"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="8" r="3"/><path d="M5.5 20v-2c0-3.2 2.8-5.5 6.5-5.5s6.5 2.3 6.5 5.5v2"/></svg></button>
+    </header>
+    <main id="main-content" tabindex="-1">
+      <div id="screen" aria-live="polite" aria-busy="true"><div class="loading-state"><span class="spinner" aria-hidden="true"></span>Opening Wallet…</div></div>
+    </main>
+    <nav class="bottom-nav" aria-label="Main navigation">
+      <button type="button" data-route="shop" class="nav-button is-active" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 8h16l-1 13H5L4 8Z"/><path d="M8 9V6a4 4 0 0 1 8 0v3"/></svg><span>Shop</span></button>
+      <button type="button" data-route="wallet" class="nav-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h14v4M3 7h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M17 13h4v4h-4a2 2 0 1 1 0-4Z"/></svg><span>Wallet</span><i id="wallet-indicator" hidden></i></button>
+      <button type="button" data-route="activity" class="nav-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 20V11M12 20V4M20 20v-9"/></svg><span>Activity</span></button>
     </nav>
-
-    <div id="drawer-root"></div>
-    <div id="toast-root" class="toast-root" aria-live="assertive" aria-atomic="true"></div>
-  </body>
+  </div>
+  <div id="overlay-root"></div>
+  <div id="toast-root" class="toast-root" aria-live="assertive" aria-atomic="true"></div>
+</body>
 </html>

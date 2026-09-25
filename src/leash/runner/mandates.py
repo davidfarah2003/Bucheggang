@@ -29,9 +29,9 @@ def _require(body: Any, key: str, where: str) -> str:
     return body[key]
 
 
-def create(draft: Any) -> str:
+def create(draft: Any, global_rules: list[dict[str, Any]] | None = None) -> str:
     """POST /v1/mandates with the simulator payload; returns the simulator draft_id."""
-    body = api.call("POST", "/v1/mandates", json=simulator_payload(_draft_dict(draft)))
+    body = api.call("POST", "/v1/mandates", json=simulator_payload(_draft_dict(draft), global_rules))
     return _require(body, "draft_id", "/v1/mandates")
 
 
