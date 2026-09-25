@@ -87,3 +87,16 @@ def load() -> Settings:
         if not values.get(name):
             raise SettingsError(f"{name} is missing or empty in {ENV_FILE}")
     return Settings(base_url=values["LEASH_BASE_URL"].rstrip("/"), api_key=values["TEAM_API_KEY"])
+
+
+@dataclass(frozen=True)
+class HarnessSettings:
+    enabled: bool
+
+
+def load_harness() -> HarnessSettings:
+    """Read only the operator's enable flag, without loading any credential or SDK."""
+    flag = os.environ.get("LEASH_HARNESS_ENABLED", "0")
+    if flag not in {"0", "1"}:
+        raise SettingsError("LEASH_HARNESS_ENABLED must be 0 or 1")
+    return HarnessSettings(enabled=flag == "1")

@@ -89,11 +89,16 @@ def create_app(
     """Mount the same-origin Wallet, account routes and protected lane APIs."""
     from leash.engine.state import load
     from leash.runner.routes import history_router
+    from leash.runner.agent_sessions import AgentSessionStore
+    from leash.runner.settings import load_harness
 
+    from .agent_sessions import agent_session_router
     from .mandates import mandate_router
     from .static import mount_customer_app
 
     configured_origin, secure_cookie = _validate_origin(app_origin)
+    harness_configuration = load_harness()
+    agent_sessions = AgentSessionStore(store.root)
     identities = IdentityStore(store.root)
     app = FastAPI(title="Agent on a Leash")
 
@@ -173,6 +178,7 @@ def create_app(
         response.delete_cookie(COOKIE_NAME, path="/", secure=secure_cookie, httponly=True, samesite="strict")
         return Response(status_code=204, headers=response.headers)
 
+    app.include_router(agent_session_router(agent_sessions, authenticated_customer, harness_configuration))
     app.include_router(identity_router(identities, current_customer_session))
     app.include_router(policy_router(store, mandates, authenticated_customer))
     app.include_router(mandate_router(store, authenticated_customer, load, step_up_book=step_up_book))
