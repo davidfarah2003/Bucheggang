@@ -285,9 +285,9 @@ async def main() -> None:
     gif = out / "leash-user-flow.gif"
     palette = video_dir / "palette.png"
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(mp4), "-vf",
-                    "fps=10,scale=800:-1:flags=lanczos,palettegen=max_colors=128:stats_mode=diff", str(palette)], check=True)
+                    "fps=15,scale=1280:-1:flags=lanczos,palettegen=max_colors=256:stats_mode=diff", str(palette)], check=True)
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(mp4), "-i", str(palette), "-lavfi",
-                    "fps=10,scale=800:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle",
+                    "fps=15,scale=1280:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle",
                     str(gif)], check=True)
     print(f"mp4: {mp4} {mp4.stat().st_size // 1024} KB, {seconds:.0f} s, {len(cues)} sound cues")
     print(f"gif: {gif} {gif.stat().st_size // 1024} KB")
