@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import os
 import secrets
 from concurrent.futures import ThreadPoolExecutor
@@ -28,7 +29,7 @@ from leash.runner import records
 from leash.runner.budget import DecisionBudget
 from leash.runner.evaluation import ModelEvaluator, MODEL_RESERVE_S, load_evaluator
 from leash.runner.loop import decide_with_guard
-from leash.runner.stepups import StepUpBook, expires_at
+from leash.runner.stepups import StepUpBook, StepUpError, expires_at
 
 PURCHASES_DIR = records.DATA_DIR / "purchases"
 HISTORY_WINDOW_MINUTES = 1440
@@ -47,13 +48,26 @@ def _settings() -> tuple[float, float]:
     raw = os.environ.get("LEASH_PURCHASE_BUDGET_S")
     if not raw:
         raise InvalidPurchase("LEASH_PURCHASE_BUDGET_S is required for local purchases")
-    budget = float(raw)
-    if not budget > 0:
-        raise InvalidPurchase("LEASH_PURCHASE_BUDGET_S must be positive")
+    try:
+        budget = float(raw)
+    except ValueError as exc:
+        raise InvalidPurchase("LEASH_PURCHASE_BUDGET_S must be a finite positive number") from exc
+    if not math.isfinite(budget) or budget <= 0:
+        raise InvalidPurchase("LEASH_PURCHASE_BUDGET_S must be a finite positive number")
     window = os.environ.get("LEASH_STEP_UP_WINDOW_S")
     if not window:
         raise InvalidPurchase("LEASH_STEP_UP_WINDOW_S is required for local purchases")
-    return budget, float(window)
+    try:
+        window_s = float(window)
+    except ValueError as exc:
+        raise InvalidPurchase("LEASH_STEP_UP_WINDOW_S must be a number") from exc
+    try:
+        expires_at(datetime.now(UTC), window_s)
+    except StepUpError as exc:
+        raise InvalidPurchase(f"LEASH_STEP_UP_WINDOW_S: {exc}") from exc
+    except OverflowError as exc:
+        raise InvalidPurchase("LEASH_STEP_UP_WINDOW_S exceeds the supported date range") from exc
+    return budget, window_s
 
 
 def _money(value: Any, name: str) -> float:
