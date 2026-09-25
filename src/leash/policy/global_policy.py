@@ -77,11 +77,14 @@ class GlobalPolicyStore:
         self.root = policy_store.root.parent / "global"
         self.root.mkdir(parents=True, exist_ok=True)
 
-    @staticmethod
-    def _filename(customer: str) -> str:
+    def _filename(self, customer: str) -> str:
         if not isinstance(customer, str) or not customer:
             raise ValueError("authenticated customer identity is required")
-        return quote(customer, safe="") + ".json"
+        legacy_name = quote(customer, safe="") + ".json"
+        if len(legacy_name.encode("utf-8")) <= os.pathconf(self.root, "PC_NAME_MAX"):
+            return legacy_name
+        digest = hashlib.sha256(customer.encode("utf-8")).hexdigest()
+        return f"_sha256/{digest}.json"
 
     def _path(self, customer: str) -> Path:
         return self.root / self._filename(customer)
@@ -89,6 +92,7 @@ class GlobalPolicyStore:
     @contextmanager
     def locked(self, customer: str):
         path = self._path(customer)
+        path.parent.mkdir(parents=True, exist_ok=True)
         descriptor = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT, 0o600)
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX)
@@ -139,7 +143,7 @@ class GlobalPolicyStore:
                 "rules": rules,
                 "updated_at": _now(),
             }
-            temporary = self.root / f".{self._filename(customer)}.{uuid4().hex}.tmp"
+            temporary = path.parent / f".{uuid4().hex}.tmp"
             descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             try:
                 with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
