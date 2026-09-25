@@ -40,11 +40,7 @@ Out:
 
 1. Draft schema in `src/leash/contracts/` with the engine lane (already sketched in `contracts.md`). A sample draft for `SCEN0002` in `docs/samples/` so the app lane can build against it today.
 2. Provide the user-side agent a fixed instruction bundle with the field vocabulary, JSON shape, examples, and ambiguity prompts. Validate its proposed JSON on the backend; reject unknown fields and fields outside the vocabulary. Rule values stay numbers, strings or lists of strings. The backend makes no model call.
-3. Example purchases, following AutoCedar's floors and ceilings:
-   - must approve: size 43 road shoes, CHF 150, sports retailer, 30-day returns;
-   - must decline: CHF 230; or size 42; or a second pair after one succeeded;
-   - must ask: return period not stated.
-   Run them through `leash.engine.evaluate` at draft time; the expected result is stored next to each example, and a mismatch fails validation of the draft.
+3. Agent-authored `examples[]` remain illustrative claims. Optional `boundary_cases[]` carry complete synthetic Event, PurchaseFacts, MandateState and frozen History inputs. Run every case through `leash.engine.evaluate` at proposal, revision and again before confirmation; reject an expected/observed mismatch. Persist computed outcomes separately from the v2-hashed cases and keep v1 hashes byte-for-byte unchanged. The Wallet reads customer-owned results from `GET /drafts/{draft_id}/boundary-results`; these synthetic outcomes are not live purchase evidence.
 4. Open questions for gaps the instruction leaves, for example "the merchant does not state a return period: ask me, or decline?" The answer becomes a rule or sets `uncertainty_policy`.
 5. Store the draft immutably with version and SHA-256 of its canonical JSON. Any edit is a new version.
 6. Confirm route per `contracts.md`: mismatch is a 409; call the runner's mandate client and store the `Mandate`.

@@ -33,6 +33,8 @@ def authoring_guide() -> dict[str, Any]:
     """The exact proposal contract and constraints given to the user-side agent."""
     return {
         "proposal_keys": sorted(PROPOSAL_KEYS),
+        "proposal_required_keys": sorted(PROPOSAL_REQUIRED_KEYS),
+        "proposal_optional_keys": ["boundary_cases"],
         "rule_keys": sorted(RULE_KEYS),
         "fields": sorted(FIELDS),
         "numeric_fields": sorted(NUMBER_FIELDS),

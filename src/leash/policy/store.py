@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+from pydantic import ValidationError
+
 from leash.contracts import BoundaryCase, PolicyDraft
 from leash.engine.evaluate import ENGINE_VERSION, evaluate
 
@@ -125,7 +127,7 @@ def _boundary_cases(values: Any) -> list[dict[str, Any]]:
     for index, value in enumerate(values):
         try:
             case = BoundaryCase.model_validate(value)
-        except Exception as exc:
+        except ValidationError as exc:
             raise InvalidDraft(f"boundary case {index} is invalid: {exc}") from exc
         cases.append(case.model_dump(mode="json"))
     return cases
@@ -135,12 +137,12 @@ def _candidate_policy(draft: dict[str, Any]) -> PolicyDraft:
     """Build the strict evaluator contract from one stored draft version."""
     try:
         return PolicyDraft.model_validate(draft)
-    except Exception as exc:
+    except ValidationError as exc:
         raise InvalidDraft(f"candidate policy is invalid: {exc}") from exc
 
 
 def _evaluate_boundary_cases(draft: dict[str, Any], *, phase: str) -> dict[str, Any]:
-    cases = draft["boundary_cases"]
+    cases = draft.get("boundary_cases", [])
     results = []
     policy = _candidate_policy(draft) if cases else None
     for index, raw_case in enumerate(cases):
@@ -157,7 +159,12 @@ def _evaluate_boundary_cases(draft: dict[str, Any], *, phase: str) -> dict[str, 
             "expected": case.expected,
             "observed": observed,
             "reason_codes": [code.value if hasattr(code, "value") else code for code in decision.reason_codes],
-            "case_input_hash": hashlib.sha256(_canonical(case.model_dump(mode="json"))).hexdigest(),
+            "case_input_hash": hashlib.sha256(_canonical({
+                "event": case.event.model_dump(mode="json"),
+                "facts": [fact.model_dump(mode="json") for fact in case.facts],
+                "state": case.state.model_dump(mode="json"),
+                "history": case.history.model_dump(mode="json"),
+            })).hexdigest(),
         })
     return {
         "draft_id": draft["draft_id"], "version": draft["version"], "hash": draft["hash"],
@@ -382,7 +389,11 @@ class DraftStore:
             if not isinstance(entries, list) or len(entries) != len(cases):
                 raise DraftConflict("boundary results are stale")
             for index, (entry, case) in enumerate(zip(entries, cases, strict=True)):
-                if entry.get("case_index") != index or entry.get("expected") != case["expected"]:
+                if (
+                    entry.get("case_index") != index
+                    or entry.get("description") != case["description"]
+                    or entry.get("expected") != case["expected"]
+                ):
                     raise DraftConflict("boundary results are stale")
             return results
 
@@ -426,12 +437,13 @@ class DraftStore:
             "instruction": instruction,
             "rules": rules,
             "examples": examples,
-            "boundary_cases": cases,
             "open_questions": open_questions,
             "uncertainty_policy": uncertainty_policy,
             "created_for": created_for,
             "created_at": _now(),
         }
+        if cases:
+            draft["boundary_cases"] = cases
         boundary_results = _evaluate_boundary_cases(draft, phase="proposal")
         folder = self._folder(draft_id)
         folder.mkdir()
@@ -454,7 +466,6 @@ class DraftStore:
         ):
             raise DraftConflict("stored draft hash does not match its contents")
         draft.setdefault("hash_version", 1)
-        draft.setdefault("boundary_cases", [])
         return draft
 
     def get_owned(self, draft_id: str, created_for: str) -> dict[str, Any]:
@@ -502,10 +513,13 @@ class DraftStore:
                 "rules": new_rules,
                 "uncertainty_policy": new_policy,
                 "examples": new_examples,
-                "boundary_cases": cases,
                 "open_questions": new_questions,
                 "created_at": _now(),
             }
+            if cases:
+                revised["boundary_cases"] = cases
+            else:
+                revised.pop("boundary_cases", None)
             boundary_results = _evaluate_boundary_cases(revised, phase="revision")
             try:
                 self._write_exclusive(folder / f"v{revised['version']}.json", revised)

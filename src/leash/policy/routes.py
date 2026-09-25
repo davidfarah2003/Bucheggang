@@ -111,6 +111,19 @@ def policy_router(
         except InvalidDraft as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    @router.get("/drafts/{draft_id}/boundary-results")
+    def get_boundary_results(draft_id: str, customer: str = Depends(authenticated_customer)) -> dict:
+        if not customer:
+            raise HTTPException(status_code=401, detail="customer login is required")
+        try:
+            return store.get_boundary_results(draft_id, customer)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="draft was not found") from exc
+        except DraftConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except InvalidDraft as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     @router.post("/drafts/{draft_id}/confirm")
     def confirm(
         draft_id: str, body: ConfirmBody, customer: str = Depends(authenticated_customer)
