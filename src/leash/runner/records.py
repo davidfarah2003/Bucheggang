@@ -23,6 +23,7 @@ import fcntl
 import json
 import math
 import os
+import re
 import time
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
@@ -44,7 +45,7 @@ class RecordError(RuntimeError):
 
 
 def _safe(name: str, what: str) -> str:
-    if not name or "/" in name or name.startswith("."):
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", name):
         raise ValueError(f"unusable {what} for a file name: {name!r}")
     return name
 

@@ -40,6 +40,7 @@ class Intent(BaseModel):
     context: dict[str, Any]
     created_at: AwareDatetime
     deadline_at: AwareDatetime
+    dispatch_allowed: bool = True
     status: Literal["prepared", "dispatched", "accepted", "recorded", "refused"]
     accepted_at: AwareDatetime | None = None
     accepted: Any = None
@@ -260,13 +261,13 @@ class MutationJournal:
 
     def prepare(
         self, mandate_id: str, operation: Operation, *, method: str, path: str,
-        body: dict | None, context: dict, deadline_at: datetime,
+        body: dict | None, context: dict, deadline_at: datetime, dispatch_allowed: bool = True,
     ) -> Intent:
         self.require_clear([mandate_id])
         intent = Intent(
             intent_id=uuid4().hex, mandate_id=mandate_id, operation=operation,
             method=method, path=path, body=body, context=context,
-            created_at=datetime.now(UTC), deadline_at=deadline_at, status="prepared",
+            created_at=datetime.now(UTC), deadline_at=deadline_at, status="prepared", dispatch_allowed=dispatch_allowed,
         )
         _persist(self._path(mandate_id, intent.intent_id), intent, exclusive=True)
         return intent
@@ -274,8 +275,8 @@ class MutationJournal:
     def dispatch(self, intent: Intent) -> Intent:
         """Send once after preparation. Failures leave an open intent and propagate."""
         current = self.read(intent.mandate_id, intent.intent_id)
-        if current != intent or current.status != "prepared":
-            raise UnresolvedMutation(f"{intent.intent_id}: dispatch requires the unchanged prepared intent")
+        if current != intent or current.status != "prepared" or not current.dispatch_allowed:
+            raise UnresolvedMutation(f"{intent.intent_id}: dispatch requires an unchanged dispatchable prepared intent")
         current = Intent.model_validate({**current.model_dump(mode="python"), "status": "dispatched"})
         _persist(self._path(current.mandate_id, current.intent_id), current, exclusive=False)
         try:

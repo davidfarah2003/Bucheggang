@@ -110,10 +110,12 @@ class Coordinator:
     def authorization(
         self, *, event: Event, decision: Decision, state_before: MandateState,
         run_id: str, deadline_at: datetime, step_up: StepUp | None = None,
-        evaluated_state: MandateState | None = None, policy: dict | None = None,
+        evaluated_state: MandateState | None = None, policy: dict | None = None, observe_expiry: bool = False,
     ) -> Decision:
         """Prepare, send once, then record. Caller holds the owned mandate locks."""
         resolution = step_up is not None
+        if observe_expiry and (step_up is None or decision.decision != "decline" or datetime.now(UTC) < step_up.expires_at):
+            raise UnresolvedMutation("expiry observation requires an expired pending purchase and a decline")
         body = {
             "decision": decision.decision, "customer_message": decision.customer_message,
             "evidence": [check.model_dump(mode="json") for check in decision.evidence],
@@ -136,9 +138,10 @@ class Coordinator:
         intent = self.journal.prepare(
             event.mandate.mandate_id, "resolve" if resolution else "submit", method="POST",
             path=f"/v1/authorizations/{decision.authorization_id}/{suffix}",
-            body=body, context=context, deadline_at=deadline_at,
+            body=body, context=context, deadline_at=deadline_at, dispatch_allowed=not observe_expiry,
         )
-        accepted = self.journal.dispatch(intent)
+        accepted = (self.journal.reconcile(intent, deadline_at=deadline_at) if observe_expiry
+                    else self.journal.dispatch(intent))
         result = self.record(accepted)
         if result is None:
             raise UnresolvedMutation(f"{intent.intent_id}: authorization recording produced no decision")

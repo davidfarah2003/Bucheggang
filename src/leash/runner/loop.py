@@ -4,12 +4,12 @@ The loop polls GET /v1/decision-requests/next, validates the envelope and the
 Event strictly, skips a live authorization ID already in MandateState.handled,
 runs leash.extract.extract_event (deterministic, no model) under its budget, calls
 evaluate(event, policy, state, facts) under a deadline guard, submits the
-decision, and records the accepted result with leash.runner.records.record_accepted,
-which calls leash.engine.state.record (the one writer of data/state/<mandate_id>.json)
-and writes data/decisions/<mandate_id>/<authorization_id>.json.
+decision through a durable intent, and records the accepted result once. Current
+permissions and customer-owned spending are checked under the complete sorted
+mandate-lock set. Engine state remains the only writer of financial state.
 
-Reconcile. Every request reads the saved state with leash.engine.state.load, so a
-restarted worker skips any live authorization ID already in MandateState.handled.
+Reconcile. Startup and final coordination reconcile open intents by authoritative
+reads before new dispatch. Accepted authorizations are not submitted again.
 
 Budgets. Extract gets min(EXTRACT_CAP_S, deadline_at - now - EXTRACT_RESERVE_S).
 Evaluate must return GUARD_MARGIN_S before deadline_at. Either budget failure
@@ -25,7 +25,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -33,9 +33,11 @@ from pydantic import BaseModel, ConfigDict
 from leash.contracts import Decision, Event, MandateState, PolicyDraft, PurchaseFacts
 from leash.engine import state as engine_state
 from leash.extract import extract_event
+from leash.policy.store import DraftStore
 
-from . import api, records
-from .stepups import StepUpBook, expires_at
+from . import api, records, policy_context
+from .coordinator import Coordinator
+from .stepups import StepUpBook
 
 POLL_WAIT_S = 25
 GUARD_MARGIN_S = 1.0
@@ -192,60 +194,67 @@ def handle(
     book: StepUpBook,
     window_s: float,
     pool: ThreadPoolExecutor,
+    store: DraftStore,
 ) -> Decision | None:
-    """Handle one delivered request. Returns the submitted decision, or None for a handled ID."""
+    """Recheck current permissions and owned spend before a journaled submission."""
     received = _now()
     event = Event.model_validate(envelope.data)
     auth_id = event.authorization.authorization_id
     if envelope.authorization_id != auth_id:
         raise RunLoopError(f"envelope authorization_id {envelope.authorization_id} != event {auth_id}")
-    if event.mandate.mandate_id != mandate_id:
-        raise RunLoopError(f"event for mandate {event.mandate.mandate_id}, loop holds {mandate_id}")
+    if event.mandate.mandate_id != mandate_id or event.authorization.mandate_id != mandate_id:
+        raise RunLoopError(f"event does not belong to mandate {mandate_id}")
     if event.mandate.instruction != policy.instruction:
         raise RunLoopError(f"event mandate instruction differs from the confirmed draft {policy.draft_id}")
-    with records.mandate_lock(mandate_id):
-        state = engine_state.load(mandate_id)
-    seen = state.handled.get(auth_id)
-    if seen is not None:
-        if seen.decision == "step_up":
-            if auth_id not in _logged_pending:
-                _logged_pending.add(auth_id)
-                _log({"authorization_id": auth_id, "run_id": envelope.run_id, "skipped_handled": True, "handled_as": "step_up"})
-            time.sleep(PENDING_STEP_UP_PAUSE_S)
-            return None
+    coordinator = Coordinator(store, book)
+    dispatch_deadline = event.deadline_at - timedelta(seconds=0.25)
+    recorded = auth_id in engine_state.load(mandate_id).handled
+    coordination_deadline = _now() + timedelta(seconds=30) if recorded else dispatch_deadline
+    with coordinator.locked(mandate_id, deadline_at=coordination_deadline) as mandate_ids:
+        record, _ = policy_context.confirmation(store, mandate_id)
+        if record["hash"] != policy.hash or record["version"] != policy.version:
+            raise RunLoopError(f"{mandate_id}: supplied draft differs from the saved confirmation")
+        state = engine_state.load(mandate_id, customer_mandates=mandate_ids)
+        seen = state.handled.get(auth_id)
+        if seen is None:
+            effective_event, effective_policy = policy_context.refresh(
+                store, event, deadline_at=dispatch_deadline - timedelta(seconds=2),
+            )
+            effective_event.deadline_at = dispatch_deadline
+            before = engine_state.load(mandate_id)
+            t0 = time.monotonic()
+            facts = extract_with_budget(effective_event, effective_policy, pool)
+            extract_ms = int((time.monotonic() - t0) * 1000)
+            t1 = time.monotonic()
+            decision = decide_with_guard(evaluate, effective_event, effective_policy, state, facts, pool)
+            evaluate_ms = int((time.monotonic() - t1) * 1000)
+            submitted_at = _now()
+            result = coordinator.authorization(
+                event=event, decision=decision, state_before=before, evaluated_state=state,
+                policy=effective_policy.model_dump(mode="json"), run_id=envelope.run_id,
+                deadline_at=dispatch_deadline,
+            )
+            recorded_at = _now()
+            _log({
+                "authorization_id": auth_id, "source_authorization_id": event.authorization.source_authorization_id,
+                "run_id": envelope.run_id, "received_at": received.isoformat(),
+                "extract_ms": extract_ms, "evaluate_ms": evaluate_ms,
+                "submitted_at": submitted_at.isoformat(), "recorded_at": recorded_at.isoformat(),
+                "ms_to_deadline_at_submit": int((event.deadline_at - submitted_at).total_seconds() * 1000),
+                "ms_to_deadline_at_record": int((event.deadline_at - recorded_at).total_seconds() * 1000),
+                "decision": result.decision, "reason_codes": list(result.reason_codes),
+                "mandate_version": effective_policy.version, "policy_hash": effective_policy.hash,
+                "customer_approvals": len(state.customer_approvals),
+            })
+            return result
+    if seen.decision == "step_up":
+        if auth_id not in _logged_pending:
+            _logged_pending.add(auth_id)
+            _log({"authorization_id": auth_id, "run_id": envelope.run_id, "skipped_handled": True, "handled_as": "step_up"})
+        time.sleep(PENDING_STEP_UP_PAUSE_S)
+    else:
         _log({"authorization_id": auth_id, "run_id": envelope.run_id, "skipped_handled": True, "handled_as": seen.decision})
-        return None
-    t0 = time.monotonic()
-    facts = extract_with_budget(event, policy, pool)
-    extract_ms = int((time.monotonic() - t0) * 1000)
-    t1 = time.monotonic()
-    decision = decide_with_guard(evaluate, event, policy, state, facts, pool)
-    evaluate_ms = int((time.monotonic() - t1) * 1000)
-    submitted_at = _now()
-    accepted = submit(decision, deadline_at=event.deadline_at)
-    accepted_at = _now()
-    with records.mandate_lock(mandate_id):
-        records.record_accepted(event, decision, accepted_at, accepted, resolution=False)
-        step_up = (
-            book.add(event, decision, expires_at(accepted_at, window_s)) if decision.decision == "step_up" else None
-        )
-    _log({
-        "authorization_id": auth_id,
-        "source_authorization_id": event.authorization.source_authorization_id,
-        "run_id": envelope.run_id,
-        "received_at": received.isoformat(),
-        "extract_ms": extract_ms,
-        "evaluate_ms": evaluate_ms,
-        "submitted_at": submitted_at.isoformat(),
-        "ms_to_deadline_at_submit": int((event.deadline_at - submitted_at).total_seconds() * 1000),
-        "decision": decision.decision,
-        "reason_codes": list(decision.reason_codes),
-        "accepted_at": accepted_at.isoformat(),
-        "ms_to_deadline_at_accept": int((event.deadline_at - accepted_at).total_seconds() * 1000),
-        "accepted": accepted,
-        "step_up_expires_at": step_up.expires_at.isoformat() if step_up else None,
-    })
-    return decision
+    return None
 
 
 RUN_COUNTERS = ("generated_event_count", "delivered_event_count", "finalized_event_count",
@@ -261,7 +270,7 @@ def _run_finished(progress: dict) -> bool:
 
 
 def run_loop(
-    run_id: str, evaluate: Evaluate, policy: PolicyDraft, mandate_id: str, book: StepUpBook, window_s: float
+    run_id: str, evaluate: Evaluate, policy: PolicyDraft, mandate_id: str, book: StepUpBook, window_s: float, store: DraftStore
 ) -> MandateState:
     """Poll and decide until the run is finished and no step-up of this mandate is pending.
 
@@ -278,11 +287,12 @@ def run_loop(
                 _log({"run_id": run_id, "poll": 204, "status": progress["status"], "pending_step_ups": pending,
                       **{key: progress.get(key) for key in RUN_COUNTERS}})
                 if _run_finished(progress) and not pending:
-                    return engine_state.load(mandate_id)
+                    with Coordinator(store, book).locked(mandate_id, deadline_at=_now() + timedelta(seconds=30)) as ids:
+                        return engine_state.load(mandate_id, customer_mandates=ids)
                 continue
             if envelope.run_id != run_id:
                 raise RunLoopError(f"received a request for run {envelope.run_id}, loop drives {run_id}")
-            handle(envelope, evaluate, policy, mandate_id, book, window_s, pool)
+            handle(envelope, evaluate, policy, mandate_id, book, window_s, pool, store)
 
 
 def configure_logging() -> None:
