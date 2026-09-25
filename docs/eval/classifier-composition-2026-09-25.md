@@ -69,3 +69,13 @@ After rebasing onto its merge at `0b7c2c1`, all four captured real responses wer
 No caller enables models in this change. The history-only bundle has no mandate-state-derived model features; the evaluator still runs deterministic checks against the supplied current state. Final shared-lock rechecks, effective-policy refresh, durable mutation intents and bounded remote writes remain runner work.
 
 The classifier producer must import the shared types, use the canonical purchase digest and enforce required outputs for its startup configuration. `assessments=None` is not permitted as recovery from an assessment failure. An approved operating threshold, full runner integration and human-ready live E2E still need their own observed results and reviews. The fitted artifact exercised above remains evaluation-only and cannot escalate.
+
+## Rebase after customer-wide state support
+
+The branch was rebased onto main5bc208d, including #49's CustomerApproval and MandateState.customer_approvals plus #48's owned list routes. The conflicting contract signature was resolved by retaining both evaluate(..., assessments=None) and state.load(mandate_id, customer_mandates=()). Both sets of engine Log entries remain. The classifier contract, model-check module and evaluator code are byte-identical to reviewed head6518cf8.
+
+On rebased codee5b3ceb, all45 public attempts again returned11 approve,32 decline and2 step_up; local total p50 was0.233ms and p99/max0.421ms. The four captured genuine Jev responses and fitted-artifact scores recomposed to approve, decline, decline and step_up with three model checks each. Each captured state loaded with an empty customer_approvals field. Altering one feature in each bundle raised a digest error. No provider call or simulator request was made.
+
+The first recomposition command assumed all capture rows used the public-input metadata shape. It stopped with KeyError after the first two rows; saved live rows use a Decision object instead. A second command handled those two recorded formats explicitly and completed all four. No application code or captured response was changed for that correction.
+
+The earlier exact-head approvals do not approve the rebased head. The draft and both release holds remain in force pending the new delta review.
