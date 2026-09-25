@@ -11,7 +11,7 @@ The full 45-input real-provider exercise did not pass. Two batches stopped on in
 | Fresh batch with response recording | 36 | 35 | AU0036: `spend_pattern: probabilities do not sum to one`; response preserved |
 | Total | 44 | 41 | Neither batch completed all 45 inputs |
 
-There are 35 distinct successfully evaluated public inputs. The first six were evaluated in both batches. The diagnostic only exercised the provider parser. No simulator request, purchase submission, customer confirmation or step-up answer occurred.
+Each CSV row records its batch, batch start, actual composed-decision timestamp, requested/served model, validated provider, prompt version, core and producer revisions, and fitted-artifact hash. These fields come from the original saved captures and batch metadata. There are 35 distinct successfully evaluated public inputs. The first six were evaluated in both batches. The diagnostic only exercised the provider parser. No simulator request, purchase submission, customer confirmation or step-up answer occurred.
 
 The initial batch exited 1. Its six completed rows retained their baseline decisions: five approve and one decline. The fresh batch also exited 1. Its 35 completed rows retained their baseline decisions: 11 approve, 23 decline and one step_up. Five model checks were uncertain across those 35 rows; every behavioural escalation flag was false. Successful-prefix results do not establish the behaviour of the ten remaining inputs.
 
