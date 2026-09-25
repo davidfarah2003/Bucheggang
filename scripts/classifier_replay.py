@@ -86,7 +86,7 @@ def main() -> None:
                      extract_event(event.model_dump(mode="json"),
                                    requested=base.requested_item(policy))]
             validate_bundle(event, policy, bundle)
-            decision = evaluate(event, policy, state, facts)
+            decision = evaluate(event, policy, state, facts, assessments=bundle)
             elapsed_ms = (perf_counter() - started) * 1000
             if datetime.now(UTC) >= event.deadline_at:
                 raise TimeoutError(f"{scenario_id}/{auth_id}: offline replay exceeded deadline")

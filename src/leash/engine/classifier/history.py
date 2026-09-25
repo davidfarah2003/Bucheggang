@@ -11,9 +11,7 @@ from pathlib import Path
 from statistics import median
 from typing import Iterator
 
-from leash.contracts import Event
-
-from .types import FEATURE_SCHEMA_VERSION, HistoryFeatures
+from leash.contracts import Event, FEATURE_SCHEMA_VERSION, HistoryFeatures
 
 ROOT = Path(__file__).resolve().parents[4]
 PACKS = {

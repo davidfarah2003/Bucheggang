@@ -12,7 +12,7 @@ import joblib
 import numpy as np
 import sklearn
 
-from .types import BehaviorAssessment, FEATURE_SCHEMA_VERSION, HistoryFeatures
+from leash.contracts import BehaviorAssessment, FEATURE_SCHEMA_VERSION, HistoryFeatures
 
 ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_MANIFEST = ROOT / "docs" / "eval" / "classifier" / "model-manifest.json"

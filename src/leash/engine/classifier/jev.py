@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 import httpx
 
-from .types import HistoryFeatures, JevAnswer, SemanticAssessment
+from leash.contracts import HistoryFeatures, JevAnswer, SemanticAssessment
 
 URL = "https://openrouter.ai/api/v1/systemone"
 REQUESTED_MODEL = "typesafe/jev-1.13-20260917"

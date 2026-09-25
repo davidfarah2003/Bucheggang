@@ -27,8 +27,8 @@ from sklearn.metrics import average_precision_score, brier_score_loss, roc_auc_s
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+from leash.contracts import FEATURE_SCHEMA_VERSION
 from leash.engine.classifier.history import HistoryIndex
-from leash.engine.classifier.types import FEATURE_SCHEMA_VERSION
 
 ROOT = Path(__file__).resolve().parent.parent
 EVAL = ROOT / "docs" / "eval" / "classifier"

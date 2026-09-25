@@ -2,31 +2,17 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from typing import TYPE_CHECKING
 
-from leash.contracts import Event, MandateState, PolicyDraft
+from leash.contracts import (
+    AssessmentBundle, Event, MandateState, PolicyDraft, assessment_purchase_digest,
+)
 
 from .history import HistoryIndex
 from .jev import assess_jev
-from .types import AssessmentBundle, HistoryFeatures
 
 if TYPE_CHECKING:
     from .behaviour import BehaviorModel
-
-
-def purchase_digest(event: Event, features: HistoryFeatures) -> str:
-    """Bind the purchase and feature map locally; this is an integrity check, not authentication."""
-    payload = {
-        "authorization": event.authorization.model_dump(mode="json"),
-        "mandate_id": event.mandate.mandate_id,
-        "customer_id": event.mandate.customer_id,
-        "card_id": event.mandate.card_id,
-        "features": features.model_dump(mode="json"),
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def history_bundle(event: Event, policy: PolicyDraft, history: HistoryIndex) -> AssessmentBundle:
@@ -34,7 +20,7 @@ def history_bundle(event: Event, policy: PolicyDraft, history: HistoryIndex) -> 
     features = history.for_event(event)
     return AssessmentBundle(
         authorization_id=event.authorization.authorization_id,
-        purchase_digest=purchase_digest(event, features), policy_hash=policy.hash,
+        purchase_digest=assessment_purchase_digest(event, features), policy_hash=policy.hash,
         as_of=event.authorization.timestamp, features=features,
         behaviour=None, semantic=None,
     )
@@ -44,7 +30,7 @@ def validate_bundle(event: Event, policy: PolicyDraft, bundle: AssessmentBundle)
     auth, mandate = event.authorization, event.mandate
     if bundle.authorization_id != auth.authorization_id:
         raise ValueError(f"{auth.authorization_id}: assessment authorization differs")
-    if bundle.purchase_digest != purchase_digest(event, bundle.features):
+    if bundle.purchase_digest != assessment_purchase_digest(event, bundle.features):
         raise ValueError(f"{auth.authorization_id}: assessment purchase digest differs")
     if bundle.policy_hash != policy.hash:
         raise ValueError(f"{auth.authorization_id}: assessment policy hash differs")
