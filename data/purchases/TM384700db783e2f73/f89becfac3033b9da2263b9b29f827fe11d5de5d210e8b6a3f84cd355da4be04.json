@@ -1,46 +1,46 @@
 {
- "purchase_key_file": "c0c685a3ed9a016acc90966b3ef691e5c455d9bbaac9982cb54135b27f9fdf1b",
- "agent_id": "6bccf1f2-3695-407b-972a-613d21ca72a8",
- "mandate_id": "TMf798fa07be84a863",
- "input_hash": "b2a978ab6c510ab0055dd2972b99e8a75f1ae4d3c1592c61a06377718011ddd3",
- "timestamp": "2026-09-25T08:19:34.053184+00:00",
- "authorization_id": "AGTLACXRMMAXD2MQ",
- "decision": "step_up",
+ "purchase_key_file": "f89becfac3033b9da2263b9b29f827fe11d5de5d210e8b6a3f84cd355da4be04",
+ "agent_id": "c2624068-d714-4c67-9afc-4de74c5c30f7",
+ "mandate_id": "TM384700db783e2f73",
+ "input_hash": "b564902a4bc586f0bac57c57bddf271e1938e545328a3fe105097f60268366ff",
+ "timestamp": "2026-09-25T08:27:51.650590+00:00",
+ "authorization_id": "AGTT5PAK3IJYMLUE",
+ "decision": "decline",
  "event": {
   "type": "authorization.request",
-  "request_id": "local-c0c685a3ed9a016acc90966b3ef691e5c455d9bbaac9982cb54135b27f9fdf1b",
-  "deadline_at": "2026-09-25T08:19:54.053184Z",
+  "request_id": "local-f89becfac3033b9da2263b9b29f827fe11d5de5d210e8b6a3f84cd355da4be04",
+  "deadline_at": "2026-09-25T08:28:11.650590Z",
   "authorization": {
-   "authorization_id": "AGTLACXRMMAXD2MQ",
-   "source_authorization_id": "AGTLACXRMMAXD2MQ",
+   "authorization_id": "AGTT5PAK3IJYMLUE",
+   "source_authorization_id": "AGTT5PAK3IJYMLUE",
    "scenario_id": "SCEN0000",
    "replay_order": 1,
-   "mandate_id": "TMf798fa07be84a863",
+   "mandate_id": "TM384700db783e2f73",
    "profile_id": "local-profile-CU0001",
    "card_id": "CA0001",
    "initiator_type": "agent",
    "merchant": {
-    "merchant_id": "ME0001",
-    "merchant_name": "Alpine Basket",
+    "merchant_id": "ME9999",
+    "merchant_name": "Fresh Corner Market",
     "merchant_category": "groceries",
     "merchant_mcc": "5411",
     "merchant_country": "CH",
-    "merchant_city": "Zurich",
+    "merchant_city": "Basel",
     "availability": "online",
     "recurring_capable": "false"
    },
-   "timestamp": "2026-09-25T08:19:34.053184Z",
-   "amount": 29.5,
+   "timestamp": "2026-09-25T08:27:51.650590Z",
+   "amount": 35.0,
    "currency": "CHF",
-   "billing_amount_chf": 29.5,
-   "items_subtotal": 22.5,
+   "billing_amount_chf": 35.0,
+   "items_subtotal": 28.0,
    "delivery_fee": 7.0,
    "channel": "ecommerce",
    "customer_device_id": "agent:Grocery helper",
    "authority_status": "active",
    "card_status_at_attempt": "active",
    "spend_in_period_before_chf": null,
-   "recent_attempt_count_10m": 3,
+   "recent_attempt_count_10m": 1,
    "fulfillment_method": "delivery",
    "delivery_by": null,
    "order_returnable": "unknown",
@@ -51,18 +51,18 @@
    "items": [
     {
      "line_no": 1,
-     "item_id": "IT0002",
-     "item_name": "Dairy and bread basket",
+     "item_id": "IT0001",
+     "item_name": "Fresh produce selection",
      "item_category": "groceries",
      "quantity": 1,
-     "unit_price": 22.5,
+     "unit_price": 28.0,
      "currency": "CHF",
      "item_details": "Seasonal fruit and vegetables; a typical weekly produce basket."
     }
    ]
   },
   "mandate": {
-   "mandate_id": "TMf798fa07be84a863",
+   "mandate_id": "TM384700db783e2f73",
    "status": "active",
    "customer_id": "CU0001",
    "card_id": "CA0001",
@@ -124,30 +124,16 @@
    "approved_spend_in_period_chf": null,
    "recent_authorizations": [
     {
-     "authorization_id": "AGTRIJT2LPQARA6C",
-     "timestamp": "2026-09-25T08:19:30.768177Z",
-     "merchant_id": "ME0001",
-     "billing_amount_chf": 48.0,
-     "status": "pending"
-    },
-    {
-     "authorization_id": "AGTLAUYWMVNSMAF4",
-     "timestamp": "2026-09-25T08:19:29.326695Z",
+     "authorization_id": "AGT5KW6GW2NZ6BQ2",
+     "timestamp": "2026-09-25T08:27:03.237241Z",
      "merchant_id": "ME0001",
      "billing_amount_chf": 35.0,
      "status": "pending"
-    },
-    {
-     "authorization_id": "AGTEDI6YJBVOTXYC",
-     "timestamp": "2026-09-25T08:19:30.275566Z",
-     "merchant_id": "ME9999",
-     "billing_amount_chf": 35.0,
-     "status": "declined"
     }
    ]
   },
   "runtime": {
-   "received_at": "2026-09-25T08:19:34.053184Z",
+   "received_at": "2026-09-25T08:27:51.650590Z",
    "history_window_minutes": 1440,
    "context_basis": "run_decisions_and_scenario_timestamps"
   }

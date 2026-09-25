@@ -196,11 +196,51 @@ async def run(origin: str) -> None:
             step("model checks on buy #1", [c for c in detail["decision"]["evidence"] if c["source"] == "model"])
 
 
+async def run_manual(origin: str) -> None:
+    """The agent's side of the demo; every wait returns when the customer acts in the Wallet."""
+    env = {**os.environ, "LEASH_POLICY_STORE": str(ROOT / "data" / "policy"), "LEASH_APP_ORIGIN": origin}
+    server = StdioServerParameters(command=str(ROOT / "scripts" / "mcp-stdio.sh"), args=[], env=env)
+    async with stdio_client(server) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            async def tool(name: str, **args):
+                result = await session.call_tool(name, args)
+                text = "".join(c.text for c in result.content if getattr(c, "text", None))
+                if result.is_error:
+                    raise RuntimeError(f"{name}: {text}")
+                return json.loads(text) if text else None
+
+            print("agent: a connection request is waiting in your Wallet", flush=True)
+            paired = await tool("connect", agent_label="Grocery helper", wait_seconds=290)
+            print("agent: connected", paired["agent_id"], flush=True)
+            await tool("get_policy_authoring_instructions", instruction=INSTRUCTION)
+            draft = await tool("propose_task_policy", instruction=INSTRUCTION, proposal=PROPOSAL)
+            print("agent: policy proposed, waiting in your Wallet", draft["draft_id"], flush=True)
+            status = await tool("wait_for_policy", draft_id=draft["draft_id"], wait_seconds=290)
+            print("agent: policy", status["status"], status.get("mandate_id"), flush=True)
+            mandate_id = status["mandate_id"]
+            first = await tool("buy", mandate_id=mandate_id, purchase_key=secrets.token_hex(12), cart=GROCERY_CART,
+                               merchant=KNOWN_SHOP, delivery_fee_chf=7.0, total_chf=35.0,
+                               facts=[facts_for("IT0001", "groceries")])
+            print("agent: buy ->", first["decision"], first["reason_codes"], first["authorization_id"], flush=True)
+            if first["decision"] == "step_up":
+                final = await tool("wait_for_purchase", authorization_id=first["authorization_id"], wait_seconds=290)
+                print("agent: customer answered ->", final["decision"], final["reason_codes"], flush=True)
+            second = await tool("buy", mandate_id=mandate_id, purchase_key=secrets.token_hex(12), cart=GROCERY_CART,
+                                merchant=NEW_SHOP, delivery_fee_chf=7.0, total_chf=35.0,
+                                facts=[facts_for("IT0001", "groceries")])
+            print("agent: buy at new shop ->", second["decision"], second["reason_codes"], flush=True)
+            print("agent: done", flush=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--origin", default="http://127.0.0.1:8000")
+    parser.add_argument("--manual", action="store_true",
+                        help="agent side only: the customer approves, confirms and answers in the browser")
     args = parser.parse_args()
-    asyncio.run(run(args.origin))
+    asyncio.run(run_manual(args.origin) if args.manual else run(args.origin))
 
 
 if __name__ == "__main__":

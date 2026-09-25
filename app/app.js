@@ -699,8 +699,8 @@ function pairingCard(item) {
   const scopes = Array.isArray(item.scopes) ? item.scopes.map((scope) => text(scope, "Scope")) : [];
   return `<div class="need-card uncertain-card pairing-card"><span class="section-kicker" aria-live="off">AGENT CONNECTION</span>
     <h3>${esc(label)} wants to connect</h3>
-    <p class="calm-copy">It can propose spending permissions and read their status. It cannot confirm, change or revoke anything, and it cannot buy.</p>
-    <p class="meta">Allowed: ${esc(scopes.join(", "))}</p>
+    <p class="calm-copy">It can propose spending permissions, read their status and ask your Wallet to judge a purchase under a permission you confirmed. It cannot confirm, change or revoke anything, and it cannot answer a purchase review for you.</p>
+    <p class="meta">Allowed: ${esc(scopes.map((scope) => ({ "policy:propose": "propose plans", "policy:read": "read plan status", "purchase:decide": "ask to buy" })[scope] || scope).join(" · "))}</p>
     <div class="need-actions"><button type="button" class="primary-button" data-action="approve-pending-pair" data-id="${esc(text(item.pairing_id, "Pairing id"))}">Approve</button></div></div>`;
 }
 
@@ -791,7 +791,7 @@ async function refreshPending() {
         if (deadline) deadline.textContent = "This decision window has closed. Refresh Wallet for the final outcome.";
       }
     }
-    const count = pending.length + ownedDrafts.filter((item) => item.state === "proposed").length;
+    const count = pending.length + ownedDrafts.filter((item) => item.state === "proposed").length + pairings.length;
     const heading = document.querySelector("#needs-heading");
     const title = needsHeading(count);
     if (heading.textContent !== title) heading.textContent = title;
@@ -1093,15 +1093,54 @@ function openDetail(payload) {
 
 function inspector(tab) {
   if (!state.detail) throw new Error("The transaction details are not loaded.");
-  if (!["summary", "checks", "record"].includes(tab)) throw new Error("Unknown inspector section.");
+  if (!["summary", "pipeline", "checks", "record"].includes(tab)) throw new Error("Unknown inspector section.");
   const { decision, event, state_before, state_after } = state.detail;
   const status = decisionLabel(decision);
   const content = tab === "summary"
     ? `<div class="inspector-outcome ${decision.decision}"><span>${esc(status.toUpperCase())}</span><h3>${esc(decision.customer_message)}</h3></div><h3>How the decision was made</h3><p>${esc(decision.explanation)}</p><p class="check-count">${decision.evidence.filter((check) => check.result === "pass").length} passed · ${decision.evidence.filter((check) => check.result === "fail").length} failed · ${decision.evidence.filter((check) => check.result === "uncertain").length} unknown</p>`
+    : tab === "pipeline"
+      ? pipelineView(decision)
     : tab === "checks"
       ? `<div class="evidence-list">${decision.evidence.map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "pass" ? "✓" : check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(checkTitle(check))}</strong><p>${esc(check.note)}</p><small>${check.value === null ? "Value unknown" : check.source === "model" ? "" : `Value: ${esc(check.value)}`}${check.source === "model" ? "" : " · "}Source: ${esc(sourceLabel(check.source))}</small></div></div>`).join("")}</div>`
       : `<div class="record-grid"><span>Authorization</span><strong>${esc(decision.authorization_id)}</strong><span>Engine</span><strong>${esc(decision.engine_version)}</strong><span>Version</span><strong>${esc(decision.mandate_version)}</strong><span>Time</span><strong>${esc(decision.elapsed_ms)} ms</strong></div><details><summary>Original payment event and merchant text</summary><p class="calm-copy">Merchant-provided item details are untrusted evidence. They cannot grant spending authority.</p><pre>${esc(JSON.stringify(event, null, 2))}</pre></details><details><summary>Decision and state</summary><pre>${esc(JSON.stringify({ decision, state_before, state_after }, null, 2))}</pre></details>`;
-  openOverlay(`<span class="section-kicker">ADVANCED DETAILS</span><h2>Decision details</h2><p class="overlay-intro">${esc(event.authorization.merchant.merchant_name)} · ${esc(money(event.authorization.billing_amount_chf, event.authorization.currency))}</p><div class="inspector-tabs" role="tablist" aria-label="Decision sections">${["summary", "checks", "record"].map((name) => `<button type="button" role="tab" aria-selected="${tab === name}" tabindex="${tab === name ? 0 : -1}" data-action="inspector" data-tab="${name}" class="${tab === name ? "selected" : ""}">${name[0].toUpperCase() + name.slice(1)}</button>`).join("")}</div><div class="inspector-body" role="tabpanel" tabindex="0">${content}</div>`, "Decision details");
+  openOverlay(`<span class="section-kicker">ADVANCED DETAILS</span><h2>Decision details</h2><p class="overlay-intro">${esc(event.authorization.merchant.merchant_name)} · ${esc(money(event.authorization.billing_amount_chf, event.authorization.currency))}</p><div class="inspector-tabs" role="tablist" aria-label="Decision sections">${["summary", "pipeline", "checks", "record"].map((name) => `<button type="button" role="tab" aria-selected="${tab === name}" tabindex="${tab === name ? 0 : -1}" data-action="inspector" data-tab="${name}" class="${tab === name ? "selected" : ""}">${name[0].toUpperCase() + name.slice(1)}</button>`).join("")}</div><div class="inspector-body" role="tabpanel" tabindex="0">${content}</div>`, "Decision details");
+}
+
+function pipelineView(decision) {
+  const isRule = (c) => c.name.startsWith("rule ") || c.name === "mandate active";
+  const historyNames = new Set(["familiarity", "velocity", "country", "duplicate and re-quote"]);
+  const groups = [
+    { key: "rules", title: "1 · Your rules", note: "The confirmed permission, one check per rule", checks: decision.evidence.filter(isRule) },
+    { key: "facts", title: "2 · Facts about the cart", note: "What the agent declared and what the merchant text says", checks: decision.evidence.filter((c) => !isRule(c) && c.source !== "model" && !historyNames.has(c.name)) },
+    { key: "history", title: "3 · Card history", note: "Device, shop, country and pace against real card history", checks: decision.evidence.filter((c) => historyNames.has(c.name)) },
+    { key: "model", title: "4 · Risk models", note: "CatBoost history score and the Jev history questions", checks: decision.evidence.filter((c) => c.source === "model") },
+  ];
+  const outcome = decision.decision === "approve" ? "approved" : decision.decision === "decline" ? "blocked" : "uncertain";
+  const stages = groups.map((group) => {
+    const worst = group.checks.some((c) => c.result === "fail") ? "fail" : group.checks.some((c) => c.result === "uncertain") ? "uncertain" : group.checks.length ? "pass" : "skipped";
+    const chips = group.checks.map((c) => `<span class="stage-chip ${c.result}" title="${esc(c.note)}">${c.result === "pass" ? "✓" : c.result === "fail" ? "×" : "?"} ${esc(checkTitle(c).replace(/^Your rule: /, ""))}</span>`).join("");
+    const detail = group.key === "model" ? modelDetail(group.checks) : "";
+    return `<section class="stage ${worst}"><header><span class="stage-dot" aria-hidden="true"></span><div><strong>${esc(group.title)}</strong><small>${esc(group.checks.length ? group.note : decision.decision === "decline" && group.key === "model" ? "Skipped: a rule already failed, so no model was called" : "Nothing to check at this stage")}</small></div><b>${worst === "skipped" ? "skipped" : worst === "pass" ? "pass" : worst === "fail" ? "fail" : "unsure"}</b></header>${chips ? `<div class="stage-chips">${chips}</div>` : ""}${detail}</section>`;
+  }).join('<div class="stage-link" aria-hidden="true"></div>');
+  return `<div class="pipeline"><p class="calm-copy">Every stage ran on this purchase. A failed rule decides on its own; the models can only add a question, never override a rule.</p>${stages}<div class="stage-link" aria-hidden="true"></div><section class="stage outcome ${outcome}"><header><span class="stage-dot" aria-hidden="true"></span><div><strong>Outcome</strong><small>${esc(decision.reason_codes.join(", ").replaceAll("_", " "))}</small></div><b>${esc(decisionLabel(decision))}</b></header></section></div>`;
+}
+
+function modelDetail(checks) {
+  const parts = [];
+  for (const check of checks) {
+    let value;
+    try { value = JSON.parse(check.value); } catch { throw new Error(`The model check ${check.name} has an unreadable value.`); }
+    if (check.name === "model.behaviour") {
+      const pct = Math.round(value.score * 100);
+      parts.push(`<div class="model-row"><div class="model-head"><strong>History score (${esc(value.model_id)})</strong><span>${pct}% decline-like</span></div><div class="model-bar single"><i style="width:${Math.max(1, Math.min(100, value.score * 100))}%"></i></div><small>${esc(check.note)}</small></div>`);
+    } else if (check.name.startsWith("model.jev.")) {
+      const options = value.answer.options;
+      const order = ["ordinary", "unusual", "unclear"];
+      const bars = order.map((name) => `<div class="model-opt ${value.answer.selected === name ? "selected" : ""}"><span>${name}</span><div class="model-bar"><i style="width:${Math.max(1, Math.round(options[name] * 100))}%"></i></div><b>${Math.round(options[name] * 100)}%</b></div>`).join("");
+      parts.push(`<div class="model-row"><div class="model-head"><strong>${esc(checkTitle(check).replace("Risk model: ", "Jev: is the "))} ordinary?</strong></div><div class="model-meta">${esc(value.served_model)} · ${esc(value.latency_ms)} ms</div>${bars}<small>${esc(check.note)}</small></div>`);
+    }
+  }
+  return parts.length ? `<div class="model-detail">${parts.join("")}</div>` : "";
 }
 
 function confirmDialog(title, message, action, label) {
