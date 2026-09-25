@@ -262,7 +262,7 @@ function startExamples() {
 }
 
 function purchaseCap(rules) {
-  const caps = rules.filter((rule) => rule.field === "authorization.billing_amount_chf" && rule.scope === "purchase" && ["<", "<="].includes(rule.operator) && typeof rule.value === "number");
+  const caps = rules.filter((rule) => rule.field === "authorization.billing_amount_chf" && rule.scope !== "period" && ["<", "<="].includes(rule.operator) && typeof rule.value === "number");
   if (!caps.length) return null;
   const amount = Math.min(...caps.map((rule) => rule.value));
   return { amount, strict: caps.some((rule) => rule.value === amount && rule.operator === "<") };
