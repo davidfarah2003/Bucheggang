@@ -84,6 +84,8 @@ Main #128 update, 2026-09-25 10:23 CEST: PR #128 merged at `8e9ee92` after this 
 
 Further #128 source review, 2026-09-25 10:25 CEST: `docs/contracts.md` specifies `authorization.customer_device_id` as the unique paired `agent_id`. `src/leash/policy/purchases.py` constructs it from `agent_label` instead. Labels are not unique; `IdentityStore` generates a distinct UUID for each agent. A second agent using a prior agent's label can inherit the first agent's approved-device familiarity, suppressing the `new_device` uncertainty check. Also, demo confirmation writes the configured `LEASH_LOCAL_CARD_ID` identity to every authenticated draft regardless of the Wallet account; the local purchase code then reads that card and customer history. This proves a demo source mapping, not account-owned card isolation. These policy-owned boundaries were reported to `david_main`; this lane did not edit them. A real human Wallet approval is still unobserved.
 
+Provider capture check, 2026-09-25 10:28 CEST: the main #128 adapter parsed both committed real failure bodies, public AU0036 and runner AU0001, into two Jev answers each with their original probabilities. The sums stayed 0.99 and 1.0, with no normalization or fresh provider request. A clean detached checkout at `8e9ee92` was removed by exact path. This proves those two saved shapes now pass; it does not prove provider reliability across 45 new calls or resolve the off-grid acceptance above.
+
 ## Open items after M0
 
 The open items from startup are answered in [02-classifier-m0.md](02-classifier-m0.md):
