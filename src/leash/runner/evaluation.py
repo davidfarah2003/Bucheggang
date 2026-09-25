@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 
 from leash.contracts import AssessmentBundle, Decision, Event, MandateState, PolicyDraft, PurchaseFacts
 from leash.engine.evaluate import evaluate
@@ -31,7 +32,7 @@ class ModelEvaluator:
             from leash.engine.classifier.assess import assess
             from leash.engine.classifier.behaviour import BehaviorModel
             from leash.engine.classifier.history import HistoryIndex
-            from leash.engine.classifier.jev import REQUESTED_MODEL
+            from leash.engine.classifier.jev import DEADLINE_RESERVE_SECONDS, REQUESTED_MODEL
         except ModuleNotFoundError as exc:
             raise SettingsError(
                 "model-enabled startup requires the classifier package and its classifier dependency group"
@@ -41,6 +42,7 @@ class ModelEvaluator:
         self._provider = load_openrouter()
         self._assess = assess
         self._requested_model = REQUESTED_MODEL
+        self._provider_reserve_s = DEADLINE_RESERVE_SECONDS
         log.info("model configuration ready: jev=%s artifact=%s behavioural_escalation=off",
                  self._requested_model, self._model.artifact_version)
 
@@ -50,6 +52,7 @@ class ModelEvaluator:
             raise ValueError(f"{event.authorization.authorization_id}: extraction facts are missing")
         budget = current_budget(event.deadline_at)
         if budget.remaining(MODEL_RESERVE_S) <= 0:
+            log.error("%s: no model allowance before the submission reserve", event.authorization.authorization_id)
             raise ModelDeadlineError(f"{event.authorization.authorization_id}: no model allowance before the submission reserve")
         baseline = evaluate(event, policy, state, facts)
         if any(check.result == "fail" for check in baseline.evidence):
@@ -57,13 +60,18 @@ class ModelEvaluator:
             return baseline
         allowance = min(MODEL_CAP_S, budget.remaining(MODEL_RESERVE_S))
         if allowance <= 0:
+            log.error("%s: model allowance expired before dispatch", event.authorization.authorization_id)
             raise ModelDeadlineError(f"{event.authorization.authorization_id}: model allowance expired before dispatch")
         started = time.monotonic()
+        stage_event = event.model_copy(update={"deadline_at": min(
+            budget.wall_deadline(),
+            datetime.now(UTC) + timedelta(seconds=allowance + self._provider_reserve_s),
+        )})
 
         async def completed_assessments() -> AssessmentBundle:
             async with asyncio.timeout_at(asyncio.get_running_loop().time() + allowance):
                 return await self._assess(
-                    event, policy, state, self._history, api_key=self._provider.api_key,
+                    stage_event, policy, state, self._history, api_key=self._provider.api_key,
                     behaviour_model=self._model,
                 )
 
