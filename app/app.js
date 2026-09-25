@@ -333,7 +333,7 @@ function navigate(route, { keepScroll = false } = {}) {
     else button.removeAttribute("aria-current");
   });
   if (!keepScroll) window.scrollTo(0, 0);
-  void render();
+  return render();
 }
 
 function sessionExpired(error) {
@@ -386,6 +386,11 @@ async function render() {
     const linkAction = state.route === "purchase" ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this purchase link</button>` : state.route === "pair" && (error instanceof PairLinkError || error.status === 404) ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Continue without this agent link</button>` : error instanceof DraftLinkError ? `<button type="button" class="outline-button" data-action="clear-invalid-link">Open Shop without this link</button>` : "";
     const title = state.route === "review" ? "Review spending permission" : state.route === "purchase" ? "Review pending purchase" : state.route === "pair" ? "Connect a shopping agent" : state.route;
     setScreen(`<div class="page-title"><h1>${esc(title)}</h1></div>${errorPanel("This screen could not be loaded", error)}${linkAction}`);
+    if (state.route === "purchase") {
+      const heading = screen.querySelector(".page-title h1");
+      heading.tabIndex = -1;
+      heading.focus();
+    }
   }
 }
 
@@ -1048,7 +1053,20 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "reload") { if (state.user) void render(); else void initialize(); return; }
-    if (action === "clear-invalid-link") { if (state.route === "pair") clearPairLink(); else if (state.route === "purchase") clearPurchaseLink(); else clearDraftLink(); navigate(requestedRoute("")); return; }
+    if (action === "clear-invalid-link") {
+      const purchase = state.route === "purchase";
+      if (state.route === "pair") clearPairLink();
+      else if (purchase) clearPurchaseLink();
+      else clearDraftLink();
+      await navigate(requestedRoute(""));
+      if (purchase && state.route === "shop") {
+        const heading = screen.querySelector(".shop-view h1");
+        if (!heading) throw new Error("The Shop heading is missing after leaving a purchase link.");
+        heading.tabIndex = -1;
+        heading.focus();
+      }
+      return;
+    }
     button.disabled = true;
     if (action === "select-mandate") {
       const id = text(button.dataset.id, "Selected permission ID");
