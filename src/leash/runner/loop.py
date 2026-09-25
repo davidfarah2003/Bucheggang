@@ -208,9 +208,11 @@ def handle(
         raise RunLoopError(f"event mandate instruction differs from the confirmed draft {policy.draft_id}")
     coordinator = Coordinator(store, book)
     dispatch_deadline = event.deadline_at - timedelta(seconds=0.25)
-    coordination_deadline = (_now() + timedelta(seconds=30)
-                             if dispatch_deadline <= _now() else dispatch_deadline)
-    with coordinator.locked(mandate_id, deadline_at=coordination_deadline) as mandate_ids:
+    if dispatch_deadline <= _now():
+        raise RunLoopError(
+            f"{event.authorization.authorization_id}: deadline {event.deadline_at.isoformat()} already passed before dispatch"
+        )
+    with coordinator.locked(mandate_id, deadline_at=dispatch_deadline) as mandate_ids:
         record, _ = policy_context.confirmation(store, mandate_id)
         if record["hash"] != policy.hash or record["version"] != policy.version:
             raise RunLoopError(f"{mandate_id}: supplied draft differs from the saved confirmation")
