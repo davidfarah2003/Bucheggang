@@ -421,6 +421,20 @@ p { margin: 0; line-height: 1.48; }
 .review-rules summary, .inspector-body summary { padding: 14px 0; color: var(--ink); font-size: 14px; font-weight: 650; cursor: pointer; }
 .review-rules details p { padding-bottom: 14px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .review-rules details p + p { padding-top: 9px; border-top: 1px solid var(--line); }
+.boundary-results { display: grid; gap: 12px; margin-top: 27px; }
+.boundary-results h2 { font-size: 19px; }
+.boundary-results > p { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.boundary-results .boundary-meta { font-size: 12px; }
+.boundary-list { display: grid; gap: 10px; }
+.boundary-card { padding: 16px 17px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+.boundary-card h3 { margin: 7px 0 10px; font-size: 15px; line-height: 1.4; }
+.boundary-card p { margin-top: 5px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.boundary-card strong { color: var(--ink); }
+.boundary-number { color: var(--accent); font-size: 10px; font-weight: 700; letter-spacing: .06em; }
+.agent-examples { margin-top: 14px; border-bottom: 1px solid var(--line); }
+.agent-examples summary { padding: 14px 0; font-size: 14px; font-weight: 650; cursor: pointer; }
+.agent-examples p { padding-bottom: 14px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.agent-examples p + p { padding-top: 9px; border-top: 1px solid var(--line); }
 .questions { display: grid; gap: 16px; margin-top: 26px; }
 .question { display: grid; gap: 13px; padding: 18px; border: 1px solid var(--line); border-radius: 18px; background: #fff; }
 .question > strong { font-size: 14px; line-height: 1.4; }
