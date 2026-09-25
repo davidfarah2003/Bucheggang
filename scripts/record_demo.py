@@ -177,7 +177,7 @@ async def main() -> None:
 
             # The MCP beat: any agent can plug in, and it does the rest.
             await s.zoom_out(500)
-            await page.evaluate("() => window.scene('chips', 'Any agent does the rest.', 'The Wallet is an MCP server. The agent plugs in, drafts the plan, then waits.')")
+            await page.evaluate("() => window.scene('chips', 'Any agent does the rest.', 'The Wallet is an MCP server. The agent connects, drafts the plan and waits for Alex.')")
             await asyncio.sleep(1.5)
             await page.evaluate("() => window.scene('agent')")
             await s.say("user", INSTRUCTION, 0.2)
@@ -206,7 +206,7 @@ async def main() -> None:
             await s.zoom_out(400)
             await wait_for_agent(log, "policy confirmed")
             await s.done(0.25, sound="confirm")
-            await s.caption("Rules set. Now the agent shops.", 0.5)
+            await s.caption("Rules confirmed. The agent shops inside them.", 0.5)
             await s.say("agent", "Confirmed. Ordering the weekly basket at Alpine Basket, CHF 35.00.", 0.15)
             await s.tool("buy", "mandate_id, cart[1], merchant=Alpine Basket, total_chf=35.0, facts[1]")
 
@@ -218,7 +218,7 @@ async def main() -> None:
             await s.frame.wait_for_selector('[data-action="open-pending"]', timeout=15000)
             await s.click('[data-action="open-pending"]', after=0.25)
             await s.zoom(PHONE_CX, 470, 1.5, 500, hold=0.15)
-            await s.caption("Why it asks: a new device and a risk-model flag. Alex decides, never the agent.", 1.6, side=True)
+            await s.caption("Why it asks: a new device and a risk-model flag. The answer comes from Alex.", 1.6, side=True)
             await s.click('[data-action="resolve"][data-decision="approve"]', after=0.15)
             await s.zoom_out(400)
             await wait_for_agent(log, "customer answered")

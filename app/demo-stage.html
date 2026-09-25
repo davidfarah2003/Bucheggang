@@ -150,10 +150,10 @@
       if (name === "lead") { const l = document.getElementById("lead"); l.innerHTML = `${h}<small>${p || ""}</small>`; show("agent", false); show("lead", true); }
       if (name === "chips") { const l = document.getElementById("lead"); l.innerHTML = `${h}<small>${p || ""}</small><div class="chips"><span class="chip mcp">MCP</span><span class="chip">Claude Code</span><span class="chip">OpenCode</span><span class="chip">your own agent</span></div>`; show("agent", false); show("lead", true); }
       if (name === "tech") { const l = document.getElementById("lead"); l.classList.add("tech"); l.innerHTML = `${h}<div class="steps">
-          <div class="step"><b>1</b><div><strong>Alex's rules</strong><span>Amount, window, category, known shops. A failed rule decides on its own.</span></div></div>
+          <div class="step"><b>1</b><div><strong>Alex's rules</strong><span>Amount, window, category, known shops. A failed rule ends the purchase.</span></div></div>
           <div class="step"><b>2</b><div><strong>Cart facts</strong><span>What the agent declared and what the merchant text says. Injected instructions are flagged.</span></div></div>
           <div class="step"><b>3</b><div><strong>Card history, 50 features</strong><span>Device, shop, country, pace and amounts against this card's real approved purchases.</span></div></div>
-          <div class="step"><b>4</b><div><strong>Risk models</strong><span>CatBoost decline score on those features, Jev's probabilities. They can ask, never override.</span></div></div>
+          <div class="step"><b>4</b><div><strong>Risk models, inside the rules</strong><span>A CatBoost decline score on those features and Jev's probabilities, bound to the confirmed policy. They can add a question, nothing more.</span></div></div>
         </div>`; show("agent", false); show("lead", true); }
       if (name === "agent") { const l = document.getElementById("lead"); l.classList.remove("tech"); show("lead", false); show("agent", true); }
       if (name === "outro") { document.getElementById("credit").hidden = false; document.getElementById("lead").classList.remove("tech"); if (h) document.getElementById("title-h").textContent = h; if (p) document.getElementById("title-p").textContent = p; show("agent", false); show("lead", false); show("phone", false); show("headline", false); show("caption", false); setTimeout(() => show("title", true), 350); }

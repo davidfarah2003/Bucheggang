@@ -485,7 +485,8 @@ body.dialog-open { overflow: hidden; }
   box-shadow: 0 -16px 50px rgb(18 27 27 / 15%);
   animation: sheet-in .22s ease-out;
 }
-.overlay:focus { outline: 3px solid var(--accent); outline-offset: -3px; }
+.overlay:focus { outline: none; }
+.overlay:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
 .overlay-close { position: absolute; top: 9px; right: 12px; display: grid; width: 44px; height: 44px; place-items: center; border: 0; border-radius: 50%; background: #f6f4f1; color: var(--muted); font-size: 22px; line-height: 1; }
 .overlay > .section-kicker { max-width: calc(100% - 40px); }
 .overlay h2 { margin-top: 14px; max-width: calc(100% - 8px); font-size: 26px; }
@@ -500,7 +501,7 @@ body.dialog-open { overflow: hidden; }
 .evidence-card { display: flex; align-items: flex-start; gap: 12px; padding: 14px 15px; border-radius: 15px; background: #f8f8f6; }
 .evidence-card > span { display: grid; width: 21px; height: 21px; flex: 0 0 21px; place-items: center; border-radius: 50%; background: #fff; color: var(--muted); font-size: 13px; font-weight: 750; }
 .evidence-card > div { min-width: 0; }
-.evidence-card strong { display: block; font-size: 14px; font-weight: 680; text-transform: capitalize; }
+.evidence-card strong { display: block; font-size: 14px; font-weight: 680; }
 .evidence-card p { margin-top: 3px; color: var(--muted); font-size: 13px; line-height: 1.4; }
 .evidence-card small { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .evidence-card.pass { background: var(--green-soft); }
