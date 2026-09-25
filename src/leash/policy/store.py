@@ -141,6 +141,15 @@ def _candidate_policy(draft: dict[str, Any]) -> PolicyDraft:
         raise InvalidDraft(f"candidate policy is invalid: {exc}") from exc
 
 
+def _case_input_hash(case: BoundaryCase) -> str:
+    return hashlib.sha256(_canonical({
+        "event": case.event.model_dump(mode="json"),
+        "facts": [fact.model_dump(mode="json") for fact in case.facts],
+        "state": case.state.model_dump(mode="json"),
+        "history": case.history.model_dump(mode="json"),
+    })).hexdigest()
+
+
 def _evaluate_boundary_cases(draft: dict[str, Any], *, phase: str) -> dict[str, Any]:
     cases = draft.get("boundary_cases", [])
     results = []
@@ -159,12 +168,7 @@ def _evaluate_boundary_cases(draft: dict[str, Any], *, phase: str) -> dict[str, 
             "expected": case.expected,
             "observed": observed,
             "reason_codes": [code.value if hasattr(code, "value") else code for code in decision.reason_codes],
-            "case_input_hash": hashlib.sha256(_canonical({
-                "event": case.event.model_dump(mode="json"),
-                "facts": [fact.model_dump(mode="json") for fact in case.facts],
-                "state": case.state.model_dump(mode="json"),
-                "history": case.history.model_dump(mode="json"),
-            })).hexdigest(),
+            "case_input_hash": _case_input_hash(case),
         })
     return {
         "draft_id": draft["draft_id"], "version": draft["version"], "hash": draft["hash"],
@@ -362,40 +366,53 @@ class DraftStore:
     def _save_boundary_results(self, folder: Path, results: dict[str, Any]) -> None:
         self._write_replace(folder / "boundary-results.json", results)
 
+    def _read_boundary_results(self, folder: Path, draft: dict[str, Any]) -> dict[str, Any]:
+        """Check a saved result snapshot against its authored cases without evaluating again."""
+        cases = draft.get("boundary_cases", [])
+        path = folder / "boundary-results.json"
+        if not path.exists():
+            if cases:
+                raise DraftConflict("boundary results are stale")
+            return {
+                "draft_id": draft["draft_id"],
+                "version": draft["version"],
+                "hash": draft["hash"],
+                "evaluated_at": draft["created_at"],
+                "phase": "proposal",
+                "engine_version": ENGINE_VERSION,
+                "results": [],
+            }
+        results = json.loads(path.read_text())
+        if (
+            not isinstance(results, dict)
+            or results.get("draft_id") != draft["draft_id"]
+            or results.get("version") != draft["version"]
+            or results.get("hash") != draft["hash"]
+        ):
+            raise DraftConflict("boundary results are stale")
+        entries = results.get("results")
+        if not isinstance(entries, list) or len(entries) != len(cases):
+            raise DraftConflict("boundary results are stale")
+        for index, (entry, raw_case) in enumerate(zip(entries, cases, strict=True)):
+            case = BoundaryCase.model_validate(raw_case)
+            if (
+                not isinstance(entry, dict)
+                or entry.get("case_index") != index
+                or entry.get("description") != case.description
+                or entry.get("expected") != case.expected
+                or entry.get("observed") != case.expected
+                or entry.get("case_input_hash") != _case_input_hash(case)
+            ):
+                raise DraftConflict("boundary results are stale")
+        return results
+
     def get_boundary_results(self, draft_id: str, created_for: str) -> dict[str, Any]:
         """Read computed results only when they describe the current owned draft hash."""
         with self._locked(draft_id) as folder:
             draft = self.get(draft_id)
             if not isinstance(created_for, str) or draft.get("created_for") != created_for:
                 raise KeyError(draft_id)
-            cases = draft.get("boundary_cases", [])
-            path = folder / "boundary-results.json"
-            if not path.exists():
-                if cases:
-                    raise DraftConflict("boundary results are stale")
-                return {
-                    "draft_id": draft_id,
-                    "version": draft["version"],
-                    "hash": draft["hash"],
-                    "evaluated_at": draft["created_at"],
-                    "phase": "proposal",
-                    "engine_version": ENGINE_VERSION,
-                    "results": [],
-                }
-            results = json.loads(path.read_text())
-            if results.get("version") != draft["version"] or results.get("hash") != draft["hash"]:
-                raise DraftConflict("boundary results are stale")
-            entries = results.get("results")
-            if not isinstance(entries, list) or len(entries) != len(cases):
-                raise DraftConflict("boundary results are stale")
-            for index, (entry, case) in enumerate(zip(entries, cases, strict=True)):
-                if (
-                    entry.get("case_index") != index
-                    or entry.get("description") != case["description"]
-                    or entry.get("expected") != case["expected"]
-                ):
-                    raise DraftConflict("boundary results are stale")
-            return results
+            return self._read_boundary_results(folder, draft)
 
     def _audit(self, folder: Path, event: str, **details: Any) -> None:
         entry = {"event": event, "at": _now(), **details}
@@ -500,7 +517,7 @@ class DraftStore:
             cases = _boundary_cases(
                 boundary_cases if boundary_cases is not None else previous.get("boundary_cases", [])
             )
-            hash_version = 2 if cases else previous.get("hash_version", 1)
+            hash_version = 2 if cases else 1
             _validate_draft(previous["instruction"], new_rules, new_policy, new_examples, new_questions)
             revised = {
                 **previous,
@@ -639,6 +656,9 @@ class DraftStore:
                 "simulator_draft_id": simulator_draft_id,
             }:
                 raise DraftConflict("confirmation does not match the reserved simulator draft")
+            saved_boundary_results = self._read_boundary_results(folder, draft)
+            if saved_boundary_results != boundary_results:
+                raise DraftConflict("boundary results changed before confirmation was recorded")
             record = {
                 "draft_id": draft_id,
                 "version": version,
@@ -650,7 +670,7 @@ class DraftStore:
                 "global_version": global_version,
                 "global_hash": global_hash,
                 "global_rules": global_rules,
-                "boundary_results": boundary_results,
+                "boundary_results": saved_boundary_results,
             }
             try:
                 self._write_exclusive(folder / "confirmation.json", record)
