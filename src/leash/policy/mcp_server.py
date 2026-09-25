@@ -449,7 +449,7 @@ def create_server(
         deadline = time.monotonic() + wait_seconds
         while True:
             status = policy_status(store, draft_id)
-            if status["state"] in {"confirmed", "rejected"}:
+            if status["status"] in {"confirmed", "rejected"}:
                 return status
             if time.monotonic() >= deadline:
                 raise ToolError("PolicyPending: the customer has not decided in the Wallet yet; call wait_for_policy again")
