@@ -10,6 +10,7 @@ from contextvars import ContextVar
 import os
 from pathlib import Path
 from typing import Annotated, Any
+from urllib.parse import quote, urlsplit
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -27,6 +28,23 @@ from .store import (
 
 PROPOSAL_REQUIRED_KEYS = frozenset({"rules", "examples", "open_questions", "uncertainty_policy"})
 PROPOSAL_KEYS = PROPOSAL_REQUIRED_KEYS | {"boundary_cases"}
+
+
+def _validate_app_origin(value: str) -> str:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise RuntimeError("LEASH_APP_ORIGIN must be an exact HTTP or HTTPS origin")
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise RuntimeError("LEASH_APP_ORIGIN must be an exact HTTP or HTTPS origin without a path")
+    return value
 
 
 def authoring_guide() -> dict[str, Any]:
@@ -256,7 +274,10 @@ def create_server(
     store: DraftStore,
     identities: IdentityStore | None = None,
     stdio_agent_token: str | None = None,
+    *,
+    app_origin: str,
 ) -> PolicyMCPServer:
+    wallet_origin = _validate_app_origin(app_origin)
     identity_store = identities or IdentityStore(store.root)
     server = PolicyMCPServer(identity_store, stdio_agent_token)
 
@@ -270,9 +291,13 @@ def create_server(
     def begin_pairing(agent_label: str) -> dict[str, Any]:
         """First, pair this labelled agent in the customer's Wallet. Then propose policy, wait for Wallet confirmation, check status is confirmed, and only then search and authorize. External browsing before confirmation is outside backend control; no agent purchase API is active."""
         try:
-            return identity_store.begin_pairing(agent_label)
+            pairing = identity_store.begin_pairing(agent_label)
         except ValueError as exc:
             raise ToolError(f"InvalidPairing: {exc}") from exc
+        return {
+            **pairing,
+            "wallet_url": f"{wallet_origin}/app/?pair={quote(pairing['pairing_code'], safe='')}",
+        }
 
     @server.tool()
     def complete_pairing(pairing_code: str, verifier: str) -> dict[str, Any]:
@@ -365,6 +390,7 @@ def main(argv: list[str] | None = None) -> None:
     root = os.environ.get("LEASH_POLICY_STORE")
     if not root:
         raise RuntimeError("LEASH_POLICY_STORE is required for the policy MCP server")
+    app_origin = _validate_app_origin(os.environ.get("LEASH_APP_ORIGIN"))
     store = DraftStore(Path(root))
 
     identities = IdentityStore(store.root)
@@ -372,12 +398,12 @@ def main(argv: list[str] | None = None) -> None:
         if args.port is not None:
             raise RuntimeError("--port only applies to --transport streamable-http")
         token = os.environ.get("LEASH_AGENT_TOKEN")
-        create_server(store, identities, stdio_agent_token=token).run(transport="stdio")
+        create_server(store, identities, stdio_agent_token=token, app_origin=app_origin).run(transport="stdio")
         return
 
     if args.port is None:
         raise RuntimeError("--transport streamable-http requires --port")
-    create_server(store, identities).run(
+    create_server(store, identities, app_origin=app_origin).run(
         transport="streamable-http", host=args.host, port=args.port
     )
 
