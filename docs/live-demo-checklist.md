@@ -30,7 +30,7 @@ Recorded state: 25 September 2026, before the morning dry run. Unchecked items b
 For every item, record the command or UI action, HTTP status, authorization or draft ID, and the file holding the observed response. Mark a failure as a failure before changing code.
 
 - [ ] Without login, customer API routes return 401. Logging in creates a session; logging out invalidates it.
-- [ ] The Wallet API is served on 127.0.0.1 only and never through the tunnel. `/session` accepts any username by design for the local demo, so exposing it would let anyone act as any customer. Only the MCP server goes through the tunnel.
+- [ ] The Wallet API is served on 127.0.0.1 only and never through the tunnel. Only the MCP server goes through the tunnel.
 - [ ] The agent calls the real MCP authoring and proposal tools. Read-back through `get_policy_summary` matches the proposed instruction and customer-readable rules. `get_policy_status` says pending.
 - [ ] At `/app/?draft_id=<id>`, the customer sees the saved rules, examples and unanswered questions. The confirm action submits the saved version and hash. An attempt using an obsolete version or hash returns 409 and creates no simulator mandate.
 - [ ] The customer answers the open questions and confirms in the Wallet. Record the actual submitted choices. The mandate ID displayed by the app matches the confirmed MCP status and live simulator record.

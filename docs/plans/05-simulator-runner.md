@@ -2,8 +2,6 @@
 
 - Status: foundation, replay and original-theme reports merged in #31, #32 and #34; ownership and Activity repairs merged in #41 and #43. Deadline handling is merged in #50. Durable intents and customer coordination are merged in #58 (eb78312). The live-call gate is lifted (Log, 05:05); a dry run is scheduled for 10:30 and no live run has been recorded since the gate lifted.
 - Owner: David (proposed)
-- Status: runner foundation, replay and original-theme live reports merged in #31, #32 and #34; customer ownership and Activity repairs merged in #41 and #43. Deadline failures raise instead of substituting a decision and the smoke evaluators are gone since #50 (main e9c5bcb). Durable remote-operation intents, customer-wide locks (`customer_lock`, `mandate_locks`) and the effective-policy and state rechecks are in #58, open, which also passes the customer's other mandates into `state.load`. Known verification limits are listed below.
-- Owner: David
 - Lane: runner. Channel `team.zurichbuchegg.runner`, branch `lane/runner`, worktree `.worktrees/runner`
 - User flow step: everything between "mandate confirmed" and "decision recorded": mandate calls, scenario start, polling, deadlines, decision submission, `/resolve`, state persistence, offline replay
 - Design: [Hackathon demo mode](../idea/viseca-agent-control-layer.md#hackathon-demo-mode), [Demo constraints](../idea/viseca-agent-control-layer.md#demo-constraints)
