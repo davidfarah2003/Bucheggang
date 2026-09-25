@@ -555,7 +555,7 @@ function globalPolicyCard(policy, selectedVersion) {
   const notice = selectedVersion !== null && selectedVersion < policy.version
     ? `This permission uses version ${selectedVersion}. Version ${policy.version} will apply to your next confirmed permission.`
     : "Changes to account-wide rules apply to the next confirmed permission.";
-  return `<section class="rule-group"><h3>Account-wide rules · version ${policy.version}</h3>${policy.rules.length ? policy.rules.map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("") : `<p>No account-wide rules are saved for this local customer.</p>`}<p>${esc(notice)} Account-wide editing is not available in this Wallet view. Cross-permission spend caps are not active until the runner supports them.</p></section>`;
+  return `<section class="rule-group"><h3>Account-wide rules · version ${policy.version}</h3>${policy.rules.length ? policy.rules.map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("") : `<p>No account-wide rules are saved for this local customer.</p>`}<p>${esc(notice)} Account-wide editing is not available in this Wallet view. Spending caps shared across permissions are not active in this demo yet.</p></section>`;
 }
 
 async function rulesContent(serial) {
