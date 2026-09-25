@@ -1,0 +1,119 @@
+{
+  "status": "failed_partial",
+  "core_head": "71f119c65b880adbd5fff01ea646b69e41b20767",
+  "producer_head": "0940fd759ec6eb42d416ecd02e828be83b78bcbd",
+  "artifact_sha256": "e4815c5677073c4e985c56f09f045be3d72c4e3ae624b75f9d06870630c828cf",
+  "producer_hashes": {
+    "src/leash/engine/classifier/__init__.py": "1c6cfc6d63b1704fca8ee672118aca73bc3fd242775cb89b522cb19a8edf7986",
+    "src/leash/engine/classifier/assess.py": "fe742d4b13c6f1d5444f7fa1fbb50804121f994f46f325756d000d791c9ed794",
+    "src/leash/engine/classifier/behaviour.py": "31f8775fb816f3dd475d1aebd6ac7d230e9dc3cce6f1c8560ef2174b23d0f72d",
+    "src/leash/engine/classifier/history.py": "688569f72a578438adc2acbc97e48ce0d88c43b02397de1872045cd4d9e8666d",
+    "src/leash/engine/classifier/jev.py": "83c4a28340e498cb49f9c66d8cccd0e1aec6a14376516e3c29b5aab0e82402c2",
+    "src/leash/engine/classifier/types.py": "f1f92177a5d2fb084969d3a631e7c06d8ca5c4e36da701f0a7302eb62db65004"
+  },
+  "policy_hashes": {
+    "docs/eval/replay-policies/SCEN0000.json": "d385568389944e372ff21bae7a63eec93650cdaa3522b037e33d37cecbe03dcf",
+    "docs/eval/replay-policies/SCEN0001.json": "614cdec8e0f9a139bae82ea1e363b6aea9fea26d058fb007c041c895803f9461",
+    "docs/samples/scen0002_draft.json": "7327b0249773e6829b5bad26c313debe6edda6c642011a95af9d38dc5f23cf19",
+    "docs/eval/replay-policies/SCEN0003.json": "356c07213ac750edbca840ac966c9521604cc61ffbefa442123caed46e5b80e9",
+    "docs/eval/replay-policies/SCEN0004.json": "3fd1cf60d6615c9f5ad1f81d1f74692ead1741299dffa5c5412e9fe41bc080b6"
+  },
+  "recorded_driver_sha256": "37d4464d94ba7690693dd824944a7b74439d8ee38e3eb35e7449e588ed912452",
+  "request_state_fields": [
+    "feature_schema_version",
+    "values",
+    "missing",
+    "support"
+  ],
+  "requests_sent": 44,
+  "simulator_requests": 0,
+  "customer_answers": 0,
+  "initial_batch": {
+    "requests": 7,
+    "completed_rows": 6,
+    "failed_authorization": "AU0007",
+    "error": "activity_pattern: probabilities do not sum to one",
+    "raw_failed_response_available": false
+  },
+  "separate_diagnostic": {
+    "requests": 1,
+    "authorization_id": "AU0007",
+    "unchanged_parser_passed": true,
+    "response": {
+      "model": "typesafe/jev-1.13-20260917",
+      "answers": {
+        "spend_pattern": {
+          "type": "choice",
+          "choice": "ordinary",
+          "probabilities": {
+            "ordinary": 0.89,
+            "unclear": 0.05,
+            "unusual": 0.06
+          },
+          "confidence": 0.84
+        },
+        "activity_pattern": {
+          "type": "choice",
+          "choice": "ordinary",
+          "probabilities": {
+            "ordinary": 0.81,
+            "unclear": 0.02,
+            "unusual": 0.17
+          },
+          "confidence": 0.72
+        }
+      },
+      "usage": {
+        "input_tokens": 1995,
+        "output_tokens": 82,
+        "cost": 8.379e-05
+      },
+      "id": "gen-dec-1790304044-4tWGDnZy9TizrEDBqkPS",
+      "provider": "TypeSafe"
+    }
+  },
+  "recorded_batch": {
+    "requests": 36,
+    "completed_rows": 35,
+    "failed_authorization": "AU0036",
+    "error": "spend_pattern: probabilities do not sum to one",
+    "failed_response": {
+      "model": "typesafe/jev-1.13-20260917",
+      "answers": {
+        "spend_pattern": {
+          "type": "choice",
+          "choice": "ordinary",
+          "probabilities": {
+            "unusual": 0.14,
+            "ordinary": 0.8,
+            "unclear": 0.05
+          },
+          "confidence": 0.7
+        },
+        "activity_pattern": {
+          "type": "choice",
+          "choice": "ordinary",
+          "probabilities": {
+            "unusual": 0.2,
+            "ordinary": 0.78,
+            "unclear": 0.02
+          },
+          "confidence": 0.68
+        }
+      },
+      "usage": {
+        "input_tokens": 1938,
+        "output_tokens": 82,
+        "cost": 8.1396e-05
+      },
+      "id": "gen-dec-1790304132-LhiB4SFUdf3LwXoDX1MI",
+      "provider": "TypeSafe"
+    },
+    "latency_ms": 337,
+    "captured_at": "2026-09-25T02:42:12.662468+00:00",
+    "raw_body_sha256": "55dd37983c2f56191da8ade8e0a1b5e1f76e083170a50476fd5bd45bef73c522"
+  },
+  "retries_in_either_batch": 0,
+  "probabilities_renormalized": false,
+  "behaviour_escalation_enabled": false
+}
