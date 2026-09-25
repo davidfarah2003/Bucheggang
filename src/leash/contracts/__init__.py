@@ -4,6 +4,7 @@ from .decision import (
     REASON_CODES,
     Approval,
     Check,
+    CustomerApproval,
     Decision,
     MandateState,
     PurchaseFacts,
@@ -25,7 +26,7 @@ from .event import (
 from .policy import RULE_FIELDS, Example, Mandate, OpenQuestion, PolicyDraft, Rule
 
 __all__ = [
-    "REASON_CODES", "RULE_FIELDS", "Approval", "Authorization", "Check", "Decision", "Event",
+    "REASON_CODES", "RULE_FIELDS", "Approval", "Authorization", "Check", "CustomerApproval", "Decision", "Event",
     "EventContext", "EventMandate", "Example", "Item", "Mandate", "MandateRule", "MandateState",
     "Merchant", "OpenQuestion", "PolicyDraft", "PurchaseFacts", "ReasonCode", "RecentAuthorization",
     "Rule", "Runtime", "StepUp", "StepUpAnswer",

@@ -9,7 +9,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from leash.contracts import Approval, Decision, Event, MandateState
+from collections.abc import Iterable
+
+from leash.contracts import Approval, CustomerApproval, Decision, Event, MandateState
 
 STATE_DIR = Path(__file__).resolve().parents[3] / "data" / "state"
 
@@ -24,22 +26,45 @@ def _path(mandate_id: str) -> Path:
     return STATE_DIR / f"{mandate_id}.json"
 
 
-def load(mandate_id: str) -> MandateState:
-    """The saved state, or a new empty state when this mandate has none yet."""
+def _read(mandate_id: str) -> MandateState:
+    """This mandate's own file, without customer approvals; empty when it has none yet."""
     path = _path(mandate_id)
     if not path.exists():
         return MandateState(mandate_id=mandate_id)
     state = MandateState.model_validate_json(path.read_text())
     if state.mandate_id != mandate_id:
         raise StateConflict(f"{path} holds state for {state.mandate_id!r}, not {mandate_id!r}")
-    return state
+    return state.model_copy(update={"customer_approvals": []})
+
+
+def load(mandate_id: str, customer_mandates: Iterable[str] = ()) -> MandateState:
+    """The saved state, or a new empty state when this mandate has none yet.
+
+    `customer_mandates` names every other mandate confirmed by the same customer
+    (the caller reads them from the policy store's confirmations). Their accepted
+    approvals fill `customer_approvals`, so a period rule can count spend across
+    a superseded mandate. The list is derived on every load and never saved.
+    """
+    state = _read(mandate_id)
+    seen = {a.authorization_id: mandate_id for a in state.approvals}
+    others = []
+    for other_id in sorted(set(customer_mandates) - {mandate_id}):
+        for a in _read(other_id).approvals:
+            if a.authorization_id in seen:
+                raise StateConflict(
+                    f"authorization {a.authorization_id} is approved on both {seen[a.authorization_id]!r} and {other_id!r}"
+                )
+            seen[a.authorization_id] = other_id
+            others.append(CustomerApproval(authorization_id=a.authorization_id, mandate_id=other_id,
+                                           amount_chf=a.amount_chf, timestamp=a.timestamp))
+    return state.model_copy(update={"customer_approvals": others})
 
 
 def _save(state: MandateState) -> None:
     path = _path(state.mandate_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(state.model_dump_json(indent=1))
+    tmp.write_text(state.model_copy(update={"customer_approvals": []}).model_dump_json(indent=1))
     os.replace(tmp, path)
 
 
@@ -79,7 +104,7 @@ def apply(state: MandateState, event: Event, accepted: Decision) -> MandateState
 
 def record(mandate_id: str, event: Event, accepted: Decision) -> MandateState:
     """Record a decision the API accepted. Idempotent; returns the saved state."""
-    state = load(mandate_id)
+    state = _read(mandate_id)
     new = apply(state, event, accepted)
     if new is not state:
         _save(new)

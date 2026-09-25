@@ -116,7 +116,10 @@ approvals[]           { authorization_id, merchant_id, amount_chf, timestamp (si
 handled               { authorization_id: accepted Decision }
 pending_step_ups      [authorization_id]
 declined              [authorization_id]
+customer_approvals[]  { authorization_id, mandate_id, amount_chf, timestamp (simulated) }   derived, never saved
 ```
+
+`customer_approvals` holds the customer's accepted approvals on other mandates. `leash.engine.state.load(mandate_id, customer_mandates=())` fills it from the state files of the mandates named in `customer_mandates` (the caller passes the customer's confirmed mandate ids from the policy store's confirmations; the default is none, which is the behaviour before this field). A period rule on `authorization.billing_amount_chf` or `state.approvals_count` counts this mandate's approvals plus `customer_approvals` in its window, so a daily or trailing-30-day limit survives supersession; an approval under a superseded or revoked mandate still counts. A rule without `scope: period` stays per mandate. An authorization approved on two mandates raises `StateConflict`. `record` and `_save` drop the list; the file holds only the mandate's own state.
 
 `record(mandate_id, event, accepted)` is idempotent: the same authorization with the same accepted decision changes nothing. Only a Decision the API accepted with `approve` moves `approvals`, taking `billing_amount_chf`, `merchant_id` and the simulated `timestamp` from the event. A `step_up` stays pending until `/resolve` is accepted; the runner then records the final `approve` or `decline` with the same `authorization_id`, which is the one change allowed after a first record. Any other change to a recorded authorization raises. The runner calls `record` only after the API accepted the submit or `/resolve`. `record` does no simulator I/O; it writes `data/state/<mandate_id>.json`, and the engine is its only writer.
 
@@ -172,7 +175,7 @@ StepUpAnswer
 ```
 leash.engine.evaluate(event: Event, policy: PolicyDraft, state: MandateState,
                       facts: list[PurchaseFacts] | None) -> Decision      # pure, no I/O
-leash.engine.state.load(mandate_id) -> MandateState
+leash.engine.state.load(mandate_id, customer_mandates=()) -> MandateState   # customer_approvals filled from the named mandates
 leash.engine.state.record(mandate_id: str, event: Event, accepted: Decision) -> MandateState   # idempotent, returns the saved state
 ```
 
