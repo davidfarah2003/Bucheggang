@@ -97,7 +97,7 @@ class BehaviorModel:
         self.model_id = (manifest["selected_candidate"] if operating_id is None
                          else f"{manifest['selected_candidate']}:o4:{operating_id}")
         self.artifact_version = artifact_hash
-        self._threshold = threshold
+        self.operating_threshold = threshold
 
     def score(self, features: HistoryFeatures) -> BehaviorAssessment:
         if features.schema_version != FEATURE_SCHEMA_VERSION:
@@ -128,5 +128,5 @@ class BehaviorModel:
             artifact_version=self.artifact_version,
             feature_schema_version=FEATURE_SCHEMA_VERSION,
             support=features.support.copy(),
-            escalation_fired=self._threshold is not None and score >= self._threshold,
+            escalation_fired=self.operating_threshold is not None and score >= self.operating_threshold,
         )
