@@ -19,10 +19,12 @@ The executable versions are the pydantic models in `src/leash/contracts/`, owned
 ```
 draft_id            str, ours (uuid)
 version             int, starts at 1; any material change is a new version
-hash                str, sha256 of the canonical JSON of instruction + rules + uncertainty_policy
+hash                str, sha256 of the canonical JSON named by hash_version (below)
+hash_version        1 | 2, default 1
 instruction         str, the cardholder sentence, verbatim
 rules[]             Rule
-examples[]          { description: str, expected: approve|decline|step_up, why: str }
+examples[]          { description: str, expected: approve|decline|step_up, why: str }   display only, agent-authored
+boundary_cases[]    BoundaryCase, default []; present only with hash_version 2
 open_questions[]    { question: str, options: [str], confirming_answers: [str], answer: str|null }
                     confirming_answers is the subset of options that confirms the rule as displayed; any other
                     answer leaves the draft unconfirmable and needs a revised draft. Stays in our store, never sent
@@ -32,6 +34,24 @@ created_at          datetime
 created_for         str, the account_id of the agent that proposed it; immutable, not in the hash,
                     never sent to the simulator (section "Identity source")
 ```
+
+Hash versions. Version 1 hashes the compact sorted-key JSON of `{instruction, rules, uncertainty_policy}` and stays byte-for-byte what it is today; every existing draft keeps its hash. Version 2 hashes `{hash_version: 2, instruction, rules, uncertainty_policy, boundary_cases}` in the same canonical form (`json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False)`), with each case serialized by `model_dump(mode="json")`. No evaluator version goes into the hash. A draft with `boundary_cases` must carry `hash_version: 2`; `hash_version: 2` with no case is invalid.
+
+`BoundaryCase` is an authored purchase the draft must decide as `expected`. Every input is complete and explicit; nothing is read from the packaged data:
+
+```
+description   str
+expected      approve | decline | step_up
+why           str
+event         Event, strict, complete
+facts[]       PurchaseFacts, exactly one per event item
+state         MandateState for event.mandate.mandate_id
+history       History, a frozen slice, every row before event.authorization.timestamp
+```
+
+`History` is `{ authorizations: [HistoryAuthorization] }`, and `HistoryAuthorization` is the subset of an `authorization_history.csv` row the engine reads: `authorization_id, card_id, timestamp, transaction_type, status, merchant_id, merchant_name, merchant_country, customer_device_id (str|null)`. Duplicate `authorization_id`s raise. Only rows with `status: approved` and `transaction_type: purchase` count as familiarity; every row counts toward card history.
+
+The policy store evaluates each case with `evaluate(case.event, candidate, case.state, case.facts, history=case.history)` at proposal, at revision and again at confirmation before any simulator call, and raises `InvalidDraft` naming the case when the observed outcome differs from `expected`. The confirmation persists the observed outcome, the case-input hash, the policy version and the engine version. `examples[]` are unchanged and remain agent claims the Wallet shows as such; the app shows computed outcomes separately from them. Cases stay in our store and are never sent to the simulator.
 
 `Rule` is the simulator's rule plus two fields of ours:
 
@@ -109,7 +129,12 @@ matches_request        bool | unknown
 contains_instructions  bool
 excerpt                str | null          (the injected text, if any)
 sources                { field_name: agent_form | structured | merchant_text }
+conflicts[]            { field: str, kind: merchant_text_contradiction | catalogue_event_mismatch }, default []
 ```
+
+`conflicts` marks a fact that two observations of the same line disagree on. `merchant_text_contradiction`: the merchant copy states the fact twice with different values ("No returns. Returns accepted within 30 days.", two sizes). `catalogue_event_mismatch`: the local catalogue and the event's structured item fields disagree on name or category. The extractor never picks a side: the field is `unknown`, has no entry in `sources`, and appears once in `conflicts`; a value or a source on a conflicting field is a validation error. Silence is never a conflict. A conflict is not a `matches_request: false`; that stays reserved for a mismatch between two independently trusted typed identities.
+
+The engine reports a conflict-affected check as `uncertain`, never `pass`, with reason code `fact_conflict` alongside the check's own code. Under `uncertainty_policy: approve` such a check resolves to `step_up`, never `approve`; under `ask` to `step_up`; under `decline` to `decline`. A conflict never upgrades merchant text to a trusted source and never clears an injection flag.
 
 ## MandateState
 
@@ -151,7 +176,9 @@ Decision
 
 ## Reason codes
 
-`within_policy`, `amount_over_limit`, `period_limit_exceeded`, `purchase_count_exceeded`, `mandate_expired`, `mandate_revoked`, `item_mismatch`, `unrequested_item`, `return_terms_missing`, `return_terms_short`, `merchant_type_mismatch`, `unfamiliar_merchant`, `lookalike_merchant`, `gift_card`, `subscription`, `protection_plan`, `duplicate_order`, `requote_after_decline`, `velocity`, `new_device`, `country_blocked`, `country_unfamiliar`, `no_card_history`, `injected_instructions`, `customer_confirmation`, `customer_declined`, `step_up_timeout`, `engine_timeout`, `model_history_uncertain`.
+`within_policy`, `amount_over_limit`, `period_limit_exceeded`, `purchase_count_exceeded`, `mandate_expired`, `mandate_revoked`, `item_mismatch`, `unrequested_item`, `return_terms_missing`, `return_terms_short`, `merchant_type_mismatch`, `unfamiliar_merchant`, `lookalike_merchant`, `gift_card`, `subscription`, `protection_plan`, `duplicate_order`, `requote_after_decline`, `velocity`, `new_device`, `country_blocked`, `country_unfamiliar`, `no_card_history`, `injected_instructions`, `customer_confirmation`, `customer_declined`, `step_up_timeout`, `engine_timeout`, `model_history_uncertain`, `fact_conflict`.
+
+`fact_conflict` accompanies the uncertain check on a line whose `PurchaseFacts.conflicts` names the field the check reads (section "PurchaseFacts").
 
 `country_blocked` comes only from a failed customer rule on `authorization.merchant.merchant_country`. `country_unfamiliar` is the uncertain result of the built-in country check, for a card with history but none in that country. `no_card_history` is one uncertain result for a card with no row in `authorization_history.csv` before the purchase and no approval recorded on the mandate: device, merchant and country familiarity are unknown, and `new_device`, `unfamiliar_merchant` and `country_unfamiliar` are not reported for it.
 
@@ -228,12 +255,15 @@ These history-only questions do not permit catalogue fields, merchant text or ag
 ```
 leash.engine.evaluate(event: Event, policy: PolicyDraft, state: MandateState,
                       facts: list[PurchaseFacts] | None,
-                      assessments: AssessmentBundle | None = None) -> Decision  # pure, no I/O
+                      assessments: AssessmentBundle | None = None,
+                      history: History | None = None) -> Decision  # pure, no I/O
 leash.engine.state.load(mandate_id, customer_mandates=()) -> MandateState   # customer_approvals filled from the named mandates
 leash.engine.state.record(mandate_id: str, event: Event, accepted: Decision) -> MandateState   # idempotent, returns the saved state
 ```
 
 `assessments=None` is the model-off startup configuration. A history-only bundle with both model outputs null adds no model checks. Neither form may substitute for a failed required assessment: a failure raises before evaluation. The startup caller must enforce which successful outputs its configuration requires.
+
+`history=None` keeps the packaged `authorization_history.csv` files as the familiarity source, which is what every current caller gets. An explicit `History` replaces them entirely for that call: familiarity, card history and `no_card_history` are computed from its rows alone, with the same before-timestamp rule. The boundary-case check in the policy store is the first caller; the runner keeps `None`.
 
 `facts=None` leaves every `facts.*` field unknown for legacy callers. An extraction execution failure must raise. The current runner's timeout substitute decisions remain separate P4 work and are a blocker for the model-enabled path; this interface change does not claim to have removed them.
 

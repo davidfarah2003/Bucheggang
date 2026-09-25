@@ -6,6 +6,9 @@ from .decision import (
     Check,
     CustomerApproval,
     Decision,
+    FactConflict,
+    History,
+    HistoryAuthorization,
     MandateState,
     PurchaseFacts,
     ReasonCode,
@@ -23,7 +26,7 @@ from .event import (
     RecentAuthorization,
     Runtime,
 )
-from .policy import RULE_FIELDS, Example, Mandate, OpenQuestion, PolicyDraft, Rule
+from .policy import RULE_FIELDS, BoundaryCase, Example, Mandate, OpenQuestion, PolicyDraft, Rule
 from .classifier import (
     FEATURE_SCHEMA_VERSION,
     AssessmentBundle,
@@ -35,9 +38,9 @@ from .classifier import (
 )
 
 __all__ = [
-    "REASON_CODES", "RULE_FIELDS", "Approval", "Authorization", "Check", "CustomerApproval", "Decision", "Event",
-    "EventContext", "EventMandate", "Example", "Item", "Mandate", "MandateRule", "MandateState",
-    "Merchant", "OpenQuestion", "PolicyDraft", "PurchaseFacts", "ReasonCode", "RecentAuthorization",
+    "REASON_CODES", "RULE_FIELDS", "Approval", "Authorization", "BoundaryCase", "Check", "CustomerApproval",
+    "Decision", "Event", "EventContext", "EventMandate", "Example", "FactConflict", "History",
+    "HistoryAuthorization", "Item", "Mandate", "MandateRule", "MandateState", "Merchant", "OpenQuestion", "PolicyDraft", "PurchaseFacts", "ReasonCode", "RecentAuthorization",
     "Rule", "Runtime", "StepUp", "StepUpAnswer", "FEATURE_SCHEMA_VERSION", "AssessmentBundle",
     "BehaviorAssessment", "HistoryFeatures", "JevAnswer", "SemanticAssessment", "assessment_purchase_digest",
 ]

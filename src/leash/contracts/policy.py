@@ -7,7 +7,8 @@ from typing import Annotated, Literal
 from pydantic import Field, model_validator
 
 from ._base import Contract, NonEmpty, Timestamp
-from .event import Currency, Operator, RuleValue
+from .decision import History, MandateState, PurchaseFacts
+from .event import Currency, Event, Operator, RuleValue
 
 UncertaintyPolicy = Literal["ask", "decline", "approve"]
 
@@ -71,6 +72,37 @@ class Example(Contract):
     why: NonEmpty
 
 
+class BoundaryCase(Contract):
+    """An authored purchase the draft must decide as `expected`, checked by `evaluate` at proposal and confirmation.
+
+    Every input is complete and explicit: a strict `Event`, one `PurchaseFacts` per cart line, a full
+    `MandateState` and a frozen `History` slice. The store re-evaluates and rejects the draft when
+    the observed outcome differs from `expected`. Agent-authored `examples[]` stay display-only.
+    """
+
+    description: NonEmpty
+    expected: Literal["approve", "decline", "step_up"]
+    why: NonEmpty
+    event: Event
+    facts: list[PurchaseFacts]
+    state: MandateState
+    history: History
+
+    @model_validator(mode="after")
+    def _consistent(self) -> "BoundaryCase":
+        auth = self.event.authorization
+        if self.state.mandate_id != self.event.mandate.mandate_id:
+            raise ValueError(f"case {self.description!r}: state is for mandate {self.state.mandate_id}, event for {self.event.mandate.mandate_id}")
+        item_ids = [i.item_id for i in auth.items]
+        fact_ids = [f.item_id for f in self.facts]
+        if sorted(item_ids) != sorted(fact_ids):
+            raise ValueError(f"case {self.description!r}: facts cover {sorted(fact_ids)}, event items are {sorted(item_ids)}")
+        for row in self.history.authorizations:
+            if row.timestamp >= auth.timestamp:
+                raise ValueError(f"case {self.description!r}: history row {row.authorization_id} is not before the purchase")
+        return self
+
+
 class OpenQuestion(Contract):
     question: NonEmpty
     options: list[str]
@@ -89,13 +121,23 @@ class PolicyDraft(Contract):
     draft_id: NonEmpty
     version: Annotated[int, Field(ge=1)]
     hash: NonEmpty
+    hash_version: Literal[1, 2] = 1
     instruction: NonEmpty
     rules: list[Rule]
     examples: list[Example]
+    boundary_cases: list[BoundaryCase] = []
     open_questions: list[OpenQuestion]
     uncertainty_policy: UncertaintyPolicy
     created_for: NonEmpty | None = None
     created_at: Timestamp
+
+    @model_validator(mode="after")
+    def _hash_version_matches(self) -> "PolicyDraft":
+        if self.boundary_cases and self.hash_version != 2:
+            raise ValueError("a draft with boundary_cases must use hash_version 2")
+        if self.hash_version == 2 and not self.boundary_cases:
+            raise ValueError("hash_version 2 requires at least one boundary case")
+        return self
 
 
 class Mandate(Contract):
