@@ -189,7 +189,8 @@ class StepUpBook:
             evaluated_state=evaluated_state, policy=policy, observe_expiry=observe_expiry,
         )
         saved = self._read(self._path(step_up.event.mandate.mandate_id, step_up.authorization_id))
-        log.info("resolved %s %s %s", step_up.authorization_id, decision.decision, decision.reason_codes)
+        recorded = Decision.model_validate(saved["resolution"]["decision"])
+        log.info("resolved %s %s %s", step_up.authorization_id, recorded.decision, recorded.reason_codes)
         return saved["resolution"]["accepted"]
 
     @staticmethod

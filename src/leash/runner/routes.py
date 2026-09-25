@@ -11,9 +11,9 @@ run loop process, so they work from the API process.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 
 from pydantic import BaseModel, ConfigDict
 
@@ -24,6 +24,9 @@ from leash.policy.store import DraftStore
 from . import api, records
 from .stepups import StepUpBook, StepUpError
 from .intents import UnresolvedMutation
+
+
+AuthorizationId = Annotated[str, Path(pattern=r"^[A-Za-z0-9_-]+$")]
 
 
 class DecisionEntry(BaseModel):
@@ -62,7 +65,7 @@ def step_up_router(book: StepUpBook, authenticated_customer: Callable[..., str],
         return sorted(pending, key=lambda step_up: step_up.expires_at)
 
     @router.post("/step-ups/{authorization_id}/answer")
-    def answer(authorization_id: str, body: StepUpAnswer, customer: str = Depends(authenticated_customer)) -> Any:
+    def answer(authorization_id: AuthorizationId, body: StepUpAnswer, customer: str = Depends(authenticated_customer)) -> Any:
         if not customer:
             raise HTTPException(status_code=401, detail="customer login is required")
         if body.authorization_id != authorization_id:
@@ -104,7 +107,7 @@ def history_router(authenticated_customer: Callable[..., str], store: DraftStore
             raise HTTPException(status_code=404, detail=f"no decisions recorded for mandate {mandate_id}") from exc
 
     @router.get("/decisions/{authorization_id}")
-    def decision(authorization_id: str, customer: str = Depends(authenticated_customer)) -> DecisionDetail:
+    def decision(authorization_id: AuthorizationId, customer: str = Depends(authenticated_customer)) -> DecisionDetail:
         if not customer:
             raise HTTPException(status_code=401, detail="customer login is required")
         confirmations = owned_confirmations(store, customer)

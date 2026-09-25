@@ -60,7 +60,7 @@ The CLI without LEASH_POLICY_STORE exited1 with `runner requires LEASH_POLICY_ST
 
 The new journal dispatch/reconciliation calls, current-policy refresh, genuine customer approval, tightening and revocation need live execution after credential rotation. Positive-owner HTTP behavior has not been manufactured with invented confirmations. Current confirmations were not found in the inspected runner, runner-live or policy worktrees. The legacy raw decision receipts are retained as historical evidence only.
 
-Concurrent policy confirmation can also supersede a mandate. Its write path is owned by the policy lane and is not covered by this branch's tighten/revoke coordination yet. That ordering needs agreement before claiming every app permission mutation is serialized. Model startup, full absolute-budget composition and the classifier release holds remain separate gates.
+The agreed order is customer guard, owned-set enumeration, sorted mandate locks, then accepted writes. Policy confirmation and PUT /global-policy must adopt that outer guard in their policy-lane follow-up after this helper merges. That follow-up remains required before claiming every app permission mutation is serialized. Model startup, full absolute-budget composition and the classifier release holds remain separate gates.
 
 Live verification remains paused for challenge-key rotation. No test suite or linter was run.
 
@@ -73,3 +73,9 @@ A separate process held the customer guard with an empty owned-mandate set. A di
 Actual global-policy HTTP calls on the rebased app passed anonymous401, first GET version0, PUT200/version1, exact read-back, stale409 and duplicate-control422. A second logged-in customer saw empty version0. No simulator settings were loaded.
 
 That exercise also found an upstream defect: an80-character Unicode username was accepted by login, but GET /global-policy returned500. Its quoted filename was725 bytes and GlobalPolicyStore.read raised macOS OSError errno63. The policy owner has the finding; this branch does not change global-policy storage. The healthy preferences were written only in an isolated temporary store, and that store and the owned server were removed.
+
+## Rebased verification and identifier rejection
+
+After adopting the merged global-policy backend and customer guard, the full replay on code5794faa returned45 rows,11 approve/32 decline/2 step_up, with local total p50 0.220ms and p99/max0.519ms. The separate-process exit17 recovery was repeated with the real historical CHF18 receipt: one approval, one history file, a resolved step-up and a completed journal. Its isolated lock label did not create a customer ownership record.
+
+Mandate list and detail now also enumerate under the customer guard, take the sorted mandate set, and recheck it before reading current policy/state. A real local server returned200 empty owned lists after those changes. The records identifier allowlist rejects glob characters, separators and dots. Path validation returned422 for actual HTTP GETs using encoded `AU*`, `AU?` and `AU[0]`, before record lookup. Well-formed unknown decision and mandate IDs returned404. No customer answer was posted and simulator settings remained unloaded. The owned server and temporary storage were removed.
