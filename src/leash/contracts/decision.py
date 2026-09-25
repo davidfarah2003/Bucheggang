@@ -111,6 +111,7 @@ class Approval(Contract):
     merchant_id: NonEmpty
     amount_chf: float
     timestamp: Timestamp  # simulated time of the purchase
+    device_id: str | None = None  # customer_device_id of the approved purchase; absent on older records
 
 
 class CustomerApproval(Contract):

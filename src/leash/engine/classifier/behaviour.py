@@ -27,12 +27,14 @@ def _sha256(path: Path) -> str:
 
 
 class BehaviorModel:
-    """Score an explicit evaluation or selected operating-point configuration."""
+    """Score an evaluation manifest or a SHA-pinned selected operating point."""
 
-    def __init__(self, manifest_path: Path = DEFAULT_MANIFEST):
+    def __init__(self, manifest_path: Path = DEFAULT_MANIFEST, *, threshold: float | None = None):
+        if threshold is not None and (type(threshold) is not float or not math.isfinite(threshold)
+                                      or not 0 < threshold < 1):
+            raise ValueError("behavioural threshold must be a finite fraction strictly between 0 and 1")
         configuration_bytes = manifest_path.read_bytes()
         configuration = json.loads(configuration_bytes)
-        threshold = None
         operating_id = None
         if "base_manifest" in configuration:
             relative = Path(configuration["base_manifest"])
@@ -46,9 +48,12 @@ class BehaviorModel:
                 raise ValueError("operating point base manifest SHA-256 differs")
             if configuration["release_status"] != "o4_selected_pending_integrated_review":
                 raise ValueError("operating point release status is unexpected")
-            threshold = configuration["score_cut"]
-            if type(threshold) is not float or not math.isfinite(threshold) or not 0 < threshold < 1:
+            selected_cut = configuration["score_cut"]
+            if type(selected_cut) is not float or not math.isfinite(selected_cut) or not 0 < selected_cut < 1:
                 raise ValueError("operating point score cut must be a finite fraction")
+            if threshold is not None and threshold != selected_cut:
+                raise ValueError("configured threshold differs from the selected operating point")
+            threshold = selected_cut
             manifest = json.loads(base_bytes)
             if not any(
                 proposal["requested_rate"] == configuration["requested_june_rate"]
@@ -59,6 +64,8 @@ class BehaviorModel:
             operating_id = hashlib.sha256(configuration_bytes).hexdigest()[:16]
         else:
             manifest = configuration
+        self.threshold = threshold
+        self.operating_threshold = threshold
         if manifest["feature_schema_version"] != FEATURE_SCHEMA_VERSION:
             raise ValueError("model manifest has an incompatible feature schema")
         if manifest["artifact_release_status"] != "evaluation_only_no_operational_threshold":

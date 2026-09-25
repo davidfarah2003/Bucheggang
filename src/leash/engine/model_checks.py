@@ -45,8 +45,9 @@ def model_checks(bundle: AssessmentBundle) -> list[Check]:
         result.append(Check(
             name="model.behaviour", result="uncertain" if behaviour.escalation_fired else "pass",
             value=_value(behaviour.model_dump(mode="json")), source="model",
-            note=("The historical-decline score reached the configured review threshold."
-                  if behaviour.escalation_fired else "The historical-decline score adds no escalation."),
+            note=(f"The card-history risk score is {behaviour.score:.0%}, above the review threshold, so this purchase needs your word."
+                  if behaviour.escalation_fired else
+                  f"The card-history risk score is {behaviour.score:.0%}; purchases like this one were rarely declined before."),
         ))
     semantic = bundle.semantic
     if semantic is not None:

@@ -25,7 +25,10 @@ class ModelDeadlineError(TimeoutError):
 
 
 class ModelEvaluator:
-    def __init__(self, configuration: EvaluationSettings):
+    def __init__(self, configuration: EvaluationSettings, *, cap_s: float = MODEL_CAP_S):
+        if not (cap_s > 0):
+            raise SettingsError("model allowance cap must be positive")
+        self.cap_s = cap_s
         if not configuration.models_enabled or configuration.model_manifest is None:
             raise SettingsError("model evaluator requires explicit opt-in and a manifest")
         try:
@@ -37,9 +40,7 @@ class ModelEvaluator:
             raise SettingsError(
                 "model-enabled startup requires the classifier package and its classifier dependency group"
             ) from exc
-        self._model = BehaviorModel(configuration.model_manifest)
-        if self._model.operating_threshold is None:
-            raise SettingsError("model-enabled startup requires a selected O4 operating point")
+        self._model = BehaviorModel(configuration.model_manifest, threshold=configuration.behaviour_threshold)
         self._history = HistoryIndex()
         self._provider = load_openrouter()
         self._assess = assess
@@ -62,7 +63,7 @@ class ModelEvaluator:
         if any(check.result == "fail" for check in baseline.evidence):
             log.info("%s: deterministic failure, model calls not required", event.authorization.authorization_id)
             return baseline
-        allowance = min(MODEL_CAP_S, budget.remaining(MODEL_RESERVE_S))
+        allowance = min(self.cap_s, budget.remaining(MODEL_RESERVE_S))
         if allowance <= 0:
             log.error("%s: model allowance expired before dispatch", event.authorization.authorization_id)
             raise ModelDeadlineError(f"{event.authorization.authorization_id}: model allowance expired before dispatch")
@@ -113,7 +114,7 @@ class ModelEvaluator:
         return decision
 
 
-def load_evaluator() -> Evaluate:
+def load_evaluator(*, cap_s: float = MODEL_CAP_S) -> Evaluate:
     configuration = load_evaluation()
     if not configuration.models_enabled:
         from leash.engine.classifier.bridge import HistoryOnlyEvaluator
@@ -122,4 +123,4 @@ def load_evaluator() -> Evaluate:
         evaluator = HistoryOnlyEvaluator(HistoryIndex())
         log.info("evaluation configuration: history only, models off")
         return evaluator
-    return ModelEvaluator(configuration)
+    return ModelEvaluator(configuration, cap_s=cap_s)

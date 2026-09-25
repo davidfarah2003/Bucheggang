@@ -13,6 +13,7 @@ Recorded state: 25 September 2026, before the morning dry run. Unchecked items b
 | Platform expiry while worker was down | [Restart reconciliation](eval/restart-reconcile-2026-09-24.md) | Strictly verified timeout declines only |
 | MCP proposal, status and summary with a real mandate | [MCP transcript](samples/mcp-transcript-scen0002.md) | Does not establish an actual human Wallet step-up answer |
 | Current-checkout paired Wallet and MCP rehearsal | [Local paired rehearsal](eval/takeover-local-rehearsal-2026-09-25.md) | Disposable store; draft rejected without a simulator mandate or human purchase answer |
+| Full local user flow with models on, recorded | [Demo video](demo/leash-user-flow.mp4), produced by `scripts/record_demo.py` driving the real Wallet while `scripts/flow_sim.py --manual` runs the agent over MCP | Local purchases only; the step-up answer comes from a scripted browser tap, not a person |
 
 ## Before a live run
 
@@ -22,7 +23,7 @@ Recorded state: 25 September 2026, before the morning dry run. Unchecked items b
 - [ ] Start the Wallet following [run-wallet.md](run-wallet.md) and the external shopping agent following [mcp-client.md](mcp-client.md). Keep credentials out of terminals captured for the presentation.
 - [ ] Read the live bootstrap through the runner client. Record the currently available scenario IDs and deadline windows. Public offline IDs are not live team IDs.
 - [ ] Select a live scenario whose purchase purpose matches the actual confirmed instruction. Do not copy the shoes instruction into a grocery scenario to force a chosen result.
-- [ ] Runtime models stay off for this run; the [real-provider exercise](eval/jev-public-2026-09-25.md) stopped on non-normalized probability distributions. Record that Jev and the behavioural model are off.
+- [ ] Runtime models are on for the local purchase demo through `scripts/wallet.sh` and `scripts/mcp-stdio.sh` (behavioural threshold 0.498, Jev probability-sum tolerance 0.015). Record the model manifest and threshold in use. Simulator runs through the runner keep the model setting they are started with; record it.
 
 ## Customer flow
 
@@ -57,8 +58,8 @@ For every item, record the command or UI action, HTTP status, authorization or d
 
 ## Current blockers and deferred scope
 
-A fresh Wallet step-up run needs the reserved window and an actual customer at the Wallet ready to answer; a recorded curl approval from an earlier run is not a Wallet answer. Shared model contracts and pure composition merged in #47. The standalone producer has reviewed history, fitted-model and Jev components, but the [real-provider exercise](eval/jev-public-2026-09-25.md) stopped twice on non-normalized probability distributions. Model-enabled runner startup, full integration verification and the operating threshold remain unfinished. Runtime models stay off until the provider exercise passes and the release gate is cleared.
+A fresh Wallet step-up run needs the reserved window and an actual customer at the Wallet ready to answer; a recorded curl approval from an earlier run is not a Wallet answer. Shared model contracts and pure composition merged in #47. The [real-provider exercise](eval/jev-public-2026-09-25.md) stopped twice on probability sums off by the provider's two-decimal rounding; the contract now accepts a 0.015 tolerance without renormalizing, and the local purchase path runs both models with threshold 0.498 (Log in plans/01-policy-confirmation.md, 2026-09-25 10:35). Model-enabled runner startup against the simulator has not been exercised live.
 
 Processing failures raise errors after #50; timeout substitute decisions were removed. Since #58 (eb78312), runner submissions/resolutions and app tightening/revocation use durable intents, customer-first locks and current-policy rechecks. Confirmation and account-wide policy writes take the same customer lock since #76 (94d1720). These paths have local checks; a live Wallet confirmation and step-up answer under the merged code, and complete live end-to-end latency, remain unverified.
 
-Account-wide policy storage and read-only Wallet disclosure are merged in #54 and #66. Account/session/pairing routes and MCP identity binding are merged in #73 and #76, and the Wallet identity screens in #82. Local HTTP and browser checks do not establish a completed human pairing, confirmation or purchase answer. Built-in shopping-provider execution and real MCP purchase tools remain deferred product work. No human confirmation or answer is supplied by this checklist.
+Account-wide policy storage and read-only Wallet disclosure are merged in #54 and #66. Account/session/pairing routes and MCP identity binding are merged in #73 and #76, and the Wallet identity screens in #82. Local HTTP and browser checks do not establish a completed human pairing, confirmation or purchase answer. Built-in shopping-provider execution remains deferred product work; the MCP purchase tools `buy`, `get_purchase_status` and `wait_for_purchase` are live for local purchases. No human confirmation or answer is supplied by this checklist.
