@@ -235,6 +235,7 @@ function validateBoundaryResults(payload, draft) {
     const authored = draft.boundary_cases[index];
     if (!item || item.case_index !== index || text(item.description, "Boundary result description") !== authored.description || item.expected !== authored.expected) throw new Error("A computed boundary result does not match its authored case.");
     if (!["approve", "decline", "step_up"].includes(item.observed)) throw new Error("A computed boundary result has an unsupported outcome.");
+    if (item.observed !== item.expected) throw new Error("A computed boundary result differs from the authored expected outcome.");
     if (!Array.isArray(item.reason_codes)) throw new Error("A computed boundary result has no reason codes.");
     item.reason_codes.forEach((code) => text(code, "Boundary reason code"));
     if (!/^[0-9a-f]{64}$/.test(text(item.case_input_hash, "Boundary case input hash"))) throw new Error("A computed boundary result has an invalid case-input hash.");
