@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -374,6 +375,55 @@ class IdentityStore:
             if record.get("status") != "begun" or _parse_timestamp(record.get("expires_at")) <= _now():
                 raise PairingUnknown
             return {key: record[key] for key in ("agent_label", "scopes", "expires_at")}
+
+    def pending_pairings(self) -> list[dict[str, Any]]:
+        """Pairings begun by an agent and not yet approved, for the Wallet's connection cards.
+
+        The code itself is never listed; the Wallet approves by the digest-derived pairing id.
+        """
+        self._delete_expired_pairings()
+        rows = []
+        for path in sorted(self.pairings.glob("*.json")):
+            with self._locked(f"pairing:{path.stem}"):
+                try:
+                    record = self._read(path)
+                except FileNotFoundError:
+                    continue
+            if record.get("status") == "begun":
+                rows.append({"pairing_id": path.stem, "agent_label": record["agent_label"],
+                             "scopes": list(record["scopes"]), "created_at": record["created_at"],
+                             "expires_at": record["expires_at"]})
+        return rows
+
+    def approve_pairing_by_id(self, pairing_id: str, account_id: str) -> None:
+        """Approve a pending pairing selected from pending_pairings(); the customer never types the code."""
+        if not account_id:
+            raise Unauthorized
+        if not isinstance(pairing_id, str) or not re.fullmatch(r"[0-9a-f]{64}", pairing_id):
+            raise PairingUnknown
+        path = self.pairings / (pairing_id + ".json")
+        with self._locked(f"pairing:{pairing_id}"):
+            try:
+                record = self._read(path)
+            except FileNotFoundError as exc:
+                raise PairingUnknown from exc
+            if record.get("status") != "begun" or _parse_timestamp(record.get("expires_at")) <= _now():
+                raise PairingUnknown
+            record["status"] = "approved"
+            record["account_id"] = account_id
+            self._write_replace(path, record)
+
+    def pairing_status(self, code: str) -> str:
+        """begun, approved, consumed, failed or expired, for the agent's wait loop."""
+        path = self._pairing_path(code)
+        with self._locked(f"pairing:{path.stem}"):
+            try:
+                record = self._read(path)
+            except FileNotFoundError:
+                return "expired"
+        if _parse_timestamp(record.get("expires_at")) <= _now():
+            return "expired"
+        return str(record.get("status"))
 
     def approve_pairing(self, code: str, account_id: str) -> None:
         if not account_id:

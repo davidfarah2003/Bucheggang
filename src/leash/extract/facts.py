@@ -62,11 +62,11 @@ def _return_days(copy: str) -> tuple[int | None, bool, bool]:
 
 
 def _size(copy: str) -> tuple[str | None, bool]:
-    values = {m.group(1).upper() for m in _SIZE.finditer(copy)}
-    if not values:
-        values.update(f"EU {m.group(1)}" for m in _EU_SIZE.finditer(copy))
-    if not values:
-        values.update(f"UK {m.group(1)}" for m in _UK_SIZE.finditer(copy))
+    values = {m.group(1).upper() for m in _SIZE.finditer(copy)} - {"EU", "UK"}
+    # Keep the existing EU spelling while checking every recognized claim.
+    eu_prefix = "" if values else "EU "
+    values.update(f"{eu_prefix}{m.group(1)}" for m in _EU_SIZE.finditer(copy))
+    values.update(f"UK {m.group(1)}" for m in _UK_SIZE.finditer(copy))
     return (next(iter(values)) if len(values) == 1 else None), len(values) > 1
 
 

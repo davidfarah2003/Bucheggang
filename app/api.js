@@ -29,6 +29,8 @@ const walletApi = (() => {
     logout: () => request("/session", { method: "DELETE" }),
     pairing: (code) => request(`/pairing/${encodeURIComponent(code)}`),
     approvePairing: (code) => request(`/pairing/${encodeURIComponent(code)}/approve`, { method: "POST" }),
+    pendingPairings: () => request("/pairings/pending"),
+    approvePendingPairing: (id) => request(`/pairings/${encodeURIComponent(id)}/approve`, { method: "POST" }),
     agents: () => request("/agents"),
     revokeAgent: (id) => request(`/agents/${encodeURIComponent(id)}/revoke`, { method: "POST" }),
     draft: (id) => request(`/drafts/${encodeURIComponent(id)}`),

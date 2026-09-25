@@ -110,6 +110,10 @@ class ModelEvaluator:
 def load_evaluator() -> Evaluate:
     configuration = load_evaluation()
     if not configuration.models_enabled:
-        log.info("evaluation configuration: models off")
-        return evaluate
+        from leash.engine.classifier.bridge import HistoryOnlyEvaluator
+        from leash.engine.classifier.history import HistoryIndex
+
+        evaluator = HistoryOnlyEvaluator(HistoryIndex())
+        log.info("evaluation configuration: history only, models off")
+        return evaluator
     return ModelEvaluator(configuration)
