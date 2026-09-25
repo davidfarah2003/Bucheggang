@@ -29,12 +29,12 @@
   box-shadow: var(--shadow);
 }
 
-.linked-purchase-summary strong {
+.linked-purchase-summary h2 {
   font-size: 18px;
   line-height: 1.3;
 }
 
-.linked-purchase-summary .amount {
+.linked-purchase-summary > strong {
   color: var(--ink);
   font-size: clamp(26px, 8vw, 34px);
   font-weight: 720;
@@ -42,8 +42,6 @@
 }
 
 .linked-purchase-meta {
-  display: grid;
-  gap: 8px;
   min-width: 0;
   font-size: 14px;
 }
