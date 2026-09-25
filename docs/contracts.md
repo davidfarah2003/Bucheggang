@@ -19,10 +19,12 @@ The executable versions are the pydantic models in `src/leash/contracts/`, owned
 ```
 draft_id            str, ours (uuid)
 version             int, starts at 1; any material change is a new version
-hash                str, sha256 of the canonical JSON of instruction + rules + uncertainty_policy
+hash                str, sha256 of the canonical JSON named by hash_version (below)
+hash_version        1 | 2, default 1
 instruction         str, the cardholder sentence, verbatim
 rules[]             Rule
-examples[]          { description: str, expected: approve|decline|step_up, why: str }
+examples[]          { description: str, expected: approve|decline|step_up, why: str }   display only, agent-authored
+boundary_cases[]    BoundaryCase, default []; present only with hash_version 2
 open_questions[]    { question: str, options: [str], confirming_answers: [str], answer: str|null }
                     confirming_answers is the subset of options that confirms the rule as displayed; any other
                     answer leaves the draft unconfirmable and needs a revised draft. Stays in our store, never sent
@@ -32,6 +34,24 @@ created_at          datetime
 created_for         str, the account_id of the agent that proposed it; immutable, not in the hash,
                     never sent to the simulator (section "Identity source")
 ```
+
+Hash versions. Version 1 hashes the compact sorted-key JSON of `{instruction, rules, uncertainty_policy}` and stays byte-for-byte what it is today; every existing draft keeps its hash. Version 2 hashes `{hash_version: 2, instruction, rules, uncertainty_policy, boundary_cases}` in the same canonical form (`json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False)`), with each case serialized by `model_dump(mode="json")`. No evaluator version goes into the hash. A draft with `boundary_cases` must carry `hash_version: 2`; `hash_version: 2` with no case is invalid.
+
+`BoundaryCase` is an authored purchase the draft must decide as `expected`. Every input is complete and explicit; nothing is read from the packaged data:
+
+```
+description   str
+expected      approve | decline | step_up
+why           str
+event         Event, strict, complete
+facts[]       PurchaseFacts, exactly one per event item
+state         MandateState for event.mandate.mandate_id
+history       History, a frozen slice, every row before event.authorization.timestamp
+```
+
+`History` is `{ authorizations: [HistoryAuthorization] }`, and `HistoryAuthorization` is the subset of an `authorization_history.csv` row the engine reads: `authorization_id, card_id, timestamp, transaction_type, status, merchant_id, merchant_name, merchant_country, customer_device_id (str|null)`. Duplicate `authorization_id`s raise. Only rows with `status: approved` and `transaction_type: purchase` count as familiarity; every row counts toward card history.
+
+The policy store evaluates each case with `evaluate(case.event, candidate, case.state, case.facts, history=case.history)` at proposal, at revision and again at confirmation before any simulator call, and raises `InvalidDraft` naming the case when the observed outcome differs from `expected`. The confirmation persists the observed outcome, the case-input hash, the policy version and the engine version. `examples[]` are unchanged and remain agent claims the Wallet shows as such; the app shows computed outcomes separately from them. Cases stay in our store and are never sent to the simulator.
 
 `Rule` is the simulator's rule plus two fields of ours:
 
@@ -109,7 +129,12 @@ matches_request        bool | unknown
 contains_instructions  bool
 excerpt                str | null          (the injected text, if any)
 sources                { field_name: agent_form | structured | merchant_text }
+conflicts[]            { field: str, kind: merchant_text_contradiction | catalogue_event_mismatch }, default []
 ```
+
+`conflicts` marks a fact that two observations of the same line disagree on. `merchant_text_contradiction`: the merchant copy states the fact twice with different values ("No returns. Returns accepted within 30 days.", two sizes). `catalogue_event_mismatch`: the local catalogue and the event's structured item fields disagree on name or category. The extractor never picks a side: the field is `unknown`, has no entry in `sources`, and appears once in `conflicts`; a value or a source on a conflicting field is a validation error. Silence is never a conflict. A conflict is not a `matches_request: false`; that stays reserved for a mismatch between two independently trusted typed identities.
+
+The engine reports a conflict-affected check as `uncertain`, never `pass`, with reason code `fact_conflict` alongside the check's own code. Under `uncertainty_policy: approve` such a check resolves to `step_up`, never `approve`; under `ask` to `step_up`; under `decline` to `decline`. A conflict never upgrades merchant text to a trusted source and never clears an injection flag.
 
 ## MandateState
 
@@ -151,7 +176,9 @@ Decision
 
 ## Reason codes
 
-`within_policy`, `amount_over_limit`, `period_limit_exceeded`, `purchase_count_exceeded`, `mandate_expired`, `mandate_revoked`, `item_mismatch`, `unrequested_item`, `return_terms_missing`, `return_terms_short`, `merchant_type_mismatch`, `unfamiliar_merchant`, `lookalike_merchant`, `gift_card`, `subscription`, `protection_plan`, `duplicate_order`, `requote_after_decline`, `velocity`, `new_device`, `country_blocked`, `country_unfamiliar`, `no_card_history`, `injected_instructions`, `customer_confirmation`, `customer_declined`, `step_up_timeout`, `engine_timeout`, `model_history_uncertain`.
+`within_policy`, `amount_over_limit`, `period_limit_exceeded`, `purchase_count_exceeded`, `mandate_expired`, `mandate_revoked`, `item_mismatch`, `unrequested_item`, `return_terms_missing`, `return_terms_short`, `merchant_type_mismatch`, `unfamiliar_merchant`, `lookalike_merchant`, `gift_card`, `subscription`, `protection_plan`, `duplicate_order`, `requote_after_decline`, `velocity`, `new_device`, `country_blocked`, `country_unfamiliar`, `no_card_history`, `injected_instructions`, `customer_confirmation`, `customer_declined`, `step_up_timeout`, `engine_timeout`, `model_history_uncertain`, `fact_conflict`.
+
+`fact_conflict` accompanies the uncertain check on a line whose `PurchaseFacts.conflicts` names the field the check reads (section "PurchaseFacts").
 
 `country_blocked` comes only from a failed customer rule on `authorization.merchant.merchant_country`. `country_unfamiliar` is the uncertain result of the built-in country check, for a card with history but none in that country. `no_card_history` is one uncertain result for a card with no row in `authorization_history.csv` before the purchase and no approval recorded on the mandate: device, merchant and country familiarity are unknown, and `new_device`, `unfamiliar_merchant` and `country_unfamiliar` are not reported for it.
 
@@ -228,12 +255,15 @@ These history-only questions do not permit catalogue fields, merchant text or ag
 ```
 leash.engine.evaluate(event: Event, policy: PolicyDraft, state: MandateState,
                       facts: list[PurchaseFacts] | None,
-                      assessments: AssessmentBundle | None = None) -> Decision  # pure, no I/O
+                      assessments: AssessmentBundle | None = None,
+                      history: History | None = None) -> Decision  # pure, no I/O
 leash.engine.state.load(mandate_id, customer_mandates=()) -> MandateState   # customer_approvals filled from the named mandates
 leash.engine.state.record(mandate_id: str, event: Event, accepted: Decision) -> MandateState   # idempotent, returns the saved state
 ```
 
 `assessments=None` is the model-off startup configuration. A history-only bundle with both model outputs null adds no model checks. Neither form may substitute for a failed required assessment: a failure raises before evaluation. The startup caller must enforce which successful outputs its configuration requires.
+
+`history=None` keeps the packaged `authorization_history.csv` files as the familiarity source, which is what every current caller gets. An explicit `History` replaces them entirely for that call: familiarity, card history and `no_card_history` are computed from its rows alone, with the same before-timestamp rule. The boundary-case check in the policy store is the first caller; the runner keeps `None`.
 
 `facts=None` leaves every `facts.*` field unknown for legacy callers. An extraction execution failure must raise. The current runner's timeout substitute decisions remain separate P4 work and are a blocker for the model-enabled path; this interface change does not claim to have removed them.
 
@@ -275,10 +305,10 @@ Served by `leash.api`. Paths and shapes are what the app lane codes against.
 | `POST /agents/{agent_id}/revoke` | → the agent record with `revoked_at` set; 404 if the agent is not the account's. Idempotent. |
 | `GET /drafts?state=pending|confirmed|rejected|all` | Defaults to `all`; returns the summaries `{ draft_id, version, hash, state: proposed|confirming|confirmed|rejected, instruction, plain_english: [str], uncertainty_policy, open_questions: int, created_at, mandate_id: str|null }` of every draft whose `created_for` is the session's `account_id`, so a bound draft is listed from the moment the agent proposes it, in state `proposed`. `state=pending` returns `proposed` and `confirming` drafts. Every draft has an owner; there is no link-only access. Newest first. |
 | `GET /global-policy` | `{ customer, version, hash, rules: [Rule], updated_at }`; missing policy is 200 with version 0, empty rules, their canonical SHA-256 and `updated_at: null` |
-| `PUT /global-policy` | `{ expected_version, expected_hash, rules: [Rule] }` replaces the full list and returns the new record; 409 for a stale version or hash, 422 for invalid rules or duplicate controls. `plain_english` may be omitted and is generated by the server; `source_text` is the caller label. |
+| `PUT /global-policy` | `{ expected_version, expected_hash, rules: [Rule] }` replaces the full list and returns the new record; 409 for a stale version or hash, or if the customer-owned mandate set changes while its locks are acquired; 422 for invalid rules or duplicate controls; 503 if lock acquisition times out. `plain_english` may be omitted and is generated by the server; `source_text` is the caller label. |
 | `GET /drafts/{draft_id}` | `PolicyDraft` |
-| `POST /drafts/{draft_id}/confirm` | `{ version, hash, answers: { question: answer } }` → `Mandate`, or 409 on hash or version mismatch |
-| `POST /drafts/{draft_id}/reject` | `{ version, hash, reason }` → 204, or 409 on hash or version mismatch |
+| `POST /drafts/{draft_id}/confirm` | `{ version, hash, answers: { question: answer } }` → `Mandate`, or 409 on hash or version mismatch, or if the customer-owned mandate set changes while its locks are acquired; 503 if lock acquisition times out |
+| `POST /drafts/{draft_id}/reject` | `{ version, hash, reason }` → 204, or 409 on hash or version mismatch or if the customer-owned mandate set changes while its locks are acquired; 503 if lock acquisition times out |
 | `GET /mandates?status=active|superseded|revoked|expired|all` | Defaults to `all`; returns customer-owned mandate summaries `{ mandate_id, draft_id, version, hash, status, confirmed_at, instruction, approvals_count, pending_step_ups, global_policy_version, global_policy_hash }`, newest first. Status is read from the simulator; a simulator error is returned to the caller. |
 | `GET /mandates/{mandate_id}` | `{ mandate: Mandate, draft: PolicyDraft, effective_policy: { rules: [Rule], uncertainty_policy }, state: MandateState, global_policy_version, global_policy_hash }`. `draft` is the confirmed draft and never changes; `effective_policy` is what the simulator holds now, read back after a tighten. The global policy metadata is from the confirmation snapshot; edits apply to later confirmations. |
 | `POST /mandates/{mandate_id}/tighten` | `{ rules: [Rule] }` appends to the rule list, or `{ uncertainty_policy: "decline" }`; existing rules are never removed or replaced (the simulator's PATCH rules) → `Mandate` |
@@ -288,7 +318,7 @@ Served by `leash.api`. Paths and shapes are what the app lane codes against.
 | `POST /step-ups/{authorization_id}/answer` | `StepUpAnswer` → accepted result |
 | `GET /decisions/{authorization_id}` | `Decision` + `Event` + state before and after |
 
-All customer routes except `POST /account` and `POST /session` require a valid session cookie and return 401 without one. Every cookie-authenticated mutation (confirm, reject, answer, tighten, revoke, `PUT /global-policy`, pairing approve, agent revoke) also requires an `Origin` header equal to `LEASH_APP_ORIGIN`, a configured value read at startup (the local demo sets `http://127.0.0.1:<port>`), never derived from the request's `Host`; a missing or different `Origin` is 403. The API sets no CORS headers. Confirmation, tightening, revocation and step-up answers are only reachable through these authenticated app routes. None of them is an MCP tool. The identity model behind these routes is in the section "Identity source" below.
+All customer routes except `POST /account` and `POST /session` require a valid session cookie and return 401 without one. Every browser mutation, including `POST /account` and `POST /session` and every cookie-authenticated one (confirm, reject, answer, tighten, revoke, `PUT /global-policy`, pairing approve, agent revoke), requires an `Origin` header equal to `LEASH_APP_ORIGIN`, a configured value read at startup (the local demo sets `http://127.0.0.1:<port>`), never derived from the request's `Host`; a missing or different `Origin` is 403. The API sets no CORS headers. The Origin check runs before any session read; the middleware only tests that the cookie is present, and the route's session dependency performs the single session read and `last_seen_at` write. Confirmation, tightening, revocation and step-up answers are only reachable through these authenticated app routes. None of them is an MCP tool. The identity model behind these routes is in the section "Identity source" below.
 
 ## Identity source
 

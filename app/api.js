@@ -24,8 +24,13 @@ const walletApi = (() => {
 
   return Object.freeze({
     session: () => request("/session"),
-    login: (username) => request("/session", { method: "POST", body: JSON.stringify({ username }) }),
+    register: (username, password) => request("/account", { method: "POST", body: JSON.stringify({ username, password }) }),
+    login: (username, password) => request("/session", { method: "POST", body: JSON.stringify({ username, password }) }),
     logout: () => request("/session", { method: "DELETE" }),
+    pairing: (code) => request(`/pairing/${encodeURIComponent(code)}`),
+    approvePairing: (code) => request(`/pairing/${encodeURIComponent(code)}/approve`, { method: "POST" }),
+    agents: () => request("/agents"),
+    revokeAgent: (id) => request(`/agents/${encodeURIComponent(id)}/revoke`, { method: "POST" }),
     draft: (id) => request(`/drafts/${encodeURIComponent(id)}`),
     drafts: () => request("/drafts?state=all"),
     confirm: (id, version, hash, answers) => request(`/drafts/${encodeURIComponent(id)}/confirm`, {

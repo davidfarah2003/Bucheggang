@@ -1,82 +1,146 @@
-"""Customer app shell with local demo login and policy draft routes."""
+"""Customer app shell with password login and file-backed sessions."""
 
 from __future__ import annotations
 
-import secrets
-from threading import Lock
+from collections.abc import Callable
+from urllib.parse import urlsplit
+from typing import Any
 
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
-from pydantic import BaseModel, ConfigDict
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, StrictStr
 
 from leash.policy.confirmation import MandateClient
+from leash.policy.identity import AccountExists, IdentityStore, InvalidCredentials, LoginThrottled
 from leash.policy.routes import policy_router
 from leash.policy.store import DraftStore
 from leash.runner.routes import step_up_router
 from leash.runner.stepups import StepUpBook
 
+from .identity_routes import identity_router
 
 COOKIE_NAME = "leash_session"
 
 
-class LoginBody(BaseModel):
+class CredentialsBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    username: str
+    username: StrictStr
+    password: StrictStr
 
 
-def create_app(store: DraftStore, mandates: MandateClient, step_up_book: StepUpBook) -> FastAPI:
-    """Mount all customer routes and the static Wallet in one same-origin app."""
+def _validate_origin(value: str) -> tuple[str, bool]:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise RuntimeError("LEASH_APP_ORIGIN must be an exact HTTP or HTTPS origin")
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise RuntimeError("LEASH_APP_ORIGIN must be an exact HTTP or HTTPS origin without a path")
+    return value, parsed.scheme == "https"
+
+
+def create_app(
+    store: DraftStore,
+    mandates: MandateClient,
+    step_up_book: StepUpBook,
+    *,
+    app_origin: str,
+) -> FastAPI:
+    """Mount the same-origin Wallet, account routes and protected lane APIs."""
     from leash.engine.state import load
     from leash.runner.routes import history_router
 
     from .mandates import mandate_router
     from .static import mount_customer_app
 
+    configured_origin, secure_cookie = _validate_origin(app_origin)
+    identities = IdentityStore(store.root)
     app = FastAPI(title="Agent on a Leash")
-    sessions: dict[str, str] = {}
-    sessions_lock = Lock()
 
-    def current_customer_session(leash_session: str | None = Cookie(default=None)) -> tuple[str, str]:
-        if leash_session is None:
-            raise HTTPException(status_code=401, detail="customer login is required")
-        with sessions_lock:
-            customer = sessions.get(leash_session)
-        if customer is None:
+    @app.middleware("http")
+    async def check_mutation_origin(request: Request, call_next: Callable):
+        unsafe = request.method in {"POST", "PUT", "PATCH", "DELETE"}
+        public_auth_post = request.method == "POST" and request.url.path in {"/account", "/session"}
+        has_session_cookie = bool(request.cookies.get(COOKIE_NAME))
+        if unsafe and (public_auth_post or has_session_cookie):
+            origins = request.headers.getlist("origin")
+            if origins != [configured_origin]:
+                return JSONResponse(status_code=403, content={"detail": "request origin is not allowed"})
+        response = await call_next(request)
+        if request.url.path.rstrip("/") == "/app" and "pair" in request.query_params:
+            response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
+    def current_customer_session(
+        leash_session: str | None = Cookie(default=None, alias=COOKIE_NAME),
+    ) -> dict[str, Any]:
+        record = identities.session(leash_session)
+        if record is None:
             raise HTTPException(status_code=401, detail="customer session is invalid")
-        return leash_session, customer
+        account = identities.account_for_id(record["account_id"])
+        return {
+            "cookie": leash_session,
+            "account_id": record["account_id"],
+            "username": account["username"],
+        }
 
-    def authenticated_customer(
-        session: tuple[str, str] = Depends(current_customer_session),
-    ) -> str:
-        return session[1]
+    def authenticated_customer(session: dict[str, Any] = Depends(current_customer_session)) -> str:
+        return session["account_id"]
+
+    def set_session_cookie(response: Response, cookie: str) -> None:
+        response.set_cookie(
+            COOKIE_NAME,
+            cookie,
+            httponly=True,
+            samesite="strict",
+            secure=secure_cookie,
+            path="/",
+        )
+
+    @app.post("/account", status_code=201)
+    def register(body: CredentialsBody, response: Response) -> dict[str, str]:
+        try:
+            account, cookie = identities.register(body.username, body.password)
+        except AccountExists as exc:
+            raise HTTPException(status_code=409, detail="username is already registered") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        set_session_cookie(response, cookie)
+        return {"account_id": account["account_id"], "username": account["username"]}
 
     @app.post("/session")
-    def login(body: LoginBody, response: Response) -> dict[str, str]:
-        username = body.username.strip()
-        if not username or any(character.isspace() for character in username) or len(username) > 80:
-            raise HTTPException(status_code=422, detail="username must contain 1 to 80 non-whitespace characters")
-        token = secrets.token_urlsafe(32)
-        with sessions_lock:
-            sessions[token] = username
-        response.set_cookie(COOKIE_NAME, token, httponly=True, samesite="strict", path="/")
-        return {"username": username}
+    def login(body: CredentialsBody, response: Response) -> dict[str, str]:
+        try:
+            account, cookie = identities.login(body.username, body.password)
+        except LoginThrottled as exc:
+            raise HTTPException(status_code=429, detail="too many login attempts; try again later") from exc
+        except InvalidCredentials as exc:
+            raise HTTPException(status_code=401, detail="username or password is wrong") from exc
+        set_session_cookie(response, cookie)
+        return {"account_id": account["account_id"], "username": account["username"]}
 
     @app.get("/session")
-    def get_session(
-        session: tuple[str, str] = Depends(current_customer_session),
-    ) -> dict[str, str]:
-        return {"username": session[1]}
+    def get_session(session: dict[str, Any] = Depends(current_customer_session)) -> dict[str, str]:
+        return {"account_id": session["account_id"], "username": session["username"]}
 
     @app.delete("/session", status_code=204)
     def logout(
         response: Response,
-        session: tuple[str, str] = Depends(current_customer_session),
-    ) -> None:
-        with sessions_lock:
-            if sessions.pop(session[0], None) is None:
-                raise HTTPException(status_code=401, detail="customer session is invalid")
-        response.delete_cookie(COOKIE_NAME, path="/")
+        session: dict[str, Any] = Depends(current_customer_session),
+    ) -> Response:
+        if not identities.logout(session["cookie"]):
+            raise HTTPException(status_code=401, detail="customer session is invalid")
+        response.delete_cookie(COOKIE_NAME, path="/", secure=secure_cookie, httponly=True, samesite="strict")
+        return Response(status_code=204, headers=response.headers)
 
+    app.include_router(identity_router(identities, current_customer_session))
     app.include_router(policy_router(store, mandates, authenticated_customer))
     app.include_router(mandate_router(store, authenticated_customer, load, step_up_book=step_up_book))
     app.include_router(step_up_router(step_up_book, authenticated_customer, store))

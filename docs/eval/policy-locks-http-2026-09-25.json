@@ -1,0 +1,104 @@
+{
+  "candidate": "7803bd0dd06b7e48d66a1ca489b8efc8313c870f",
+  "observations": [
+    {
+      "check": "Register missing Origin",
+      "status": 403,
+      "expected": 403,
+      "candidate_commit": "7803bd0dd06b7e48d66a1ca489b8efc8313c870f",
+      "execution": "policy-locks-http-7803bd0"
+    },
+    {
+      "check": "Register foreign Origin",
+      "status": 403,
+      "expected": 403,
+      "candidate_commit": "7803bd0dd06b7e48d66a1ca489b8efc8313c870f",
+      "execution": "policy-locks-http-7803bd0"
+    },
+    {
+      "check": "Register exact Origin",
+      "status": 201,
+      "expected": 201,
+      "candidate_commit": "7803bd0dd06b7e48d66a1ca489b8efc8313c870f",
+      "execution": "policy-locks-http-7803bd0"
+    },
+    {
+      "check": "Login missing Origin",
+      "status": 403,
+      "expected": 403,
+      "candidate_commit": "7803bd0dd06b7e48d66a1ca489b8efc8313c870f",
+      "execution": "policy-locks-http-7803bd0"
+    },
+    {
+      "check": "Login foreign Origin",
+      "status": 403,
+      "expected": 403,
+      "candidate_commit": "7803bd0dd06b7e48d66a1ca489b8efc8313c870f",
+      "execution": "policy-locks-http-7803bd0"
+    },
+    {
+      "check": "Login exact Origin",
+      "status": 200,
+      "expected": 200,
+      "candidate_commit": "7803bd0dd06b7e48d66a1ca489b8efc8313c870f",
+      "execution": "policy-locks-http-7803bd0"
+    },
+    {
+      "check": "Register second account",
+      "status": 201,
+      "expected": 201,
+      "candidate_commit": "7803bd0dd06b7e48d66a1ca489b8efc8313c870f",
+      "execution": "policy-locks-http-7803bd0"
+    },
+    {
+      "check": "Read first policy",
+      "status": 200,
+      "expected": 200,
+      "candidate_commit": "7803bd0dd06b7e48d66a1ca489b8efc8313c870f",
+      "execution": "policy-locks-http-7803bd0"
+    },
+    {
+      "check": "Read second policy",
+      "status": 200,
+      "expected": 200,
+      "candidate_commit": "7803bd0dd06b7e48d66a1ca489b8efc8313c870f",
+      "execution": "policy-locks-http-7803bd0"
+    },
+    {
+      "check": "Other customer PUT while first customer held",
+      "status": 200,
+      "expected": 200,
+      "candidate_commit": "7803bd0dd06b7e48d66a1ca489b8efc8313c870f",
+      "execution": "policy-locks-http-7803bd0"
+    },
+    {
+      "check": "Same-customer PUT after guard release",
+      "status": 200,
+      "expected": 200,
+      "candidate_commit": "7803bd0dd06b7e48d66a1ca489b8efc8313c870f",
+      "execution": "policy-locks-http-7803bd0"
+    },
+    {
+      "check": "Concurrent same-version global PUT",
+      "statuses": [
+        200,
+        409
+      ],
+      "candidate_commit": "7803bd0dd06b7e48d66a1ca489b8efc8313c870f",
+      "execution": "policy-locks-http-7803bd0"
+    },
+    {
+      "check": "Empty-owned-set customer guard",
+      "same_customer_waited": true,
+      "different_customer_completed": true,
+      "candidate_commit": "7803bd0dd06b7e48d66a1ca489b8efc8313c870f",
+      "execution": "policy-locks-http-7803bd0"
+    }
+  ],
+  "confirmations": 0,
+  "simulator_calls": 0,
+  "execution": "policy-locks-http-7803bd0",
+  "outcome": "completed_exit_0",
+  "record_written_at": "2026-09-25T03:24:17.226402+00:00",
+  "driver_sha256": "91dc13dcdbe312208c6dc26a7f81f2c89867ec25f5f398ad985e33640737754d"
+}
