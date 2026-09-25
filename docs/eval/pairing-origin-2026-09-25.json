@@ -1,0 +1,98 @@
+{
+  "source_head": "fabd0a47a44145a53452009bae8f05d9b9ee2939",
+  "startup": [
+    {
+      "transport": "stdio",
+      "origin_case": "missing",
+      "exit_code": 1
+    },
+    {
+      "transport": "stdio",
+      "origin_case": "relative",
+      "exit_code": 1
+    },
+    {
+      "transport": "stdio",
+      "origin_case": "path",
+      "exit_code": 1
+    },
+    {
+      "transport": "stdio",
+      "origin_case": "query",
+      "exit_code": 1
+    },
+    {
+      "transport": "stdio",
+      "origin_case": "fragment",
+      "exit_code": 1
+    },
+    {
+      "transport": "stdio",
+      "origin_case": "userinfo",
+      "exit_code": 1
+    },
+    {
+      "transport": "stdio",
+      "origin_case": "whitespace",
+      "exit_code": 1
+    },
+    {
+      "transport": "streamable-http",
+      "origin_case": "missing",
+      "exit_code": 1
+    },
+    {
+      "transport": "streamable-http",
+      "origin_case": "relative",
+      "exit_code": 1
+    },
+    {
+      "transport": "streamable-http",
+      "origin_case": "path",
+      "exit_code": 1
+    },
+    {
+      "transport": "streamable-http",
+      "origin_case": "query",
+      "exit_code": 1
+    },
+    {
+      "transport": "streamable-http",
+      "origin_case": "fragment",
+      "exit_code": 1
+    },
+    {
+      "transport": "streamable-http",
+      "origin_case": "userinfo",
+      "exit_code": 1
+    },
+    {
+      "transport": "streamable-http",
+      "origin_case": "whitespace",
+      "exit_code": 1
+    }
+  ],
+  "simulator_calls": 0,
+  "provider_calls": 0,
+  "pairing_approvals": 0,
+  "stdio": {
+    "initialized": true,
+    "wallet_origin_matches_configuration": true,
+    "wallet_query_contains_code_only": true,
+    "verifier_absent_from_url": true,
+    "unapproved_completion": "PairingPending",
+    "unpaired_authoring_refused": true
+  },
+  "persisted_pairing_values": "digests only, clear code and verifier absent",
+  "disposable_store_removed": true,
+  "streamable_http": {
+    "initialized": true,
+    "wallet_origin_matches_configuration": true,
+    "wallet_origin_differs_from_mcp_request_origin": true,
+    "wallet_query_contains_code_only": true,
+    "verifier_absent_from_url": true,
+    "unapproved_completion": "PairingPending",
+    "unpaired_authoring_refused": true
+  },
+  "http_store_removed": true
+}
