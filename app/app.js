@@ -8,6 +8,11 @@ const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const screen = document.querySelector("#screen");
 const overlayRoot = document.querySelector("#overlay-root");
 const toastRoot = document.querySelector("#toast-root");
+const globalControls = {
+  purchase_amount: { label: "Maximum per purchase (CHF)", field: "authorization.billing_amount_chf", operator: "<=", scope: "purchase", currency: "CHF" },
+  rolling_amount: { label: "Rolling spending cap (CHF)", field: "authorization.billing_amount_chf", operator: "<=", scope: "period", currency: "CHF" },
+  rolling_count: { label: "Rolling purchase count", field: "state.approvals_count", operator: "<", scope: "period" },
+};
 const examples = [
   "Find a 27-inch USB-C monitor below CHF 400 with excellent colour accuracy",
   "Find a morning train from Zürich to Milan with a window seat",
@@ -27,8 +32,10 @@ const state = {
   ownedDrafts: [],
   answers: {},
   mandate: null,
-  globalPolicy: null,
   ownedMandates: [],
+  globalPolicy: null,
+  stagedGlobalRules: null,
+  globalConflict: false,
   agents: [],
   pairing: null,
   pairings: null,
@@ -393,6 +400,9 @@ function sessionExpired(error) {
   state.authMode = "login";
   state.mandate = null;
   state.ownedMandates = [];
+  state.globalPolicy = null;
+  state.stagedGlobalRules = null;
+  state.globalConflict = false;
   state.agents = [];
   state.pairing = null;
   state.pairingCode = null;
@@ -837,7 +847,76 @@ function globalPolicyCard(policy, savedGlobal) {
   const editable = capRules.length === 0 || (capRules.length === 1 && capRules[0].operator === "<=" && capRules[0].currency === "CHF" && typeof capRules[0].value === "number");
   const cap = capRules.length ? capRules[0] : null;
   const editor = editable ? `<div class="global-cap-editor"><label for="global-seven-day-cap">Seven-day approved spend cap (CHF)</label><input id="global-seven-day-cap" type="number" min="0.01" step="0.01" inputmode="decimal" value="${cap ? esc(cap.value) : ""}" placeholder="No cap" /><p>Counts approved purchases across your permissions over the previous seven days, plus the proposed purchase.</p><div class="global-cap-actions"><button type="button" class="outline-button" data-action="save-global-cap">Save cap</button>${cap ? `<button type="button" class="danger-link" data-action="remove-global-cap">Remove cap</button>` : ""}</div></div>` : `<p>This account has a seven-day rule that needs a different editor. Its saved value is shown above.</p>`;
-  return `<section class="rule-group"><h3>Account-wide rules · version ${policy.version}</h3>${policy.rules.length ? policy.rules.map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("") : `<p>No account-wide rules are saved for this local customer.</p>`}<p>${notice ? `${esc(notice)} ` : ""}Changes apply to the next confirmed permission. Existing permissions keep their saved rules.</p>${editor}</section>`;
+  return `<section class="rule-group"><h3>Account-wide rules · version ${policy.version}</h3>${policy.rules.length ? policy.rules.map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("") : `<p>No account-wide rules are saved for this local customer.</p>`}<p>${notice ? `${esc(notice)} ` : ""}Changes apply to the next confirmed permission. Existing permissions keep their saved rules.</p>${editor}<button type="button" class="outline-button" data-action="open-global-rules">Edit all account-wide rules</button></section>`;
+}
+
+function stagedGlobalRuleLabel(rule) {
+  if (rule.plain_english) return text(rule.plain_english, "Account-wide rule description");
+  if (rule.field === "authorization.billing_amount_chf") return rule.scope === "period" ? `Up to ${money(rule.value)} in ${rule.period_days} days across your permissions.` : `Up to ${money(rule.value)} for each purchase.`;
+  if (rule.field === "state.approvals_count" && rule.scope === "period") return `Up to ${rule.value} accepted purchases in ${rule.period_days} days across your permissions.`;
+  throw new Error("The staged account-wide rule has no supported description.");
+}
+
+function showGlobalEditor() {
+  const policy = state.globalPolicy;
+  const rules = state.stagedGlobalRules;
+  if (!policy || policy.customer !== state.accountId || !Array.isArray(rules)) throw new Error("The account-wide rules are not ready for editing.");
+  const changed = JSON.stringify(rules) !== JSON.stringify(policy.rules);
+  const rows = rules.length ? rules.map((rule, index) => `<div class="global-rule-row"><span>${esc(stagedGlobalRuleLabel(rule))}</span><button type="button" class="text-button" data-action="remove-global-rule" data-index="${index}" aria-label="Remove rule ${index + 1}: ${esc(stagedGlobalRuleLabel(rule))}">Remove</button></div>`).join("") : `<p>${policy.rules.length ? "Saving this empty draft will remove all account-wide rules for future confirmations." : "No account-wide rules are saved."}</p>`;
+  openOverlay(`<span class="section-kicker">ACCOUNT-WIDE RULES · VERSION ${policy.version}</span><h2>Edit future spending limits</h2><p class="overlay-intro">These edits affect only permissions you confirm later. Existing permissions keep their saved rules. Nothing changes until you save the full list.</p><div class="global-rule-list">${rows}</div><div class="global-rule-form"><h3>Add a limit</h3><label for="global-control">Limit type</label><select id="global-control"><option value="purchase_amount">Maximum per purchase, CHF</option><option value="rolling_amount">Rolling spending cap, CHF</option><option value="rolling_count">Rolling purchase count</option></select><label for="global-value" id="global-value-label">Maximum CHF</label><input id="global-value" type="number" min="0.01" step="0.01" inputmode="decimal" /><div id="global-days-wrap" hidden><label for="global-days">Window in days</label><input id="global-days" type="number" min="1" step="1" inputmode="numeric" disabled /></div><button type="button" class="outline-button" data-action="stage-global-rule">Add to draft</button></div><p id="global-rule-error" class="global-rule-error" role="alert" hidden></p><div class="global-rule-actions"><button type="button" class="outline-button" data-action="close-overlay">Cancel</button><button type="button" class="primary-button" data-action="save-global-rules" ${!changed || state.globalConflict ? "disabled" : ""}>Save all rules</button></div><button type="button" class="text-button" data-action="reload-global-rules" ${state.globalConflict ? "" : "hidden"}>Reload current rules</button>`, "Edit account-wide rules");
+}
+
+function showGlobalEditorError(message, conflict = false) {
+  const alert = overlayRoot.querySelector("#global-rule-error");
+  if (!alert) throw new Error("The account-wide rule editor is unavailable.");
+  alert.textContent = message;
+  alert.hidden = false;
+  if (conflict) {
+    state.globalConflict = true;
+    overlayRoot.querySelectorAll('[data-action="save-global-rules"], [data-action="remove-global-rule"], [data-action="stage-global-rule"], .global-rule-form input, .global-rule-form select').forEach((control) => { control.disabled = true; });
+    const reload = overlayRoot.querySelector('[data-action="reload-global-rules"]');
+    reload.hidden = false;
+    reload.focus();
+  }
+}
+
+function stageGlobalRule() {
+  const control = globalControls[document.querySelector("#global-control").value];
+  if (!control) throw new Error("Choose a supported account-wide limit.");
+  const raw = document.querySelector("#global-value").value.trim();
+  const count = control.field === "state.approvals_count";
+  if (!(count ? /^[1-9]\d*$/.test(raw) : /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(raw)) || !Number.isFinite(Number(raw)) || Number(raw) <= 0 || (count && !Number.isSafeInteger(Number(raw)))) {
+    showGlobalEditorError(count ? "Enter a positive whole number of purchases." : "Enter a positive CHF amount with at most two decimal places.");
+    return;
+  }
+  const days = document.querySelector("#global-days").value.trim();
+  if (control.scope === "period" && (!/^[1-9]\d*$/.test(days) || !Number.isSafeInteger(Number(days)))) {
+    showGlobalEditorError("Enter a positive whole number of days.");
+    return;
+  }
+  const rule = { field: control.field, operator: control.operator, value: Number(raw), scope: control.scope, source_text: `Wallet ${control.label}` };
+  if (control.currency) rule.currency = control.currency;
+  if (control.scope === "period") rule.period_days = Number(days);
+  if (state.stagedGlobalRules.some((item) => item.field === rule.field && (item.scope || "purchase") === rule.scope && item.period_days === rule.period_days)) {
+    showGlobalEditorError("A limit for this field and window already exists. Remove it before adding another.");
+    return;
+  }
+  state.stagedGlobalRules.push(rule);
+  showGlobalEditor();
+}
+
+async function saveGlobalRules() {
+  const policy = state.globalPolicy;
+  if (!policy || policy.customer !== state.accountId || !state.stagedGlobalRules || state.globalConflict) throw new Error("Reload your account-wide rules before saving.");
+  if (JSON.stringify(state.stagedGlobalRules) === JSON.stringify(policy.rules)) throw new Error("No account-wide rule changes are staged.");
+  const accepted = validateGlobalPolicy(await walletApi.saveGlobalPolicy(policy.version, policy.hash, state.stagedGlobalRules));
+  if (accepted.version !== policy.version + 1) throw new Error("The account-wide rules were not acknowledged at a new version. Reload them before another edit.");
+  state.globalPolicy = accepted;
+  state.stagedGlobalRules = null;
+  closeOverlay();
+  state.walletTab = "rules";
+  await navigate("wallet");
+  toast(`Account-wide rules saved as version ${accepted.version}. Future confirmations use this version.`, "success");
 }
 
 async function rulesContent(serial) {
@@ -1117,6 +1196,28 @@ document.addEventListener("click", async (event) => {
     }
     if (action === "decline-pair") { clearPairLink(); navigate(requestedRoute("")); return; }
     if (action === "refresh-agents") { void render(); return; }
+    if (action === "open-global-rules") {
+      if (state.route !== "wallet" || state.walletTab !== "rules" || !state.globalPolicy) throw new Error("Load account-wide rules before editing them.");
+      state.stagedGlobalRules = state.globalPolicy.rules.map((rule) => ({ ...rule }));
+      state.globalConflict = false;
+      showGlobalEditor();
+      return;
+    }
+    if (action === "remove-global-rule") {
+      const index = Number(button.dataset.index);
+      if (!state.stagedGlobalRules || !Number.isInteger(index) || index < 0 || index >= state.stagedGlobalRules.length) throw new Error("The account-wide rule to remove is unavailable.");
+      state.stagedGlobalRules.splice(index, 1);
+      showGlobalEditor();
+      return;
+    }
+    if (action === "stage-global-rule") { stageGlobalRule(); return; }
+    if (action === "reload-global-rules") {
+      state.stagedGlobalRules = null;
+      state.globalConflict = false;
+      state.walletTab = "rules";
+      await navigate("wallet");
+      return;
+    }
     if (action === "open-draft") {
       const id = text(button.dataset.id, "Spending request ID");
       if (!state.ownedDrafts.some((item) => item.draft_id === id && item.state === "proposed")) throw new Error("This spending request is no longer ready for review.");
@@ -1223,6 +1324,8 @@ document.addEventListener("click", async (event) => {
       state.mandate = null;
       state.globalPolicy = null;
       state.ownedMandates = [];
+      state.stagedGlobalRules = null;
+      state.globalConflict = false;
       state.agents = [];
       state.pairing = null;
       state.pairingCode = null;
@@ -1285,6 +1388,7 @@ document.addEventListener("click", async (event) => {
     else if (action === "resolve") await performResolution(button);
     else if (action === "tighten") await performTighten();
     else if (action === "revoke") await performRevoke();
+    else if (action === "save-global-rules") await saveGlobalRules();
     else if (action === "copy-prompt") {
       const prompt = text(document.querySelector("#shop-prompt").value.trim(), "Shopping request");
       const details = document.querySelector("#request-details").value.trim();
@@ -1304,6 +1408,13 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (error.status === 401) { sessionExpired(error); return; }
+    if (action === "save-global-rules") {
+      const conflict = error.status === 409 || !error.status;
+      const message = error.status === 409 ? "Account-wide rules changed. Reload the current version before editing again. Nothing was saved from this draft." : error.status === 503 ? "The account-wide rule update timed out. No change was acknowledged. Retry manually or reload the current rules." : error.message;
+      showGlobalEditorError(message, conflict);
+      if (!conflict && button.isConnected) button.disabled = false;
+      return;
+    }
     if (error.status === 404 && action === "approve-pair") { void render(); return; }
     if (error.status === 409 && state.route === "review") { state.draft = null; state.answers = {}; void render(); }
     if (error.status === 409 && (action === "save-global-cap" || action === "remove-global-cap")) { state.globalPolicy = null; void render(); }
@@ -1311,6 +1422,22 @@ document.addEventListener("click", async (event) => {
     if (action === "resolve") { navigate("wallet"); return; }
     if (button.isConnected) button.disabled = false;
   }
+});
+
+document.addEventListener("change", (event) => {
+  if (event.target.id !== "global-control") return;
+  const control = globalControls[event.target.value];
+  if (!control) throw new Error("An account-wide limit type is unsupported.");
+  const count = control.field === "state.approvals_count";
+  const value = document.querySelector("#global-value");
+  value.value = "";
+  value.min = count ? "1" : "0.01";
+  value.step = count ? "1" : "0.01";
+  document.querySelector("#global-value-label").textContent = count ? "Maximum accepted purchases" : "Maximum CHF";
+  const days = document.querySelector("#global-days");
+  days.value = "";
+  days.disabled = control.scope !== "period";
+  document.querySelector("#global-days-wrap").hidden = control.scope !== "period";
 });
 
 document.addEventListener("input", (event) => {
