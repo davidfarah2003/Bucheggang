@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, StrictInt
 
 from .confirmation import MandateClient, confirm_policy
-from .ownership import customer_mandate_locks, owned_drafts
+from .ownership import ConfirmationSetChanged, customer_mandate_locks, owned_drafts
 from .global_policy import GlobalPolicyConflict, GlobalPolicyStore, validate_rules
 from .store import DraftConflict, DraftStore, InvalidDraft
 
@@ -66,6 +66,8 @@ def policy_router(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except (InvalidDraft, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except ConfirmationSetChanged as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except TimeoutError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -135,6 +137,8 @@ def policy_router(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except InvalidDraft as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except ConfirmationSetChanged as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except TimeoutError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 

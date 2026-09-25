@@ -7,6 +7,10 @@ from datetime import UTC, datetime, timedelta
 from .store import DraftStore, InvalidDraft
 
 
+class ConfirmationSetChanged(RuntimeError):
+    """The owned mandate set changed while its locks were acquired."""
+
+
 @contextmanager
 def customer_mandate_locks(store: DraftStore, customer: str) -> Iterator[dict[str, dict]]:
     """Lock a customer's owned set in the runner's customer-first order."""
@@ -18,7 +22,7 @@ def customer_mandate_locks(store: DraftStore, customer: str) -> Iterator[dict[st
         deadline_at = datetime.now(UTC) + timedelta(seconds=30)
         with mandate_locks(mandate_ids, deadline_at=deadline_at):
             if owned_confirmations(store, customer) != confirmations:
-                raise RuntimeError("customer confirmation set changed while acquiring mandate locks")
+                raise ConfirmationSetChanged("customer owned mandate set changed while acquiring locks")
             yield confirmations
 
 
