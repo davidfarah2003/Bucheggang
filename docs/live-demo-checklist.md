@@ -21,7 +21,7 @@ Recorded state: 25 September 2026, before the morning dry run. Unchecked items b
 - [ ] Start the Wallet following [run-wallet.md](run-wallet.md) and the external shopping agent following [mcp-client.md](mcp-client.md). Keep credentials out of terminals captured for the presentation.
 - [ ] Read the live bootstrap through the runner client. Record the currently available scenario IDs and deadline windows. Public offline IDs are not live team IDs.
 - [ ] Select a live scenario whose purchase purpose matches the actual confirmed instruction. Do not copy the shoes instruction into a grocery scenario to force a chosen result.
-- [ ] Keep the model-enabled branch isolated until its review and release hold are cleared. Record whether Jev and the behavioural model are enabled for this run.
+- [ ] Runtime models stay off for this run; the real-provider exercise has not passed (docs/eval/jev-public-2026-09-25.md). Record that Jev and the behavioural model are off.
 
 ## Customer flow
 
@@ -56,8 +56,8 @@ For every item, record the command or UI action, HTTP status, authorization or d
 
 ## Current blockers and deferred scope
 
-A fresh Wallet step-up run needs the shared API slot and an actual customer ready to answer. Plan 02's personalized classifier still needs its implementation and milestone reviews; M0 approval is proposal approval. The behavioural threshold requires an explicit operating decision. The model-enabled merge hold remains in force until the agreed release point.
+A fresh Wallet step-up run needs the reserved window and an actual customer at the Wallet ready to answer; a recorded curl approval from an earlier run is not a Wallet answer. Plan 02's personalized classifier still needs its implementation and milestone reviews; M0 approval is proposal approval. The behavioural threshold requires an explicit operating decision. Runtime models are off until the real-provider exercise passes.
 
-The current runner also has an accepted-remote-result-before-local-persistence gap, separate app/runner mutation locks, and timeout substitute decisions. These are integration work, not completed checks. Live end-to-end latency is not yet recorded as a complete interval.
+Since #58 (eb78312) the runner journals every remote mutation as a durable intent before dispatch, takes one customer lock and the sorted mandate locks for app and runner mutations alike, and raises on a missed deadline instead of substituting a decision. Live end-to-end latency is not yet recorded as a complete interval.
 
 The built-in Shopping Harness, provider selection, account-wide policies and real MCP purchase tools remain deferred product work. Their absence is not hidden by the demo checklist.
