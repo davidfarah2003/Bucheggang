@@ -1,6 +1,6 @@
 # 05 Simulator runner
 
-- Status: runner foundation, replay and original-theme live reports merged in #31, #32 and #34; customer ownership and Activity repairs merged in #41 and #43. Deadline failure handling is implemented on lane/runner-deadlines, pending independent review. Durable remote-operation intents and effective-policy/state rechecks remain open.
+- Status: foundation, replay and original-theme reports merged in #31, #32 and #34; ownership and Activity repairs merged in #41 and #43. Deadline handling is merged in #50. Durable intents and customer coordination are implemented in draft #58, pending independent review and live verification after credential rotation.
 - Owner: David (proposed)
 - Lane: runner. Channel `team.zurichbuchegg.runner`, branch `lane/runner`, worktree `.worktrees/runner`
 - User flow step: everything between "mandate confirmed" and "decision recorded": mandate calls, scenario start, polling, deadlines, decision submission, `/resolve`, state persistence, offline replay
