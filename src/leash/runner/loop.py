@@ -220,6 +220,9 @@ def handle(
         record, _ = policy_context.confirmation(store, mandate_id)
         if record["hash"] != policy.hash or record["version"] != policy.version:
             raise RunLoopError(f"{mandate_id}: supplied draft differs from the saved confirmation")
+        from leash.policy.purchases import write_identity
+
+        write_identity(store, record["draft_id"], event.mandate.model_dump(mode="json"), source="simulator_event")
         state = engine_state.load(mandate_id, customer_mandates=mandate_ids)
         seen = state.handled.get(auth_id)
         if seen is None:

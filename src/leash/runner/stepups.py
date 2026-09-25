@@ -144,6 +144,11 @@ class StepUpBook:
             raise StepUpError(f"step-up {authorization_id} identity differs from its saved path")
         return step_up
 
+    def origin(self, authorization_id: str) -> str:
+        """"local" for a Wallet-judged purchase, "simulator" otherwise."""
+        record = self._read(self._find(authorization_id))
+        return "local" if record.get("origin") == "local" else "simulator"
+
     def has_pending(self, mandate_id: str) -> bool:
         return bool(self.pending(mandate_id))
 
@@ -269,6 +274,8 @@ class StepUpBook:
         coordinator = Coordinator(store, self)
         with coordinator.locked(mandate_id, deadline_at=_now() + timedelta(seconds=30)) as mandate_ids:
             for step_up in self.pending(mandate_id):
+                if self.origin(step_up.authorization_id) == "local":
+                    continue  # answered in the Wallet or timed out by the API's local sweeper
                 now = _now()
                 if now >= step_up.expires_at:
                     final = self._final(

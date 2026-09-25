@@ -25,7 +25,10 @@ class ModelDeadlineError(TimeoutError):
 
 
 class ModelEvaluator:
-    def __init__(self, configuration: EvaluationSettings):
+    def __init__(self, configuration: EvaluationSettings, *, cap_s: float = MODEL_CAP_S):
+        if not (cap_s > 0):
+            raise SettingsError("model allowance cap must be positive")
+        self.cap_s = cap_s
         if not configuration.models_enabled or configuration.model_manifest is None:
             raise SettingsError("model evaluator requires explicit opt-in and a manifest")
         try:
@@ -37,14 +40,14 @@ class ModelEvaluator:
             raise SettingsError(
                 "model-enabled startup requires the classifier package and its classifier dependency group"
             ) from exc
-        self._model = BehaviorModel(configuration.model_manifest)
+        self._model = BehaviorModel(configuration.model_manifest, threshold=configuration.behaviour_threshold)
         self._history = HistoryIndex()
         self._provider = load_openrouter()
         self._assess = assess
         self._requested_model = REQUESTED_MODEL
         self._provider_reserve_s = DEADLINE_RESERVE_SECONDS
-        log.info("model configuration ready: jev=%s artifact=%s behavioural_escalation=off",
-                 self._requested_model, self._model.artifact_version)
+        log.info("model configuration ready: jev=%s artifact=%s behavioural_threshold=%s",
+                 self._requested_model, self._model.artifact_version, self._model.threshold)
 
     def __call__(self, event: Event, policy: PolicyDraft, state: MandateState,
                  facts: list[PurchaseFacts] | None) -> Decision:
@@ -58,7 +61,7 @@ class ModelEvaluator:
         if any(check.result == "fail" for check in baseline.evidence):
             log.info("%s: deterministic failure, model calls not required", event.authorization.authorization_id)
             return baseline
-        allowance = min(MODEL_CAP_S, budget.remaining(MODEL_RESERVE_S))
+        allowance = min(self.cap_s, budget.remaining(MODEL_RESERVE_S))
         if allowance <= 0:
             log.error("%s: model allowance expired before dispatch", event.authorization.authorization_id)
             raise ModelDeadlineError(f"{event.authorization.authorization_id}: model allowance expired before dispatch")
@@ -80,8 +83,8 @@ class ModelEvaluator:
             bundle = AssessmentBundle.model_validate(bundle.model_dump(mode="python"))
             if bundle.behaviour is None or bundle.semantic is None:
                 raise ValueError("configured model evaluator requires both completed assessments")
-            if bundle.behaviour.escalation_fired:
-                raise ValueError("no behavioural operating threshold is enabled")
+            if bundle.behaviour.escalation_fired and self._model.threshold is None:
+                raise ValueError("behavioural escalation fired without an operating threshold")
             if (bundle.behaviour.artifact_version != self._model.artifact_version
                     or bundle.behaviour.model_id != self._model.model_id):
                 raise ValueError("assessment differs from the loaded behavioural artifact")
@@ -107,7 +110,7 @@ class ModelEvaluator:
         return decision
 
 
-def load_evaluator() -> Evaluate:
+def load_evaluator(*, cap_s: float = MODEL_CAP_S) -> Evaluate:
     configuration = load_evaluation()
     if not configuration.models_enabled:
         from leash.engine.classifier.bridge import HistoryOnlyEvaluator
@@ -116,4 +119,4 @@ def load_evaluator() -> Evaluate:
         evaluator = HistoryOnlyEvaluator(HistoryIndex())
         log.info("evaluation configuration: history only, models off")
         return evaluator
-    return ModelEvaluator(configuration)
+    return ModelEvaluator(configuration, cap_s=cap_s)

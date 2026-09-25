@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from collections.abc import Callable
 from ipaddress import IPv6Address, ip_address
 import re
@@ -183,6 +185,28 @@ def create_app(
     app.include_router(policy_router(store, mandates, authenticated_customer))
     app.include_router(mandate_router(store, authenticated_customer, load, step_up_book=step_up_book))
     app.include_router(step_up_router(step_up_book, authenticated_customer, store))
+
+    import threading
+
+    from leash.policy.purchases import timeout_local_step_ups
+
+    stop = threading.Event()
+
+    def _sweep_local() -> None:
+        try:
+            while not stop.wait(1.0):
+                timeout_local_step_ups(store, step_up_book)
+        except BaseException as exc:
+            logging.getLogger("leash.api").error("local step-up sweeper stopped: %r; pending local purchases are no longer timed out", exc)
+            raise
+
+    @app.on_event("startup")
+    def _start_local_sweeper() -> None:
+        threading.Thread(target=_sweep_local, name="local-step-up-sweeper", daemon=True).start()
+
+    @app.on_event("shutdown")
+    def _stop_local_sweeper() -> None:
+        stop.set()
     app.include_router(history_router(authenticated_customer, store))
     mount_customer_app(app)
     return app

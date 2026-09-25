@@ -112,6 +112,11 @@ def confirm_policy(
         global_rules=global_rules,
         boundary_results=boundary_results,
     )
+    from .purchases import demo_identity, write_identity
+
+    identity = demo_identity()
+    if identity is not None:
+        write_identity(store, draft_id, identity, source="demo_card")
     return {
         "mandate_id": mandate_id,
         "draft_id": draft_id,

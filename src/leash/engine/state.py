@@ -92,6 +92,7 @@ def apply(state: MandateState, event: Event, accepted: Decision) -> MandateState
                 merchant_id=auth.merchant.merchant_id,
                 amount_chf=auth.billing_amount_chf,  # delivery is already inside this amount
                 timestamp=auth.timestamp,
+                device_id=auth.customer_device_id,
             )
         )
     elif accepted.decision == "decline":

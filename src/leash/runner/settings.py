@@ -48,6 +48,7 @@ def _parse_env(path: Path) -> dict[str, str]:
 class EvaluationSettings:
     models_enabled: bool
     model_manifest: Path | None
+    behaviour_threshold: float | None = None
 
 
 def load_evaluation() -> EvaluationSettings:
@@ -63,7 +64,16 @@ def load_evaluation() -> EvaluationSettings:
     path = Path(manifest).expanduser().resolve()
     if not path.is_file():
         raise SettingsError(f"configured model manifest does not exist: {path}")
-    return EvaluationSettings(models_enabled=True, model_manifest=path)
+    raw = os.environ.get("LEASH_BEHAVIOUR_THRESHOLD")
+    threshold = None
+    if raw:
+        try:
+            threshold = float(raw)
+        except ValueError as exc:
+            raise SettingsError("LEASH_BEHAVIOUR_THRESHOLD must be a number strictly between 0 and 1") from exc
+        if not 0 < threshold < 1:
+            raise SettingsError("LEASH_BEHAVIOUR_THRESHOLD must be strictly between 0 and 1")
+    return EvaluationSettings(models_enabled=True, model_manifest=path, behaviour_threshold=threshold)
 
 
 @dataclass(frozen=True)
