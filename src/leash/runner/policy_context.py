@@ -66,7 +66,10 @@ def refresh(
         "rules": effective["rules"],
         "uncertainty_policy": effective["uncertainty_policy"],
         "version": record["version"] + edits["revision"],
-        "hash": draft_hash(draft["instruction"], effective["rules"], effective["uncertainty_policy"]),
+        "hash": draft_hash(
+            draft["instruction"], effective["rules"], effective["uncertainty_policy"],
+            hash_version=draft["hash_version"], boundary_cases=draft.get("boundary_cases"),
+        ),
     }
     policy = PolicyDraft.model_validate(effective_draft)
     data = event.model_dump(mode="python")
