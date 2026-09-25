@@ -72,6 +72,8 @@ Update, 2026-09-25 09:34 CEST: the M4 row above describes the 09:14 check. Runne
 
 Provider-doc check, 2026-09-25 09:40 CEST: TypeSafe's [HTTP reference](https://docs.typesafe.ai/api.md) calls Choice probabilities floats that sum to one; its [Python response reference](https://docs.typesafe.ai/sdk/python/api/types/responses.md) says they sum to approximately one. Neither defines a tolerance or a request control for output precision. The local contract's 0.000001 threshold remains in force and both captured 0.99 responses remain invalid. The owner must agree any change to that contract before the adapter accepts a different distribution shape.
 
+Upstream check, 2026-09-25 09:43 CEST: OpenRouter's [AI SDK Jev Decisions adapter PR #562](https://github.com/OpenRouterTeam/ai-sdk-provider/pull/562) declares `probabilityDecimals: 2` and `scoreDecimals: 2` because its Decisions API returns two-decimal values. Its source diff sets `rounding: DECISIONS_ROUNDING` on evaluation results. [typia issue #2420](https://github.com/samchon/typia/issues/2420) records that three two-decimal probabilities can sum to 0.99 and describes accepting declared rounding precision in the AI SDK. Our runner calls `/api/v1/systemone`, whereas that adapter targets `/api/alpha/decisions`; this source is corroborating evidence, not a verified precision declaration for our exact route. The two captured responses themselves show 0.99. No local tolerance change or new provider request followed this research.
+
 ## Open items after M0
 
 The open items from startup are answered in [02-classifier-m0.md](02-classifier-m0.md):
