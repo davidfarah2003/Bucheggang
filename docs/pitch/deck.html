@@ -23,12 +23,23 @@
     .stat { flex: 1 1 180px; padding: 1.4rem; border-radius: 1rem; background: #152638; }
     .stat b { display: block; font-size: clamp(2.5rem, 5vw, 5rem); color: #72e7cc; }
     .stat span { font-size: clamp(1rem, 1.7vw, 1.5rem); }
-    .small { font-size: clamp(.85rem, 1.3vw, 1.15rem); color: #a9bdcc; }
+    .small { font-size: clamp(1.05rem, 1.5vw, 1.4rem); color: #c4d3df; }
     footer { position: fixed; bottom: 2.5vh; left: 8vw; right: 8vw; display: flex; justify-content: space-between; gap: 1rem; color: #a9bdcc; font-size: .9rem; }
     a { color: #72e7cc; }
     button { border: 1px solid #72e7cc; border-radius: .5rem; background: #152638; color: #f5f7fb; padding: .35rem .7rem; cursor: pointer; }
     @media print { section, section.active { display: flex; min-height: 100vh; break-after: page; } footer { display: none; } }
     @media (max-width: 640px) { section { padding: 5vh 6vw 12vh; } footer { left: 6vw; right: 6vw; } .arrow { display: none; } }
+    @media screen and (max-height: 600px) {
+      section { min-height: 100vh; padding-top: 1rem; padding-bottom: 3.5rem; gap: .8rem; }
+      h1, h2 { font-size: clamp(2rem, 5vw, 3.5rem); }
+      p { font-size: clamp(1rem, 2vw, 1.4rem); }
+      .flow { font-size: clamp(1rem, 1.8vw, 1.4rem); }
+      .box { padding: .65rem .8rem; }
+      .stat { padding: .6rem; }
+      .stat b { font-size: clamp(2rem, 4vw, 3rem); }
+      .small { font-size: 1.05rem; }
+      footer { bottom: .4rem; }
+    }
   </style>
 </head>
 <body>
