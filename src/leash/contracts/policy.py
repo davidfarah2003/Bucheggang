@@ -98,6 +98,8 @@ class BoundaryCase(Contract):
         if sorted(item_ids) != sorted(fact_ids):
             raise ValueError(f"case {self.description!r}: facts cover {sorted(fact_ids)}, event items are {sorted(item_ids)}")
         for row in self.history.authorizations:
+            if row.card_id != auth.card_id:
+                raise ValueError(f"case {self.description!r}: history row {row.authorization_id} is for card {row.card_id}, the purchase is on {auth.card_id}")
             if row.timestamp >= auth.timestamp:
                 raise ValueError(f"case {self.description!r}: history row {row.authorization_id} is not before the purchase")
         return self
