@@ -1,6 +1,6 @@
 # 05 Simulator runner
 
-- Status: foundation, replay and original-theme reports merged in #31, #32 and #34; ownership and Activity repairs merged in #41 and #43. Deadline handling is merged in #50. Durable intents and customer coordination are merged in #58 (eb78312). The live-call gate is lifted (Log, 05:05); the first live run since is the 10:30 dry run.
+- Status: foundation, replay and original-theme reports merged in #31, #32 and #34; ownership and Activity repairs merged in #41 and #43. Deadline handling is merged in #50. Durable intents and customer coordination are merged in #58 (eb78312). The live-call gate is lifted (Log, 05:05); a dry run is scheduled for 10:30 and no live run has been recorded since the gate lifted.
 - Owner: David (proposed)
 - Lane: runner. Channel `team.zurichbuchegg.runner`, branch `lane/runner`, worktree `.worktrees/runner`
 - User flow step: everything between "mandate confirmed" and "decision recorded": mandate calls, scenario start, polling, deadlines, decision submission, `/resolve`, state persistence, offline replay
@@ -57,7 +57,7 @@ Out:
 
 These four runs finalized 50 attempts: 49 local declines and one platform-only timeout. No customer answers were sent and no purchase was approved. Missing history on the live cards kept otherwise compliant purchases uncertain, and unanswered step-ups declined after the real timeout. This verifies runner behavior, not purchase-decision accuracy or a successful customer approval journey.
 
-Known limits: the household downtime timeout remains recorded; the pending-state restart check had zero approvals and therefore does not demonstrate preservation of nonzero approved spend; the accepted-submit-before-persistence gap is closed by the intents in #58; smoke evaluators and timeout substitute decisions are gone since #50. HTTP timeouts report unknown remote outcomes; durable intents and reconciliation remain P3 work. A live revocation with requests already queued remains a Friday verification item. Model-enabled runner/app integration stays under the classifier lane's separate review and release hold.
+Known limits: the household downtime timeout remains recorded; the pending-state restart check had zero approvals and therefore does not demonstrate preservation of nonzero approved spend; the accepted-submit-before-persistence gap is closed by the intents in #58; smoke evaluators and timeout substitute decisions are gone since #50. HTTP timeouts report unknown remote outcomes; durable intents and reconciliation are implemented in #58 and not yet exercised against the live simulator. A live revocation with requests already queued remains a Friday verification item. Model-enabled runner/app integration stays under the classifier lane's separate review and release hold.
 
 ## Decisions
 

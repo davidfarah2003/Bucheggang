@@ -21,7 +21,7 @@ Recorded state: 25 September 2026, before the morning dry run. Unchecked items b
 - [ ] Start the Wallet following [run-wallet.md](run-wallet.md) and the external shopping agent following [mcp-client.md](mcp-client.md). Keep credentials out of terminals captured for the presentation.
 - [ ] Read the live bootstrap through the runner client. Record the currently available scenario IDs and deadline windows. Public offline IDs are not live team IDs.
 - [ ] Select a live scenario whose purchase purpose matches the actual confirmed instruction. Do not copy the shoes instruction into a grocery scenario to force a chosen result.
-- [ ] Runtime models stay off for this run; the real-provider exercise has not passed (docs/eval/jev-public-2026-09-25.md). Record that Jev and the behavioural model are off.
+- [ ] Runtime models stay off for this run; the real-provider exercise has not passed (evidence in PR #70, docs/eval/jev-public-2026-09-25.md once merged). Record that Jev and the behavioural model are off.
 
 ## Customer flow
 
