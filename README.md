@@ -7,11 +7,17 @@
 
 Purchase controls for AI shopping agents.
 
+<p align="center">
+  <a href="https://github.com/davidfarah2003/Bucheggang/releases/download/demo-2026-09-25/leash-user-flow.mp4">
+    <img src="docs/assets/readme/watch-demo.svg" width="288" height="72" alt="Watch the demo">
+  </a>
+</p>
+
 Leash gives your agent a spending policy that you review in the Wallet. You decide what it may buy, which merchants it may use and how much it may spend. Each submitted purchase is checked against those rules and earlier account activity. Decisions include the checks and reasons behind them.
 
 Built for the [Viseca challenge](viseca-2026/challenge.md). This prototype records purchase authorizations; it doesn't place orders or process payments.
 
-[Watch the demo](https://github.com/davidfarah2003/Bucheggang/releases/download/demo-2026-09-25/leash-user-flow.mp4) · [How it works](#how-it-works) · [Architecture](#architecture) · [Classifier](#the-classifier) · [Run locally](#run-locally)
+[How it works](#how-it-works) · [Architecture](#architecture) · [Classifier](#the-classifier) · [Run locally](#run-locally)
 
 ## How it works
 
