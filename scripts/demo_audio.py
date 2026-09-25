@@ -60,7 +60,8 @@ def cue(kind: str) -> np.ndarray:
     if kind == "chime":
         return _seq([(1174.66, 0.0), (1567.98, 0.07)], 0.5, 0.3)
     if kind == "deny":
-        return _seq([(392.0, 0.0), (349.23, 0.09)], 0.35, 0.28, (1.0, 0.35, 0.12))
+        # Two low, hollow notes falling a semitone: reads as a no, nothing like the reward sounds.
+        return _seq([(196.0, 0.0), (185.0, 0.17)], 0.3, 0.42, (1.0, 0.0, 0.5, 0.0, 0.22))
     if kind == "connect":
         # Soft two-note pop: the agent is paired.
         return _seq([(783.99, 0.0), (1046.5, 0.09)], 0.3, 0.28, (1.0, 0.25))

@@ -59,9 +59,10 @@ class Stage:
         await self.page.evaluate("([n,a]) => window.tool(n,a)", [name, args])
         await asyncio.sleep(hold)
 
-    async def done(self, hold: float = 0.4, sound: str | None = None):
+    async def done(self, hold: float = 0.4, sound: str | None = None, status: str = "ok"):
         # Silent by default. Only the four events that change something for Alex get a sound.
-        await self.page.evaluate("() => window.done()")
+        # status "ok" is a green check, "ask" amber, "bad" a red cross on the tool line and the panel.
+        await self.page.evaluate("(s) => window.done(s)", status)
         if sound:
             self.cue(sound)
         await asyncio.sleep(hold)
@@ -110,6 +111,11 @@ class Stage:
         await self.click(selector, after=0.2)
         await self.frame.locator(selector).first.type(text, delay=int(per_char * 1000))
         await asyncio.sleep(0.15)
+
+    async def scroll_to(self, selector: str, block: str = "start", settle: float = 0.7):
+        """Smooth-scroll the Wallet overlay so the element is in view; no wheel, so it cannot overshoot."""
+        await self.frame.evaluate("([q,b]) => document.querySelector(q).scrollIntoView({behavior:'smooth', block:b})", [selector, block])
+        await asyncio.sleep(settle)
 
     async def scroll(self, dy: int, steps: int = 16):
         # Wheel over the phone's viewport position; the iframe scrolls whatever is under the mouse.
@@ -229,8 +235,8 @@ async def main() -> None:
             await s.tool("buy", "mandate_id, cart[1], merchant=Alpine Basket, total_chf=35.0, facts[1]")
 
             await wait_for_agent(log, "agent: buy ->")
-            await s.done(0.1)
-            await s.say("agent", "The Wallet wants your word on this one.", 0.1)
+            await s.done(0.1, status="ask")
+            await s.say("agent ask", "The Wallet wants your word on this one.", 0.1)
             await s.tool("wait_for_purchase", "authorization_id", 0.15)
             await s.click('[data-action="wallet-tab"][data-tab="needs"]', after=0.15)
             await s.frame.wait_for_selector('[data-action="open-pending"]', timeout=15000)
@@ -244,9 +250,8 @@ async def main() -> None:
             await s.say("agent", "Approved. Trying a second shop for the missing items.", 0.15)
             await s.tool("buy", "mandate_id, merchant=Fresh Corner Market, total_chf=35.0")
             await wait_for_agent(log, "agent: done")
-            await s.done(0.1)
-            s.cue("deny")
-            await s.say("agent", "Declined: shops you already use only, and this card has never bought there.", 0.7)
+            await s.done(0.1, sound="deny", status="bad")
+            await s.say("agent bad", "Declined: shops you already use only, and this card has never bought there.", 0.7)
 
             # Why: the decision pipeline and the live probabilities, with the explainer on the left.
             await s.caption("Every decision on record, with the reason.", 0.3)
@@ -256,13 +261,13 @@ async def main() -> None:
             await s.click('[data-action="inspector"][data-tab="summary"]', after=0.2)
             await s.click('[data-action="inspector"][data-tab="pipeline"]', after=0.15)
             await s.caption("", 0.0)
-            await page.evaluate("() => window.scene('tech', 'How the Wallet judges a cart.')")
-            await s.zoom(PHONE_CX, 470, 1.6, 500, hold=0.15, cx=1150)
-            await s.scroll(900, steps=8)
+            await page.evaluate("() => window.scene('tech', 'What the Wallet checks before it says yes.')")
+            await s.zoom(PHONE_CX, 470, 1.6, 500, cx=1150)
+            await s.scroll_to(".model-detail", "start")
+            await asyncio.sleep(1.5)
+            await s.zoom(PHONE_CX, 560, 1.9, 600, cx=1150)
+            await s.scroll_to(".stage.outcome", "end")
             await asyncio.sleep(1.8)
-            await s.zoom(PHONE_CX, 560, 1.9, 600, hold=0.15, cx=1150)
-            await s.scroll(520, steps=6)
-            await asyncio.sleep(2.0)
             await s.zoom_out(500)
             await page.evaluate("() => window.hideCursor()")
             s.cue("swell")
