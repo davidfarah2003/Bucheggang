@@ -950,7 +950,7 @@ document.addEventListener("click", async (event) => {
     if (action === "wallet-tab") { state.walletTab = button.dataset.tab; navigate("wallet", { keepScroll: true }); return; }
     if (action === "activity-filter") { state.activityFilter = button.dataset.filter; document.querySelector("#activity-list").innerHTML = activityRows(); document.querySelectorAll(".activity-tabs [role=tab]").forEach((tab) => { const active = tab === button; tab.classList.toggle("selected", active); tab.setAttribute("aria-selected", String(active)); tab.tabIndex = active ? 0 : -1; }); return; }
     if (action === "auth-mode") { if (!["login", "register"].includes(button.dataset.mode)) throw new Error("Unknown account action."); state.authMode = button.dataset.mode; renderLogin(); return; }
-    if (action === "decline-pair") { clearPairLink(); navigate(requestedRoute()); return; }
+    if (action === "decline-pair") { clearPairLink(); navigate(requestedRoute("")); return; }
     if (action === "refresh-agents") { void render(); return; }
     if (action === "open-draft") {
       const id = text(button.dataset.id, "Spending request ID");
@@ -1006,7 +1006,7 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "reload") { void render(); return; }
-    if (action === "clear-invalid-link") { if (state.route === "pair") clearPairLink(); else clearDraftLink(); navigate(requestedRoute()); return; }
+    if (action === "clear-invalid-link") { if (state.route === "pair") clearPairLink(); else clearDraftLink(); navigate(requestedRoute("")); return; }
     button.disabled = true;
     if (action === "select-mandate") {
       const id = text(button.dataset.id, "Selected permission ID");
@@ -1063,7 +1063,7 @@ document.addEventListener("click", async (event) => {
       if (code !== state.pairingCode || !state.pairing || validTime(state.pairing.expires_at, "Connection expiry") <= Date.now()) throw new Error("The agent connection link has expired or changed. Reload it before approving.");
       await walletApi.approvePairing(code);
       clearPairLink();
-      navigate(requestedRoute());
+      navigate(requestedRoute(""));
       toast("Connection approved. Return to your agent to finish pairing.", "success");
     } else if (action === "revoke-agent") {
       const id = text(button.dataset.id, "Agent ID");
