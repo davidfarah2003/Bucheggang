@@ -19,9 +19,9 @@ PROMPT_VERSION = "history-risk-1"
 DEADLINE_RESERVE_SECONDS = 2.25
 MINIMUM_RECHECK_SECONDS = 2.0
 MAX_RESPONSE_BYTES = 64_000
-# The provider rounds each probability to two decimals (OpenRouterTeam/ai-sdk-provider #562), so
-# three rounded options may sum to 0.985..1.015. Accept that bound; never renormalize.
+# Accept bounded two-decimal provider rounding only; never renormalize.
 PROBABILITY_SUM_TOLERANCE = 0.015
+PROBABILITY_GRID_TOLERANCE = 1e-12
 QUESTIONS = {
     "spend_pattern": {
         "type": "choice",
@@ -88,8 +88,13 @@ def _parse_response(text: str, latency_ms: int) -> SemanticAssessment:
         if not all(type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1
                    for value in probabilities.values()):
             raise JevResponseError(f"{question_id}: non-finite or out-of-range probability")
-        if not math.isclose(sum(probabilities.values()), 1.0, rel_tol=0, abs_tol=PROBABILITY_SUM_TOLERANCE):
-            raise JevResponseError(f"{question_id}: probabilities do not sum to one")
+        if any(not math.isclose(value, round(value, 2), rel_tol=0,
+                                abs_tol=PROBABILITY_GRID_TOLERANCE)
+               for value in probabilities.values()):
+            raise JevResponseError(f"{question_id}: probabilities are not on the two-decimal grid")
+        total = sum(probabilities.values())
+        if not math.isclose(total, 1.0, rel_tol=0, abs_tol=PROBABILITY_SUM_TOLERANCE):
+            raise JevResponseError(f"{question_id}: probabilities sum to {total:.6g}, expected one within 0.015")
         top = max(probabilities.values())
         winners = [option for option, value in probabilities.items() if value == top]
         choice = answer.get("choice")
