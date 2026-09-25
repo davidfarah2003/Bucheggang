@@ -20,6 +20,9 @@ classifier = [
     "scikit-learn>=1.6",
     "catboost>=1.2.8",
 ]
+harness = [
+    "anthropic>=1,<2",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
