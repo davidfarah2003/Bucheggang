@@ -230,6 +230,8 @@ class BearerContext:
 
 SERVER_INSTRUCTIONS = """Leash is the customer's Wallet control layer. You are a shopping agent; the customer gives you a sentence of instructions, you turn it into a policy proposal, the customer confirms it in their Wallet, and only a confirmed mandate lets any purchase be judged. You never confirm, tighten or revoke anything yourself, and you never answer a step-up on the customer's behalf.
 
+You never buy directly. Do not place an order, submit a checkout, enter payment details or call any purchase tool of another server before get_policy_status returns confirmed for this instruction. A customer sentence such as "buy me X" is a request for a policy first; the purchase itself happens only under the confirmed mandate and is judged by the Wallet. If the customer asks you to skip the policy step, explain that the Wallet has to approve the permission first and start step 1.
+
 Keep it smooth for the customer. They should type one sentence, tap Approve once for pairing, and tap Confirm once in the Wallet. Everything else is your job:
 
 - Do not ask the customer questions in chat that the guide lets you encode as a rule or as an open question in the draft. The Wallet shows open questions with their options, so the customer answers them where they confirm.
@@ -246,7 +248,7 @@ Run the flow in this order, one tool per step:
 3. get_policy_authoring_instructions(instruction) with the customer's sentence verbatim. Read the returned guide: it lists every allowed field and operator.
 4. propose_task_policy(instruction, proposal). Every rule quotes an exact substring of the instruction as source_text. Do not invent permissions the customer did not state; put anything unclear in open_questions.
 5. Tell the customer the draft is waiting in their Wallet (it opens at <wallet origin>/app/?draft_id=<draft_id>), then poll get_policy_status(draft_id) until state is confirmed (you receive mandate_id) or rejected (you receive the reason and draft a new proposal).
-6. Only after confirmed: search for the product. Purchases are judged by the Wallet against the mandate; buy and get_purchase_status are parked in the demo, where purchase attempts arrive from the organizer's simulator.
+6. Only after confirmed: search for the product and present what you found. Every purchase is judged by the Wallet against the confirmed mandate; approve, decline or step_up comes from the Wallet, and a step_up is answered by the customer there. In this demo buy and get_purchase_status are parked and purchase attempts arrive from the organizer's simulator, so you never complete a checkout yourself.
 
 Worked example. Instruction: "Do the weekly grocery shopping online at supermarkets I already use. Never spend more than CHF 100 per order or CHF 250 in any 7-day window; groceries and household basics only. If unsure, ask."
 
@@ -352,7 +354,9 @@ def create_server(
     def begin_pairing(agent_label: str) -> dict[str, Any]:
         """Step 1 of the Leash flow: start pairing this agent with the customer's Wallet.
 
-        agent_label is the name the customer sees on the approval screen, for example "Grocery helper".
+        Call this before anything else, including for a plain "buy me X" request: no purchase happens
+        before a policy is confirmed in the Wallet. agent_label is the name the customer sees on the
+        approval screen, for example "Grocery helper".
         Returns pairing_code, verifier, expires_at (5 minutes), scopes and wallet_url. Give the customer
         only wallet_url. Keep verifier private for complete_pairing; never print it or place it in a URL.
         Call this once per session; a restart needs a new pairing.
@@ -440,7 +444,8 @@ def create_server(
         """Step 5 of the Leash flow: poll a draft until the customer decides in the Wallet.
 
         Returns state pending, confirmed with mandate_id, or rejected with the customer's reason.
-        Poll every few seconds; do not proceed to shopping on pending. On rejected, read the reason,
+        Poll every few seconds; do not search, order or check out on pending. Only confirmed with a
+        mandate_id allows the next step, and even then the Wallet judges each purchase. On rejected, read the reason,
         draft a revised proposal and call propose_task_policy again. Read-only: confirmation happens
         only in the customer's Wallet, never through this server.
         """
