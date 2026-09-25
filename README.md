@@ -20,52 +20,58 @@ Built for the [Viseca challenge](viseca-2026/challenge.md). This prototype recor
 3. The agent submits a cart and final amount. Leash evaluates the request against the confirmed policy, spending state and purchase history.
 4. Check the result in the Wallet. Requests needing your review wait for your answer and decline if the response window expires.
 
-<img src="docs/assets/readme/wallet.png" width="1440" alt="The Wallet's shopping request, policy review and account-wide spending-limit screens.">
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/readme/wallet.png">
+  <img src="docs/demo/leash-user-flow.gif" width="1280" alt="Recorded user flow: connect an agent, confirm its policy, review a purchase and inspect the decision in the Wallet.">
+</picture>
 
-<sub>Local demo screens with an unconfirmed example policy.</sub>
+<sub>Recorded demo with scripted Wallet interactions. No payment is made. The reduced-motion view shows local example screens.</sub>
 
 Demo music: "Wallpaper" by Kevin MacLeod (incompetech.com), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). [Music credits](docs/demo/music/README.md). Re-record the video with `scripts/record_demo.py`.
+
 The Wallet also lets you revoke an agent's access and edit account-wide spending rules. Those rule changes apply to later policy confirmations. An agent's connection alone grants no spending permission.
 
 ## Architecture
 
-An external shopping agent calls Leash through MCP. The FastAPI backend serves the Wallet and handles policy confirmation and purchase requests. The decision engine evaluates structured inputs separately from transport and storage.
+The Wallet is a browser app served by FastAPI. Agents connect to a separate MCP server over stdio or HTTP. Both use the policy and purchase services; the simulator runner uses the same extraction and evaluation modules.
 
-<img src="docs/assets/readme/architecture.png" width="1280" alt="The shopping agent and customer Wallet send requests to the Leash backend. The backend calls the decision engine and stores policies, evidence and state.">
+<img src="docs/assets/readme/architecture.png" width="1280" alt="Technical architecture: browser, MCP client and simulator connect to separate Python entry points. Shared policy and purchase services coordinate extraction, the pure decision engine, optional model assessments and JSON stores. CatBoost runs locally; Jev is called through OpenRouter.">
 
-Merchant descriptions are extracted into typed facts with source references. Merchant text cannot change the confirmed policy. Decisions and their evidence are saved alongside policy versions and spending state, so the Wallet can show what was checked.
+Pydantic contracts carry purchase inputs, extracted facts and assessments between modules. The decision engine performs no network calls. CatBoost runs from a local calibrated model artifact; optional Jev requests go through OpenRouter. File-backed records use locks and atomic writes for policies, decisions and spending state.
 
 [Technical contracts](docs/contracts.md) · [Agent connection and tools](docs/setup.md#connect-an-agent)
 
 ## The classifier
 
-### From purchase to decision
+### History inputs and model outputs
 
-The engine checks the confirmed rules first, including amount, merchant and product restrictions. A failed rule means decline. History checks use activity from before the purchase; optional behavioural and Jev assessments add information about unusual activity. Model output cannot override a failed rule.
+CatBoost scores purchase and account-history features to estimate historical decline probability. Jev returns separate probability distributions for spending and activity patterns, each over `ordinary`, `unclear` and `unusual`. Both use activity from before the purchase.
 
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/readme/classifier.png">
-  <img src="docs/assets/readme/classifier.gif" width="1280" alt="Animated example: a purchase meets its confirmed rules, history flags a new device, and the request moves to customer review.">
+  <img src="docs/assets/readme/classifier.gif" width="1280" alt="Purchase and earlier account history feed CatBoost and Jev. Recorded CatBoost score: 3.0%. Jev spending probabilities: ordinary 75%, unclear 16%, unusual 9%; activity: ordinary 74%, unclear 2%, unusual 24%.">
 </picture>
 
-| Decision | What happens |
-| :--- | :--- |
-| `approve` | The request is allowed under the confirmed policy. |
-| `decline` | A check failed, or the policy requires declining the uncertainty. |
-| `step_up` | The Wallet asks the customer to review the request. |
+CatBoost adds an uncertain check when its score reaches the configured review threshold. Jev adds uncertainty when the highest-probability answer is unusual, unclear or tied. These checks join the policy checks; neither model grants spending permission on its own.
 
-The confirmed policy determines how uncertain facts are handled. Conflicting facts cannot produce an automatic approval.
+### Combining policy and history
 
-### Reasons you can inspect
-
-The Wallet shows the decision reason and the checks that ran, with history and model output when available. Required model assessments are validated against the purchase they describe. Missing, invalid or timed-out required assessments stop authorization.
+The engine checks the confirmed policy first. A failed rule means decline, and the configured evaluator skips model calls for that request. Otherwise, the model assessments contribute their checks to the final decision.
 
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/readme/evidence.png">
-  <img src="docs/assets/readme/evidence.gif" width="1280" alt="Animated decision evidence expands into a recorded Jev probability breakdown, followed by an illustrated assessment-error case that stops authorization.">
+  <img src="docs/assets/readme/evidence.gif" width="1280" alt="Policy checks and history evidence combine into an approval in the recorded example. An illustrated amount-rule failure then produces a decline and skips model assessments.">
 </picture>
 
-<sub>Both animations illustrate the evaluation flow. The Jev probabilities come from a [recorded response](docs/eval/jev-public-2026-09-25-evidence.json), not a live purchase.</sub>
+| Decision | What produces it |
+| :--- | :--- |
+| `approve` | Checks pass, or the confirmed policy permits the remaining uncertainty. |
+| `decline` | A rule fails, or the policy requires declining uncertainty. |
+| `step_up` | Uncertainty requires customer review in the Wallet. |
+
+Conflicting facts cannot receive an automatic approval. The Wallet shows the decision reason and its evidence, including model outputs when available. Required assessments are bound to the purchase they describe; missing, invalid or timed-out assessments stop authorization.
+
+<sub>Model values come from a [recorded offline composition](docs/eval/classifier-composition-2026-09-25.json). CatBoost escalation was disabled in that recording. The rule-failure branch is illustrated; no payment is represented.</sub>
 
 ## Run locally
 
