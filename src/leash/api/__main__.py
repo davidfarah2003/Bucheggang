@@ -16,8 +16,11 @@ def main() -> None:
     store_root = os.environ.get("LEASH_POLICY_STORE")
     if not store_root:
         raise RuntimeError("LEASH_POLICY_STORE must point to the policy MCP server's shared draft directory")
-    app = create_app(DraftStore(Path(store_root)), mandates, StepUpBook())
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("LEASH_PORT", "8000")))
+    app_origin = os.environ.get("LEASH_APP_ORIGIN")
+    if not app_origin:
+        raise RuntimeError("LEASH_APP_ORIGIN must be the Wallet API origin")
+    app = create_app(DraftStore(Path(store_root)), mandates, StepUpBook(), app_origin=app_origin)
+    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("LEASH_PORT", "8000")), access_log=False)
 
 
 if __name__ == "__main__":
