@@ -11,27 +11,27 @@
 
 ## Goal
 
-The current demo is the standalone Viseca Wallet at `/app/`: it loads the single pending task draft named by `?draft_id=<id>`, lets the customer confirm it, then shows that mandate across four screens and the judge panel. It does not require the customer to open or configure a Shopping Harness; an external MCP-compatible agent can create the draft and link directly to the Wallet. The product target is one mobile-first web app with distinct Shopping Harness and Wallet pages or swipeable views over the same backend. Neither interface computes purchase decisions or holds the challenge key. The app targets a 400 px phone viewport.
+The current demo has Shop, Wallet and Activity at `/app/`. Shop copies a free-form request for an external MCP-compatible shopping agent. Wallet lists account-owned proposed drafts and confirmed permissions, opens a saved proposal through `?draft_id=<id>`, takes the customer's confirmation or step-up answer, and shows recorded decisions. No Shopping Harness setup is required. The current app has no built-in shopping model or purchase-initiation route. Purchase decisions and the challenge key stay server-side. The app targets a 400 px phone viewport.
 
 ## Scope
 
 In:
 
 1. Wallet request page at `/app/?draft_id=<id>`: the customer's sentence, readable rules, source phrases, example outcomes and open-question options. Confirm sends the draft's `version` and `hash`; Reject sends its version, hash and reason.
-2. Step-up screen: what is being bought, from whom, for how much; the one reason the engine paused (`customer_message`); a countdown from `expires_at`; Approve and Reject for a pending step-up.
-3. Policy page: the one confirmed mandate for this demo, its rules, spend so far, purchase count, Tighten and Revoke.
+2. Step-up screen: what is being bought, from whom, for how much; the backend's pause explanation (`customer_message`) and recorded checks; a countdown from `expires_at`; Approve and Decline for a pending step-up.
+3. Rules page: a selected account-owned permission, its effective rules and account-wide version, spend so far, purchase count, Tighten and Revoke.
 4. History: every decision for the mandate with its outcome and one-line reason; tapping one opens the judge panel.
 5. Judge panel: the `Event` as received (with `item_details` shown verbatim and marked untrusted), every `Check` with value and source, the state before and after, elapsed time, engine version, mandate version.
 
 Out:
 
-- Real Viseca authentication. A local username is enough for the demo; production authentication remains with Viseca.
+- Real Viseca authentication. The demo uses a local password account; production authentication remains with Viseca.
 
 ## Steps
 
-1. Serve the standalone mobile-first Wallet at `/app/`, with the draft ID in the query URL. Use plain HTML, CSS and JavaScript in `app/`, served by FastAPI. No frontend build step. It must work at 400 px wide.
+1. Serve mobile-first Shop, Wallet and Activity at `/app/`, with a direct draft link in the query URL. Use plain HTML, CSS and JavaScript in `app/`, served by FastAPI. No frontend build step. It must work at 400 px wide.
 2. Load the named saved proposal through the backend. Never read a sample JSON file after the route exists. There is no mock mode.
-3. Build the confirmation flow, single active-mandate view, step-up screen, history and judge panel.
+3. Build the confirmation flow, owned permission chooser, step-up screen, history and judge panel.
 4. Polling: the step-up list refreshes every 2 s; a pending step-up that the runner has already resolved (timeout) disappears with a note.
 5. Capture screenshots of the Wallet screens in `docs/screens/` for the pitch deck.
 
@@ -68,10 +68,9 @@ Out:
 
 - Add the Shopping Harness as a separate page or swipeable view in the same web app. It offers configured agent or model providers including Apertus, ChatGPT/OpenAI, Claude/Anthropic, Grok/xAI, Gemini/Google and DeepSeek. Provider errors are visible and never trigger a silent model switch. The harness is optional; the customer can use the Wallet directly with drafts created by an external MCP-compatible agent.
 - Connect the selected agent to the existing policy-authoring MCP tools. The agent proposes and previews policy; only the Wallet confirms it.
+- After the expert round, a built-in Harness hands the customer to the trusted Wallet with only a server-persisted `draft_id` or `authorization_id`. For a proposal, `GET /drafts/{draft_id}` supplies the saved content and the owned `GET /drafts?state=all` summary supplies `proposed`, `confirming`, `confirmed` or `rejected` state. Shopping resumes only after the backend reports `confirmed`; a rejection gives the agent no purchasing authority. For a purchase review, the Wallet finds the owned authorization in `GET /step-ups/pending` and reads the latest accepted result from `GET /decisions/{authorization_id}` after the customer's answer or timeout. The agent flow resumes on that accepted result; a decline or timeout stops the purchase. No agent-supplied policy copy or customer answer crosses the link. David owns the runner and engine event-link contract after 17:30; no new callback or HTTP route is specified for the current demo.
 - Present supported numeric policy limits with clear units and editable sliders. Any uncertainty band must map to an explicit backend rule; otherwise show it as an open question. Do not approximate policy meaning in the UI.
-- Add a pending-draft inbox and a list of confirmed mandates after the current live flow works end to end. The Wallet must remain directly usable without the Harness. Agree any required list-route contracts before implementation.
-- Add persistent account-wide global policy controls after the live runner loop, app step-up flow and replay work end to end. Do not add `GlobalPolicy` to `docs/contracts.md` or the engine signature before then.
-- When global policies are added, compose their rules with the task rules into one effective `PolicyDraft` at confirmation and hash exactly what is sent to the simulator. The live API supports one active mandate per team; a new confirmation supersedes it, and hard-rule PATCH returns `409 mandate_widening` even for an unchanged list. Global updates therefore apply on the next confirmed mandate; the Wallet must disclose when an existing active mandate still uses the earlier version.
+- Add account-wide rule editing to the Wallet after the live flow is demonstrated. The backend already provides `GET/PUT /global-policy`; the UI must send the expected version and hash, show a 409 conflict, and make clear that changes apply on the next confirmed permission. The current Rules view only reads and compares the saved account-wide version.
 
 ## Mobile interaction revision
 
@@ -127,7 +126,7 @@ The merged identity contract in `docs/contracts.md` replaces the username-only d
 
 An agent begins pairing over MCP and hands the customer `/app/?pair=<code>`. The Wallet requires sign-in, reads `GET /pairing/{code}`, shows the agent label, fixed proposal/read scopes, expiry and local username that will own the connection, then waits for an explicit customer click on Approve. `POST /pairing/{code}/approve` returns 204; the page removes the code from its URL and tells the customer to return to the agent to finish pairing. The browser never receives the private verifier or agent token. The account overlay links to `GET /agents`; an owned agent can be revoked with `POST /agents/{id}/revoke` after a confirmation dialog. The page sets a no-referrer meta policy, while the API must also serve the pairing page with `Referrer-Policy: no-referrer`.
 
-`GET /drafts?state=all` now includes account-owned `proposed` drafts. Needs you lists them and opens the selected draft for review without requiring a copied link. Pending purchases and request summaries refresh together; a missing linked draft from the owned list is an error. The app branch must not merge until the policy backend implements the account, pairing, agent and draft-ownership routes, and the actual browser flow has been opened against those routes. A customer must make any real pairing approval or purchase decision.
+`GET /drafts?state=all` includes account-owned `proposed` drafts. Needs you lists them and opens the selected draft for review without requiring a copied link. Pending purchases and request summaries refresh together; a missing linked draft from the owned list is an error. Backend account, pairing, agent and draft-ownership routes merged before app #82. Local browser checks exercised registration, login and Pair readback against those routes. An independent reviewer used disposable accounts to check Pair approval, agent completion and revocation. A live customer pairing, permission confirmation or purchase answer still requires that customer's action.
 
 ## Log
 
