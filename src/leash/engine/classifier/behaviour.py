@@ -1,4 +1,4 @@
-"""Load and score one versioned evaluation-only history model."""
+"""Load one versioned history model with an explicit operating-point selection."""
 
 from __future__ import annotations
 
@@ -27,10 +27,38 @@ def _sha256(path: Path) -> str:
 
 
 class BehaviorModel:
-    """Explicit evaluation configuration; this class never enables escalation."""
+    """Score an explicit evaluation or selected operating-point configuration."""
 
     def __init__(self, manifest_path: Path = DEFAULT_MANIFEST):
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        configuration_bytes = manifest_path.read_bytes()
+        configuration = json.loads(configuration_bytes)
+        threshold = None
+        operating_id = None
+        if "base_manifest" in configuration:
+            relative = Path(configuration["base_manifest"])
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError("operating point base manifest leaves the repository")
+            base_path = (ROOT / relative).resolve()
+            if not base_path.is_relative_to(ROOT.resolve()):
+                raise ValueError("operating point base manifest symlink leaves the repository")
+            base_bytes = base_path.read_bytes()
+            if hashlib.sha256(base_bytes).hexdigest() != configuration["base_manifest_sha256"]:
+                raise ValueError("operating point base manifest SHA-256 differs")
+            if configuration["release_status"] != "o4_selected_pending_integrated_review":
+                raise ValueError("operating point release status is unexpected")
+            threshold = configuration["score_cut"]
+            if type(threshold) is not float or not math.isfinite(threshold) or not 0 < threshold < 1:
+                raise ValueError("operating point score cut must be a finite fraction")
+            manifest = json.loads(base_bytes)
+            if not any(
+                proposal["requested_rate"] == configuration["requested_june_rate"]
+                and proposal["score_cut"] == threshold
+                for proposal in manifest["june_threshold_proposals"]
+            ):
+                raise ValueError("operating point differs from the frozen June proposals")
+            operating_id = hashlib.sha256(configuration_bytes).hexdigest()[:16]
+        else:
+            manifest = configuration
         if manifest["feature_schema_version"] != FEATURE_SCHEMA_VERSION:
             raise ValueError("model manifest has an incompatible feature schema")
         if manifest["artifact_release_status"] != "evaluation_only_no_operational_threshold":
@@ -66,8 +94,10 @@ class BehaviorModel:
         self._model = loaded["model"]
         self._calibrator = loaded["calibrator"]
         self.feature_names = names
-        self.model_id = manifest["selected_candidate"]
+        self.model_id = (manifest["selected_candidate"] if operating_id is None
+                         else f"{manifest['selected_candidate']}:o4:{operating_id}")
         self.artifact_version = artifact_hash
+        self._threshold = threshold
 
     def score(self, features: HistoryFeatures) -> BehaviorAssessment:
         if features.schema_version != FEATURE_SCHEMA_VERSION:
@@ -92,9 +122,11 @@ class BehaviorModel:
                 or ((calibrated < 0) | (calibrated > 1)).any()
                 or not math.isclose(float(calibrated.sum()), 1.0, rel_tol=0, abs_tol=1e-6)):
             raise ValueError("history calibrator returned an invalid distribution")
+        score = float(calibrated[0, 1])
         return BehaviorAssessment(
-            score=float(calibrated[0, 1]), model_id=self.model_id,
+            score=score, model_id=self.model_id,
             artifact_version=self.artifact_version,
             feature_schema_version=FEATURE_SCHEMA_VERSION,
-            support=features.support.copy(), escalation_fired=False,
+            support=features.support.copy(),
+            escalation_fired=self._threshold is not None and score >= self._threshold,
         )
