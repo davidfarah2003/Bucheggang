@@ -1,0 +1,74 @@
+.pair-code-entry {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+}
+
+.pair-code-fields {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.pair-code-fields label {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.pair-code-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.pair-code-input::placeholder { color: var(--muted); opacity: 1; }
+
+.pair-code-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.pair-code-actions button {
+  min-width: 0;
+  min-height: 48px;
+}
+
+.pair-code-error {
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 13px;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  line-height: 1.45;
+}
+
+.pair-code-entry,
+.pair-code-entry :is(h1, h2, p, label, button, .pair-code-error) {
+  overflow-wrap: anywhere;
+}
+
+.pair-code-entry :is(input, button):focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.identity-view .pair-code-fields .pair-code-input:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@media (max-width: 359px) {
+  .pair-code-entry { padding: 16px; }
+}
