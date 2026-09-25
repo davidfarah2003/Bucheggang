@@ -372,7 +372,7 @@ mandate_id        str, confirmed for the paired agent's account_id, status activ
 purchase_key      str, 16 to 64 characters, the agent's own idempotency key for this purchase attempt
 cart[]            1 to 50 lines; item_id, item_name, item_category non-empty; quantity int >= 1;
                   unit_price_chf > 0 with at most 2 decimals; item_details str (untrusted merchant text, may be empty)
-merchant          merchant_id, merchant_name, merchant_category non-empty; merchant_mcc 4 digits; merchant_country ISO 3166-1 alpha-2
+merchant          merchant_id, merchant_name, merchant_category, merchant_city non-empty; merchant_mcc 4 digits; merchant_country ISO 3166-1 alpha-2
 delivery_fee_chf  >= 0, at most 2 decimals, default absent means the agent must send 0 explicitly
 total_chf         > 0, at most 2 decimals; must equal sum(quantity * unit_price_chf) + delivery_fee_chf to the cent, else InvalidPurchase("total does not match the cart")
 facts[]           one PurchaseFacts per cart line, same item_id in the same order; sources[field] must be agent_form for every supplied field;
@@ -389,9 +389,9 @@ authorization.source_authorization_id  the same value
 authorization.scenario_id           "SCEN0000"   (no simulator scenario; the engine never reads it)
 authorization.replay_order          1            (the engine never reads it)
 authorization.mandate_id            the input mandate_id
-authorization.profile_id, card_id   from the mandate's confirmation record (the customer's account and the card it was confirmed for)
+authorization.profile_id, card_id   from the mandate's identity record (below); a mandate without one is InvalidPurchase("mandate has no card on record")
 authorization.initiator_type        "agent"
-authorization.merchant              the input merchant, plus merchant_city "", availability "online", recurring_capable "false"
+authorization.merchant              the input merchant, plus availability "online", recurring_capable "false"
 authorization.timestamp             the backend's clock, UTC, at acceptance of the purchase_key
 authorization.amount, currency      total_chf, "CHF"
 authorization.billing_amount_chf    total_chf
@@ -409,25 +409,32 @@ authorization.order_returnable, order_cancellable  "unknown"
 authorization.related_authorization_id, related_authorization_status  null
 authorization.purchase_description  the confirmed draft's instruction
 authorization.items[]               line_no from 1 in cart order; item_id, item_name, item_category, quantity, unit_price = unit_price_chf, currency "CHF", item_details
-mandate                             the confirmed policy read from the store for mandate_id, as the runner's policy_context builds it
-context.approved_spend_in_period_chf  null; context.recent_authorizations  the accepted decisions on this mandate in the last history_window_minutes, from the store
-runtime                             received_at = timestamp, history_window_minutes and context_basis as the runner sets them; deadline_at = timestamp + the configured decision budget
+mandate                             mandate_id, customer_id, card_id, profile_id from the identity record; status "active"; instruction, hard_rules and uncertainty_policy from the effective policy exactly as policy_context.refresh builds them for a simulator event
+context.approved_spend_in_period_chf  null; context.recent_authorizations  the accepted decisions on this mandate in the last 1440 minutes, from the store
+runtime                             received_at = timestamp; history_window_minutes 1440; context_basis "run_decisions_and_scenario_timestamps", the only value the type accepts; deadline_at = timestamp + LEASH_PURCHASE_BUDGET_S, a new setting with no default
 ```
 
+Neither `runtime.history_window_minutes` nor `runtime.context_basis` is read by the engine (`rg history_window_minutes src/leash/engine` and `rg context_basis src/leash/engine` are empty at ffdb74b); they are set so the `Event` validates, and their values are fixed here so two backends build the same event.
+
+Identity record. `confirmation.json` holds the draft, the simulator draft ID, the mandate ID and the confirmer, and no card or profile (`store.record_confirmation`). The simulator never returns the card for a mandate; it appears only in the events it delivers, as `mandate.customer_id`, `mandate.card_id` and `mandate.profile_id`. The implementation PR therefore adds `identity.json` to the draft folder, written once by the runner under the mandate lock from the first `Event` it accepts for the mandate, holding exactly those three values, and never overwritten; a later event that carries different values for the same mandate raises before evaluation. `buy` reads it and refuses a mandate that has none. In practice this means an agent can buy on a mandate only after the simulator has delivered at least one attempt for it. The file does not exist today.
+
 `history` is the same frozen `History` slice the runner passes for the card, built from accepted decisions on the card before `timestamp`. `state` is the current `MandateState`. The decision is recorded with `leash.engine.state.record` and appears in `GET /mandates/{mandate_id}/decisions`, `GET /decisions/{authorization_id}` and, for a `step_up`, `GET /step-ups/pending`, exactly like a simulator decision.
+
+Local origin. The runner's `Coordinator.authorization` prepares a simulator intent for every decision (`coordinator.py:118-153`), and intents require the originating simulator `run_id` and a verified remote receipt (`intents.py:80`, `:130-134`, `:171`); a local purchase has neither, and no simulator response or run ID is ever invented for it. A local purchase is therefore persisted with `origin: "local"` in its purchase file and in the decision record, is never passed to `Coordinator.authorization` or to the intent journal, and is written in one step under the mandate lock: the purchase file gets the `authorization_id` and the accepted `Decision`, and `leash.engine.state.record` is called, in that order. Whatever lists decisions shows `origin` as a field and keys nothing on it. The customer-first locks (`customer_lock`, `mandate_locks`) and the pure state functions (`apply`, `record`) are reused as they are.
 
 Idempotency. `purchase_key` is unique per `(agent_id, mandate_id)`. The backend stores `purchases/<sha256(agent_id + ":" + mandate_id + ":" + purchase_key)>` under the mandate lock, `O_EXCL`, before it evaluates, holding the canonical input hash (SHA-256 of compact sorted-key JSON of the validated input without `purchase_key`) and, once decided, the `authorization_id`:
 
 ```
-same key, same input hash, decided       -> the stored Decision is returned again; no new authorization_id, no second evaluation, no state change
-same key, same input hash, not yet decided  -> PurchaseInProgress; the agent polls get_purchase_status with the authorization_id it already holds, or retries after the decision budget
+same key, same input hash, decided       -> the stored Decision and its original reference are returned again, with the original expires_at; no new authorization_id, no second evaluation, no state change, no renewed authority
+same key, same input hash, not yet decided, before deadline_at  -> PurchaseInProgress; the agent polls get_purchase_status with the authorization_id it already holds, or retries after the decision budget
+same key, same input hash, not yet decided, after deadline_at   -> PurchaseFailed("decision was not recorded before <deadline_at>"); the purchase stays undecided for ever, no decision is substituted, and the agent mints a new key
 same key, different input hash           -> PurchaseKeyReused, the purchase is not evaluated; the agent must mint a new key for a changed cart
 new key                                  -> a new purchase, judged on the current state, which includes every earlier accepted decision on the mandate
 ```
 
-There is no expiry on a used key within the mandate's life; a revoked or expired mandate rejects every `buy` before the key is looked at. A crash after the key file is written and before the decision is recorded leaves `PurchaseInProgress` until the runner's intent recovery (section "Runner coordination") either records the decision it finds or marks the purchase `decline` with reason `step_up_timeout` at `deadline_at`; the agent's readback shows which.
+There is no expiry on a used key within the mandate's life; a revoked or expired mandate rejects every `buy` before the key is looked at. A crash after the key file is written and before the decision is recorded leaves the file without a decision. Nothing recovers it into a decision: `get_purchase_status` and a repeat `buy` report `PurchaseInProgress` until `deadline_at` and `PurchaseFailed` after it, the file is kept as the record of the failure, and the runner's log carries the error that interrupted the evaluation. A decision exists only when the engine produced it or the Wallet answered a step-up.
 
-`step_up`. Same as a simulator step-up: the Wallet answers through `POST /step-ups/{authorization_id}/answer` or the book times it out to `decline`. The agent sees `resolved: false` in `get_purchase_status` and nothing it sends can resolve it. `get_purchase_status` on an `authorization_id` that belongs to another agent's account is `PurchaseUnknown`, the same error as a nonexistent id.
+`step_up`. Same as a simulator step-up: the Wallet answers through `POST /step-ups/{authorization_id}/answer`, or the book times the pending step-up out to `decline` with reason `step_up_timeout` once its `expires_at` has passed, the same rule as for a simulator attempt. A timeout applies only to an accepted pending step-up that a human could have answered, never to an undecided purchase. Because `StepUpBook.answer` and `StepUpBook.sweep` finish through `Coordinator.authorization` (`stepups.py:179-195`), which needs a simulator run, a local step-up carries `origin: "local"` in its book record and the book finishes it by recording the final `Decision` directly with `leash.engine.state.record` under the mandate lock and writing the resolution to the record and the purchase file; the `origin` field selects that path, nothing else does. The agent sees `resolved: false` in `get_purchase_status` and nothing it sends can resolve it. `get_purchase_status` on an `authorization_id` that belongs to another agent's account is `PurchaseUnknown`, the same error as a nonexistent id.
 
 Out of scope for this contract and for the demo: a payment processor, a merchant order, inventory or price lookup by the backend, a `buy` that the backend retries or re-quotes, and any purchase created from the Wallet or the Harness page instead of through a paired agent. `reference` is data for a later processor integration and is not consumed by anything we ship.
 
@@ -477,7 +484,7 @@ Served by `leash.policy.mcp_server` over stdio or streamable HTTP, backed by the
 | `propose_task_policy` | `{ instruction: str, proposal: { rules: [Rule], examples: [...], open_questions: [...], uncertainty_policy } }` → the stored `PolicyDraft` (`draft_id`, `version: 1`, `hash`, the validated fields). Invalid proposal raises `InvalidDraft` with the reason. The agent then hands the customer `/app/?draft_id=<draft_id>` |
 | `get_policy_status` | `{ draft_id: str }` → `{ draft_id, version, status: pending \| confirmed \| rejected, mandate_id: str \| null, confirmed_at: datetime \| null, rejected_reason: str \| null }`. `mandate_id` is set only when `status` is `confirmed`. Unknown draft raises |
 | `get_policy_summary` | `{ draft_id: str }` → `{ draft_id, version, instruction, plain_english: [str], examples: [{ description, expected, why }], open_questions: [{ question, options, answer: str \| null }], uncertainty_policy }`. The sentences are the same ones the Wallet shows |
-| `buy` | `{ mandate_id: str, purchase_key: str, cart: [{ item_id, item_name, item_category, item_details, unit_price_chf, quantity }], merchant: { merchant_id, merchant_name, merchant_category, merchant_mcc, merchant_country }, delivery_fee_chf: number, total_chf: number, facts: [PurchaseFacts] }` (validation, idempotency and the `purchase:decide` scope in section "Purchase over MCP", subsection "Purchase input and idempotency") → `Decision` (`approve`, `decline` or `step_up` with `authorization_id`). Parked for the submission: raises `NotImplementedError("purchases arrive through the simulator in demo mode; see plan 01 step 12")`. Scope when it lands: section "Purchase over MCP" |
+| `buy` | `{ mandate_id: str, purchase_key: str, cart: [{ item_id, item_name, item_category, item_details, unit_price_chf, quantity }], merchant: { merchant_id, merchant_name, merchant_category, merchant_mcc, merchant_country, merchant_city }, delivery_fee_chf: number, total_chf: number, facts: [PurchaseFacts] }` (validation, idempotency and the `purchase:decide` scope in section "Purchase over MCP", subsection "Purchase input and idempotency") → `Decision` (`approve`, `decline` or `step_up` with `authorization_id`). Parked for the submission: raises `NotImplementedError("purchases arrive through the simulator in demo mode; see plan 01 step 12")`. Scope when it lands: section "Purchase over MCP" |
 | `get_purchase_status` | `{ authorization_id: str }` → `{ authorization_id, decision: Decision, resolved: bool, final: approve \| decline \| null }`; a `step_up` is `resolved: false` until the Wallet answers or it times out. Parked with `buy` |
 
 `facts` in `buy` is the form the agent's own model fills; the backend checks it deterministically and records `sources[field] = agent_form` for every field the agent supplied. The agent never sends the policy; the backend reads the confirmed policy for `mandate_id` from its own store.
