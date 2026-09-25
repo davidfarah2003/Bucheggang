@@ -11,7 +11,7 @@ Leash gives your agent a spending policy that you review in the Wallet. You deci
 
 Built for the [Viseca challenge](viseca-2026/challenge.md). This prototype records purchase authorizations; it doesn't place orders or process payments.
 
-[Watch the demo](docs/demo/leash-user-flow.mp4) · [How it works](#how-it-works) · [Architecture](#architecture) · [Classifier](#the-classifier) · [Run locally](#run-locally)
+[Watch the demo](https://github.com/davidfarah2003/Bucheggang/releases/download/demo-2026-09-25/leash-user-flow.mp4) · [How it works](#how-it-works) · [Architecture](#architecture) · [Classifier](#the-classifier) · [Run locally](#run-locally)
 
 ## How it works
 
@@ -25,7 +25,7 @@ Built for the [Viseca challenge](viseca-2026/challenge.md). This prototype recor
   <img src="docs/demo/leash-user-flow.gif" width="1280" alt="Recorded user flow: connect an agent, confirm its policy, review a purchase and inspect the decision in the Wallet.">
 </picture>
 
-<sub>Recorded demo with scripted Wallet interactions. No payment is made. The reduced-motion view shows local example screens.</sub>
+<sub>Recorded demo with scripted Wallet interactions. No payment is made. The reduced-motion view shows local example screens. The full video with sound is on the <a href="https://github.com/davidfarah2003/Bucheggang/releases/tag/demo-2026-09-25">release page</a>.</sub>
 
 Demo music: "Wallpaper" by Kevin MacLeod (incompetech.com), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). [Music credits](docs/demo/music/README.md). Re-record the video with `scripts/record_demo.py`.
 
