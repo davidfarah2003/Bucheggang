@@ -10,7 +10,7 @@ The runner owner holds the merge until after the 10:30-10:50 Europe/Zurich dry r
 
 Opt-in also requires `LEASH_MODEL_MANIFEST` naming an existing manifest file. Startup loads the actual behavioural artifact and both-pack history, checks the artifact, split manifest, feature names and library versions through the producer's loader, and obtains the scoped OpenRouter credential through `load_openrouter()`. Missing configuration or dependencies raise. Nothing switches to another model or to model-off after a failure.
 
-The required classifier package/artifact is a separate lane dependency and is absent from this branch's main baseline. Enabling the flag without that package raises a named startup error. The isolated verification used the reviewed producer at `e4ba7ba1f0707164ddfd6071779501a880598b44`. It is a two-revision composition, not an integrated model-enabled release.
+The provider exercises below used the reviewed producer at `e4ba7ba1f0707164ddfd6071779501a880598b44` as a separate source dependency. The runtime branch was subsequently rebased onto main `7ac6906`, which includes the classifier package/artifact from #96. Its assessment, behavioural loader and Jev adapter are byte-identical to that exercised producer. Enabling the flag without the classifier dependency group still raises a named startup error. No additional provider request was made after this rebase, and model-enabled release remains blocked.
 
 Both the CLI and the API's `StepUpBook` select their evaluator at startup. The CLI uses that same evaluator for new decisions; the book uses it for customer-approval rechecks. The processes must use matching startup configuration and the same checkout/store. There is no new history-only flag. The separate history-only runner hookup remains deferred by the owner until after 17:30.
 
@@ -63,6 +63,14 @@ One separate actual provider request used an intentionally invalid credential an
 A fresh exercise at `17d15fca841238c1ac56766565f1e9de7fc26272` stopped on its first input, AU0001. The deterministic baseline was approve, so this input required models. The actual pinned provider response arrived in 494 ms and supplied activity probabilities unusual 0.16, unclear 0.02 and ordinary 0.81, sum 0.99. The runtime logged the failure and propagated `JevResponseError: activity_pattern: probabilities do not sum to one` through the actual runner guard. Zero paired rows completed, and no baseline or other replacement decision was returned. No request was retried. [Captured failure evidence](runner-model-runtime-2026-09-25-failure.json) names the revisions and response.
 
 This final-source failure supersedes any suggestion that the earlier 13 successful calls established provider readiness. It also observes the required failure path with a real malformed response on an otherwise approvable input.
+
+## Rebased default-off verification
+
+At rebased checkpoint `f2b5b307b15c1a5800ef131c08bf878bdf472ea5`, `uv sync` and `scripts/replay.py --all` with the five drafts from `docs/run-replay.md` completed. All 45 decisions and reason strings matched the current committed replay: 11 approve, 32 decline and two step_up. Main's #86 has corrected the older AU0040 reason-string difference described above.
+
+With `LEASH_ENABLE_MODELS` unset, both startup paths still selected the pure engine. No classifier, NumPy, CatBoost or scikit-learn module entered `sys.modules`. Both credential accessors had zero cache hits and zero misses.
+
+The real pending-recheck exercise ran again on this source and returned `step_up/new_device` under the separate human budget. Its projected pending state stayed unchanged and its temporary directory stayed empty. Expired human and evaluation budgets raised `ProcessingTimeout`; queued extraction behind an occupied real worker raised after 48.76 ms and returned no facts. There was no simulator call, provider request or customer answer in these rebased checks. The pre-rebase untracked lockfile was preserved under ignored local storage before adopting main's committed lockfile.
 
 ## Provider and live gates remain
 
