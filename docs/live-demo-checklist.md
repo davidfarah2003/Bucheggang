@@ -21,7 +21,7 @@ Recorded state: 25 September 2026, before the morning dry run. Unchecked items b
 - [ ] Start the Wallet following [run-wallet.md](run-wallet.md) and the external shopping agent following [mcp-client.md](mcp-client.md). Keep credentials out of terminals captured for the presentation.
 - [ ] Read the live bootstrap through the runner client. Record the currently available scenario IDs and deadline windows. Public offline IDs are not live team IDs.
 - [ ] Select a live scenario whose purchase purpose matches the actual confirmed instruction. Do not copy the shoes instruction into a grocery scenario to force a chosen result.
-- [ ] Runtime models stay off for this run; the real-provider exercise has not passed (evidence in PR #70, docs/eval/jev-public-2026-09-25.md once merged). Record that Jev and the behavioural model are off.
+- [ ] Runtime models stay off for this run; the [real-provider exercise](eval/jev-public-2026-09-25.md) has not passed. Record that Jev and the behavioural model are off.
 
 ## Customer flow
 
@@ -58,6 +58,8 @@ For every item, record the command or UI action, HTTP status, authorization or d
 
 A fresh Wallet step-up run needs the reserved window and an actual customer at the Wallet ready to answer; a recorded curl approval from an earlier run is not a Wallet answer. Shared model contracts and pure composition merged in #47. The standalone producer has reviewed history, fitted-model and Jev components, but the [real-provider exercise](eval/jev-public-2026-09-25.md) stopped twice on non-normalized probability distributions. Model-enabled runner startup, full integration verification and the operating threshold remain unfinished. Runtime models stay off until the provider exercise passes and the release gate is cleared.
 
-Processing failures raise errors after #50; timeout substitute decisions were removed. Since #58 (eb78312), runner submissions/resolutions and app tightening/revocation use durable intents, customer-first locks and current-policy rechecks. Their live verification remains open. Confirmation and account-wide policy writes also need the agreed customer-lock integration. Complete live end-to-end latency remains unmeasured.
+Since #58 (eb78312), the runner journals every submit, resolve, tighten and revoke mutation as a durable intent before dispatch and takes one customer lock followed by the sorted mandate locks for those app and runner mutations. A missed deadline for a new decision raises instead of substituting a decision. The #72 correction permits a bounded lookup for an already-handled delivery after its original deadline. Live end-to-end latency is not yet recorded as a complete interval.
+
+Separately, the [identity backend PR #73](https://github.com/davidfarah2003/Bucheggang/pull/73) records customer-lock integration for confirmation and `PUT /global-policy` as a follow-up policy PR. Those two policy write paths are outside #58's submit/resolve/tighten/revoke scope.
 
 Account-wide policy storage and read-only Wallet disclosure are merged in #54 and #66. The account/session/pairing identity contract is documented by #67; its implementation and real human flow need separate verification. Built-in shopping-provider execution and real MCP purchase tools remain deferred product work. No human confirmation or answer is supplied by this checklist.
