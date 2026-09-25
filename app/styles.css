@@ -237,7 +237,7 @@ p { margin: 0; line-height: 1.48; }
 .clarification small { color: var(--muted); font-size: 11px; line-height: 1.45; }
 .send-button {
   display: grid;
-  width: 42px;
+  width: 44px;
   height: 42px;
   flex: 0 0 42px;
   place-items: center;
@@ -245,11 +245,12 @@ p { margin: 0; line-height: 1.48; }
   border-radius: 15px;
   background: #e9e6e1;
   color: #687479;
-  font-size: 24px;
+  font-size: 13px;
+  font-weight: 680;
 }
 .send-button:not(:disabled):hover { background: var(--accent-dark); color: #fff; }
 .send-button:not(:disabled) { background: var(--accent); color: #fff; }
-.send-button { width: 44px; height: 44px; font-size: 13px; font-weight: 680; }
+.send-button { height: 44px; }
 .send-button svg { width: 21px; height: 21px; }
 .composer .send-button { position: absolute; right: 17px; bottom: 17px; }
 .agent-state { margin-top: 20px; color: var(--accent); font-size: 14px; font-weight: 650; }
