@@ -298,7 +298,7 @@ function walletTabs() {
 
 function schedulePendingRefresh() {
   window.clearTimeout(state.timer);
-  if (state.route !== "wallet" || state.walletTab !== "needs" || !mandateId() || !state.user) return;
+  if (state.route !== "wallet" || state.walletTab !== "needs" || !state.user) return;
   state.timer = window.setTimeout(async () => {
     state.timer = null;
     if (await refreshPending()) schedulePendingRefresh();
@@ -317,15 +317,13 @@ async function renderWallet(serial) {
     screen.querySelector('.wallet-tabs [aria-selected="true"]').focus();
     state.pendingTabFocus = null;
   }
-  if (state.walletTab === "needs" && mandateId()) schedulePendingRefresh();
+  if (state.walletTab === "needs") schedulePendingRefresh();
 }
 
 async function needsContent(serial) {
-  const id = mandateId();
-  if (id) state.mandate = validateMandate(await walletApi.mandate(id));
   const [draft, pending] = await Promise.all([
     linkedDraftId() ? walletApi.draft(linkedDraftId()).then(validateDraft) : Promise.resolve(null),
-    id ? walletApi.pending() : Promise.resolve([]),
+    walletApi.pending(),
   ]);
   if (serial !== state.serial) return "";
   if (!Array.isArray(pending)) throw new Error("The Wallet did not return a list of pending purchases.");
@@ -355,7 +353,7 @@ function pendingCard(item) {
 }
 
 async function refreshPending() {
-  if (state.route !== "wallet" || state.walletTab !== "needs" || !mandateId()) return;
+  if (state.route !== "wallet" || state.walletTab !== "needs" || !state.user) return;
   const container = document.querySelector("#pending-list");
   if (!container) return;
   const request = ++state.pendingSerial;
