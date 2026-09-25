@@ -105,7 +105,7 @@ The mobile shell now has Shop, Wallet and Activity as its three destinations. Wa
 | Customer action | App call | Result shown |
 | --- | --- | --- |
 | Open a spending request | `GET /drafts/{id}` | Saved draft, enforceable rules, questions and agent examples |
-| Browse owned requests | `GET /drafts?state=all` | Confirming, confirmed and rejected requests; an unconfirmed draft still needs its direct link |
+| Browse owned requests | `GET /drafts?state=all` | Proposed requests available for review, plus confirming, confirmed and rejected records |
 | Browse owned permissions | `GET /mandates?status=all` | Active and previous permissions, with a selected detail read before showing rules |
 | Read account-wide rules | `GET /global-policy` | Current saved rule version and text, read-only in this Wallet view |
 | Authorize or reject | `POST /drafts/{id}/confirm` or `/reject` with exact version and hash | Accepted mandate or explicit error; no local authorization flag |
@@ -119,7 +119,15 @@ Shop accepts an unrestricted request and cycles examples from several product ca
 
 The simulator does not provide a hosted shopping model. There is no provider registry, conversation/search stream, purchase-initiation HTTP route or draft-revision HTTP route in the current backend. Shop shows that gap. Rules displays the selected mandate's effective terms and reads the customer's saved account-wide rule version separately. Account-wide editing is not offered in this Wallet view. Changes to those rules apply on the next confirmation; cross-permission spend caps await runner caller integration. Activity contains purchase decisions for the selected mandate only. It does not fabricate merchant fulfilment or permission lifecycle events.
 
-The browser stores only the selected mandate ID as a per-tab navigation convenience for Active, Rules and Activity. The customer-owned pending endpoint supplies Needs you across all of that customer's confirmed mandates, even in a fresh tab without a saved ID. The owned draft and mandate lists let the customer rediscover their recorded requests and permissions after losing that browser ID. An unconfirmed draft without a customer owner remains direct-link-only. The server owns the draft, mandate, purchase result, step-up and history. Every read or write still goes through the local customer session cookie.
+The browser stores only the selected mandate ID and owning account ID as a per-tab navigation convenience for Active, Rules and Activity. The customer-owned pending endpoint supplies Needs you across all of that customer's confirmed mandates, even in a fresh tab without a saved ID. The owned draft and mandate lists let the customer rediscover proposed and recorded requests and permissions after losing that browser ID. Every new draft belongs to the account whose paired agent proposed it; the direct link opens the same owned draft. The server owns the account, draft, mandate, purchase result, step-up and history. Every read or write still goes through the local customer session cookie.
+
+## Account and agent connection
+
+The merged identity contract in `docs/contracts.md` replaces the username-only demo session. Register calls `POST /account`; Login calls `POST /session`, both with a username and password. The server returns an account ID and sets an HttpOnly session cookie. The UI uses the account ID to scope the saved mandate selection and to check the owner of a returned draft or account-wide rule record. Passwords, cookies and agent tokens are never placed in browser storage or the page URL. This remains a local demo account, not a Viseca banking login.
+
+An agent begins pairing over MCP and hands the customer `/app/?pair=<code>`. The Wallet requires sign-in, reads `GET /pairing/{code}`, shows the agent label, fixed proposal/read scopes and expiry, then waits for an explicit customer click on Approve. `POST /pairing/{code}/approve` returns 204; the page removes the code from its URL and tells the customer to return to the agent to finish pairing. The browser never receives the private verifier or agent token. The account overlay links to `GET /agents`; an owned agent can be revoked with `POST /agents/{id}/revoke` after a confirmation dialog. The page sets a no-referrer meta policy, while the API must also serve the pairing page with `Referrer-Policy: no-referrer`.
+
+`GET /drafts?state=all` now includes account-owned `proposed` drafts. Needs you lists them and opens the selected draft for review without requiring a copied link. Pending purchases and request summaries refresh together; a missing linked draft from the owned list is an error. The app branch must not merge until the policy backend implements the account, pairing, agent and draft-ownership routes, and the actual browser flow has been opened against those routes. A customer must make any real pairing approval or purchase decision.
 
 ## Log
 
