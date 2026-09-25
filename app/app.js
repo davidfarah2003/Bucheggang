@@ -1,224 +1,66 @@
-const API_BASE = "";
-const MANDATE_SESSION_KEY = "viseca.demo.mandateId";
+"use strict";
+
+const MANDATE_KEY = "viseca.demo.mandateId";
+const MANDATE_OWNER_KEY = "viseca.demo.mandateOwner";
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const screen = document.querySelector("#screen");
-const drawerRoot = document.querySelector("#drawer-root");
+const overlayRoot = document.querySelector("#overlay-root");
 const toastRoot = document.querySelector("#toast-root");
-const pageContext = document.querySelector("#page-context");
-const pageTitles = {
-  home: "Home",
-  review: "Review policy",
-  approvals: "Approvals",
-  policy: "Policy",
-  activity: "Activity",
+const examples = [
+  "Find a 27-inch USB-C monitor below CHF 400 with excellent colour accuracy",
+  "Book a morning train from Zürich to Milan with a window seat",
+  "Find a compact blue birthday gift around CHF 80",
+  "Get foldable black noise-cancelling headphones below CHF 300",
+  "Find blue EU 43 running shoes with at least 14-day returns",
+  "Find a round walnut dining table below CHF 700",
+];
+const state = {
+  user: null,
+  route: "shop",
+  walletTab: "needs",
+  activityFilter: "all",
+  draft: null,
+  answers: {},
+  mandate: null,
+  pending: [],
+  history: [],
+  details: new Map(),
+  detail: null,
+  prompt: "",
+  extraDetails: "",
+  serial: 0,
+  pendingSerial: 0,
+  detailSerial: 0,
+  timer: null,
+  exampleTimer: null,
+  overlayTrigger: null,
+  pendingTabFocus: null,
 };
 
-let currentRoute = "home";
-let activeDraft = null;
-let answers = {};
-let pendingIds = new Set();
-let pendingStepUps = new Map();
-let submittingStepUps = new Set();
-let approvalTimer = null;
-let currentPolicy = null;
-let currentDecisionPayload = null;
-let currentUsername = null;
-let screenSerial = 0;
-let drawerSerial = 0;
-
-function esc(value) {
-  if (value === null || value === undefined) throw new Error("A required display value is missing.");
-  return String(value).replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[char]);
-}
-
-function pretty(value) {
-  requireString(value, "display value");
-  return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function money(value, currency) {
-  const amount = Number(value);
-  if (!Number.isFinite(amount)) throw new Error("A monetary value is missing or invalid.");
-  requireString(currency, "currency");
-  return new Intl.NumberFormat("en-CH", { style: "currency", currency, maximumFractionDigits: 2 }).format(amount);
-}
-
-function showToast(message, tone = "") {
-  const toast = document.createElement("div");
-  toast.className = `toast ${tone ? `is-${tone}` : ""}`;
-  toast.textContent = message;
-  toastRoot.replaceChildren(toast);
-  window.setTimeout(() => {
-    if (toast.parentElement === toastRoot) toast.remove();
-  }, 5000);
-}
-
-function dataError(title, error) {
-  if (!(error instanceof Error)) throw new Error("The app received a non-Error failure value.");
-  return `<div class="data-error" role="alert"><span class="error-mark" aria-hidden="true">!</span><div><strong>${esc(title)}</strong><p>${esc(error.message)}</p></div></div>`;
-}
-
-function requireString(value, field) {
-  if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is missing or is not a non-empty string.`);
+function text(value, label) {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is missing.`);
   return value;
 }
 
-function validateRules(rules, field) {
-  if (!Array.isArray(rules)) throw new Error(`${field} must be a list.`);
-  rules.forEach((rule, index) => {
-    if (!rule || typeof rule !== "object") throw new Error(`${field}[${index}] must be an object.`);
-    requireString(rule.field, `${field}[${index}].field`);
-    requireString(rule.operator, `${field}[${index}].operator`);
-    requireString(rule.source_text, `${field}[${index}].source_text`);
-    requireString(rule.plain_english, `${field}[${index}].plain_english`);
-    if (!(typeof rule.value === "number" || typeof rule.value === "string" || (Array.isArray(rule.value) && rule.value.every((item) => typeof item === "string")))) throw new Error(`${field}[${index}].value has an unsupported type.`);
-    if (rule.scope === "period" && (!Number.isInteger(rule.period_days) || rule.period_days < 1)) throw new Error(`${field}[${index}].period_days must be a positive integer for a period rule.`);
-  });
+function esc(value) {
+  if (value === null || value === undefined) throw new Error("A required display value is missing.");
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]);
 }
 
-function validateDraft(draft) {
-  if (!draft || typeof draft !== "object") throw new Error("The policy draft must be a JSON object.");
-  requireString(draft.draft_id, "draft_id");
-  requireString(draft.hash, "hash");
-  requireString(draft.instruction, "instruction");
-  requireString(draft.uncertainty_policy, "uncertainty_policy");
-  requireString(draft.created_at, "created_at");
-  if (!["ask", "decline", "approve"].includes(draft.uncertainty_policy)) throw new Error(`uncertainty_policy ${draft.uncertainty_policy} is not supported.`);
-  if (!Number.isInteger(draft.version)) throw new Error("version must be an integer.");
-  validateRules(draft.rules, "rules");
-  if (!Array.isArray(draft.examples) || !Array.isArray(draft.open_questions)) throw new Error("examples and open_questions must be arrays.");
-  draft.examples.forEach((example, index) => {
-    requireString(example.description, `examples[${index}].description`);
-    requireString(example.why, `examples[${index}].why`);
-    if (!["approve", "decline", "step_up"].includes(example.expected)) throw new Error(`examples[${index}].expected has an unsupported outcome.`);
-  });
-  draft.open_questions.forEach((question, index) => {
-    requireString(question.question, `open_questions[${index}].question`);
-    if (!Array.isArray(question.options) || !question.options.length || !question.options.every((option) => typeof option === "string" && option.length)) throw new Error(`open_questions[${index}].options must be a non-empty string list.`);
-    if (!Array.isArray(question.confirming_answers) || !question.confirming_answers.every((answer) => typeof answer === "string" && question.options.includes(answer))) throw new Error(`open_questions[${index}].confirming_answers must be a subset of options.`);
-    if (question.answer !== null && typeof question.answer !== "string") throw new Error(`open_questions[${index}].answer must be a string or null.`);
-    if (question.answer !== null && !question.options.includes(question.answer)) throw new Error(`open_questions[${index}].answer must be one of the listed options.`);
-  });
-  return draft;
+function money(value, currency = "CHF") {
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error("The purchase amount is invalid.");
+  return new Intl.NumberFormat("en-CH", { style: "currency", currency: text(currency, "currency"), maximumFractionDigits: 2 }).format(value);
 }
 
-async function readJson(response, label) {
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`${label} returned HTTP ${response.status}${detail ? `: ${detail.slice(0, 240)}` : ""}`);
-  }
-  return response.status === 204 ? null : response.json();
-}
-
-async function api(path, options = {}) {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-  });
-  if (response.status === 409) {
-    const detail = await response.text();
-    const error = new Error(`The saved information changed before this action was accepted. Refresh and review it again.${detail ? ` ${detail.slice(0, 180)}` : ""}`);
-    error.status = 409;
-    throw error;
-  }
-  return readJson(response, path);
-}
-
-function mandateId() {
-  return window.sessionStorage.getItem(MANDATE_SESSION_KEY);
-}
-
-function showSession(username) {
-  currentUsername = requireString(username, "Session.username");
-  document.querySelector("#profile-name").textContent = currentUsername;
-  const initials = currentUsername.slice(0, 2).toUpperCase();
-  document.querySelector("#profile-avatar").textContent = initials;
-  const topAvatar = document.querySelector("#top-avatar");
-  topAvatar.textContent = initials;
-  topAvatar.setAttribute("aria-label", currentUsername);
-  document.querySelectorAll('[data-action="logout"]').forEach((button) => { button.hidden = false; });
-}
-
-function renderLogin() {
-  currentUsername = null;
-  if (approvalTimer) window.clearInterval(approvalTimer);
-  approvalTimer = null;
-  pageContext.textContent = "Demo sign in";
-  document.querySelectorAll('[data-action="logout"]').forEach((button) => { button.hidden = true; });
-  setScreen(`${heading("LOCAL DEMO ACCOUNT", "Sign in to your wallet.", "Enter a local username to review the policy your shopping agent proposed.")}
-    <section class="card card-pad login-card"><label class="field-label" for="demo-username">Username<input id="demo-username" autocomplete="username" maxlength="80" required placeholder="Your name" /></label>
-    <p class="helper-text">This demo uses a local username. It does not connect to your Viseca login.</p>
-    <button class="button button-primary" type="button" data-action="login">Continue</button></section>`);
-}
-
-async function initialize() {
-  try {
-    const response = await fetch("/session", { credentials: "same-origin" });
-    if (response.status === 401) {
-      window.sessionStorage.removeItem(MANDATE_SESSION_KEY);
-      renderLogin();
-      return;
-    }
-    const session = await readJson(response, "GET /session");
-    showSession(session.username);
-    setActiveRoute(window.location.hash.slice(1) || (new URLSearchParams(window.location.search).has("draft_id") ? "review" : "home"));
-  } catch (error) {
-    setScreen(dataError("Your session could not be checked.", error));
-  }
-}
-
-async function login() {
-  const username = requireString(document.querySelector("#demo-username").value, "Username");
-  const session = await api("/session", { method: "POST", body: JSON.stringify({ username }) });
-  showSession(session.username);
-  setActiveRoute(window.location.hash.slice(1) || "review");
-}
-
-async function logout() {
-  await api("/session", { method: "DELETE" });
-  window.sessionStorage.removeItem(MANDATE_SESSION_KEY);
-  activeDraft = null;
-  currentPolicy = null;
-  currentDecisionPayload = null;
-  answers = {};
-  renderLogin();
-}
-
-function setActiveRoute(route) {
-  if (!currentUsername) {
-    renderLogin();
-    return;
-  }
-  if (!pageTitles[route]) {
-    screen.innerHTML = dataError("Page could not be opened.", new Error(`Unknown app route: ${route}`));
-    screen.setAttribute("aria-busy", "false");
-    return;
-  }
-  currentRoute = route;
-  screenSerial += 1;
-  drawerSerial += 1;
-  currentDecisionPayload = null;
-  if (window.location.hash !== `#${route}`) window.history.replaceState(null, "", `#${route}`);
-  document.querySelectorAll("[data-route]").forEach((button) => {
-    const active = button.dataset.route === route || (route === "review" && button.dataset.route === "home");
-    button.classList.toggle("is-active", active);
-    if (button.matches(".nav-item")) {
-      if (active) button.setAttribute("aria-current", "page");
-      else button.removeAttribute("aria-current");
-    }
-  });
-  pageContext.textContent = pageTitles[route];
-  if (approvalTimer) window.clearInterval(approvalTimer);
-  approvalTimer = null;
-  drawerRoot.replaceChildren();
-  screen.setAttribute("aria-busy", "true");
-  renderRoute(route);
+function toast(message, tone = "error") {
+  const item = document.createElement("div");
+  item.className = `toast ${tone}`;
+  item.setAttribute("role", "status");
+  item.textContent = message;
+  toastRoot.replaceChildren(item);
+  window.setTimeout(() => { if (item.isConnected) item.remove(); }, 6000);
 }
 
 function setScreen(markup) {
@@ -226,675 +68,747 @@ function setScreen(markup) {
   screen.setAttribute("aria-busy", "false");
 }
 
-function heading(eyebrow, title, description, action = "") {
-  return `<div class="page-heading"><div><span class="eyebrow"><i class="eyebrow-mark"></i>${esc(eyebrow)}</span><h1>${esc(title)}</h1><p>${esc(description)}</p></div>${action ? `<div class="heading-actions">${action}</div>` : ""}</div>`;
+function loading(message) {
+  setScreen(`<div class="loading-state"><span class="spinner" aria-hidden="true"></span>${esc(message)}</div>`);
+  screen.setAttribute("aria-busy", "true");
 }
 
-function ruleRows(rules = []) {
-  const labels = {
-    "authorization.billing_amount_chf": "Maximum purchase",
-    "authorization.merchant.merchant_category": "Merchant",
-    "facts.product_type": "Product",
-    "facts.size": "Size",
-    "facts.return_days": "Returns",
-    "state.approvals_count": "Approved purchases",
-  };
-  return rules.map((rule) => {
-    const label = labels[rule.field] || pretty(rule.field.split(".").at(-1));
-    const comparison = rule.operator === "=" ? "" : rule.operator === "<=" ? "≤ " : rule.operator === ">=" ? "≥ " : `${rule.operator} `;
-    const rawValue = Array.isArray(rule.value) ? rule.value.join(", ") : String(rule.value);
-    const value = `${comparison}${rule.currency ? `${rule.currency} ` : ""}${rawValue.replaceAll("_", " ")}${rule.field === "facts.return_days" ? " days" : ""}`;
-    return `<div class="permission-row"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
-  }).join("");
+function errorPanel(title, error) {
+  if (!(error instanceof Error)) throw new Error("A non-Error failure reached the Wallet.");
+  return `<section class="error-panel" role="alert"><span aria-hidden="true">!</span><div><h2>${esc(title)}</h2><p>${esc(error.message)}</p><button type="button" data-action="reload">Try again</button></div></section>`;
 }
 
-function exampleCards(examples = []) {
-  const groups = new Map();
-  examples.forEach((example) => {
-    const key = example.expected;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(example);
+function linkedDraftId() {
+  const query = new URLSearchParams(window.location.search);
+  const draft = query.get("draft");
+  const draftId = query.get("draft_id");
+  if (draft === "" || draftId === "") throw new Error("The spending-plan link has an empty draft ID.");
+  if (draft && draftId && draft !== draftId) throw new Error("The draft and draft_id links refer to different spending plans.");
+  return draft || draftId;
+}
+
+function clearDraftLink() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("draft");
+  url.searchParams.delete("draft_id");
+  window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+  state.draft = null;
+  state.answers = {};
+  document.querySelector("#wallet-indicator").hidden = true;
+}
+
+function mandateId() {
+  const owner = window.sessionStorage.getItem(MANDATE_OWNER_KEY);
+  if (owner && owner !== state.user) return null;
+  return window.sessionStorage.getItem(MANDATE_KEY);
+}
+
+function validateDraft(draft) {
+  if (!draft || typeof draft !== "object" || !Array.isArray(draft.rules) || !Array.isArray(draft.open_questions) || !Array.isArray(draft.examples)) throw new Error("The saved spending plan is incomplete.");
+  text(draft.draft_id, "Draft ID");
+  text(draft.hash, "Draft hash");
+  text(draft.instruction, "Original request");
+  if (!Number.isInteger(draft.version)) throw new Error("The saved spending plan has no valid version.");
+  draft.rules.forEach((rule) => { text(rule.field, "Rule field"); text(rule.plain_english, "Rule description"); });
+  draft.open_questions.forEach((question) => {
+    text(question.question, "Question");
+    if (!Array.isArray(question.options) || !Array.isArray(question.confirming_answers)) throw new Error("The saved spending plan has an invalid question.");
   });
-  const symbols = { approve: "✓", decline: "×", step_up: "?" };
-  return [...groups.entries()].map(([outcome, items]) => `<div class="example-card">
-    <span class="example-symbol ${esc(outcome)}" aria-hidden="true">${esc(symbols[outcome])}</span>
-    <div><strong>${esc(pretty(outcome))}${items.length > 1 ? `<span class="example-count">${items.length}</span>` : ""}</strong>
-      ${items.map((item) => `<p>${esc(item.description)} <span>${esc(item.why)}</span></p>`).join("")}
-    </div>
-  </div>`).join("");
+  return draft;
 }
 
-function answerLabel(value) {
-  const labels = { ask: "Ask me", "ask me": "Ask me", decline: "Decline", yes: "Yes" };
-  return Object.hasOwn(labels, value) ? labels[value] : value;
+function validateMandate(payload) {
+  if (!payload || !payload.mandate || !payload.draft || !payload.effective_policy || !payload.state) throw new Error("The Wallet returned an incomplete permission.");
+  const { mandate, draft, effective_policy, state: usage } = payload;
+  text(mandate.mandate_id, "Permission ID");
+  if (!["active", "revoked", "superseded", "expired"].includes(mandate.status)) throw new Error("The permission has an unknown status.");
+  validateDraft(draft);
+  if (!Array.isArray(effective_policy.rules) || !Array.isArray(usage.approvals) || usage.mandate_id !== mandate.mandate_id) throw new Error("The permission and its purchase state do not match.");
+  effective_policy.rules.forEach((rule) => { text(rule.field, "Current rule field"); text(rule.plain_english, "Current rule description"); });
+  window.sessionStorage.setItem(MANDATE_OWNER_KEY, text(state.user, "Current customer"));
+  return payload;
 }
 
-function questionCards(questions = []) {
-  return questions.map((question, index) => {
-    const selected = answers[question.question] === undefined ? question.answer : answers[question.question];
-    const needsRevision = selected && !question.confirming_answers.includes(selected);
-    return `<div class="question-item"><div class="question-text"><span class="question-number">${index + 1}</span><span>${esc(question.question)}</span></div>
-      <div class="choice-row" role="group" aria-label="${esc(question.question)}">
-        ${question.options.map((option) => `<button class="choice-button ${selected === option ? "is-selected" : ""}" type="button" data-action="answer" data-question="${esc(question.question)}" data-value="${esc(option)}" aria-pressed="${selected === option}">${esc(answerLabel(option))}</button>`).join("")}
-      </div>
-      ${needsRevision ? `<p class="revision-note">This choice needs a revised policy before you can confirm.</p>` : ""}
-    </div>`;
-  }).join("");
+function validateDecision(payload) {
+  if (!payload || !payload.decision || !payload.event || !payload.state_before || !payload.state_after) throw new Error("The transaction record is incomplete.");
+  const { decision, event } = payload;
+  text(decision.authorization_id, "Authorization ID");
+  text(decision.customer_message, "Decision explanation");
+  text(decision.decided_at, "Decision time");
+  if (!Number.isFinite(new Date(decision.decided_at).getTime())) throw new Error("The decision time is invalid.");
+  if (!["approve", "decline", "step_up"].includes(decision.decision) || !Array.isArray(decision.evidence) || !Array.isArray(decision.reason_codes)) throw new Error("The transaction has an unsupported outcome.");
+  if (!event.authorization || !event.authorization.merchant || !Array.isArray(event.authorization.items)) throw new Error("The transaction has no purchase details.");
+  text(event.authorization.merchant.merchant_name, "Merchant name");
+  decision.evidence.forEach((check) => {
+    text(check.name, "Check name");
+    text(check.source, "Check source");
+    if (!["pass", "fail", "uncertain"].includes(check.result) || typeof check.note !== "string") throw new Error("The transaction contains an invalid check.");
+  });
+  return payload;
 }
 
-function showExamples() {
-  if (!activeDraft) throw new Error("There is no loaded policy draft to inspect.");
-  drawerSerial += 1;
-  drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Policy examples" tabindex="-1"><div class="drawer-header"><h2>Test this policy</h2><button class="close-button" type="button" aria-label="Close examples" data-action="close-drawer">×</button></div><div class="example-grid">${exampleCards(activeDraft.examples)}</div></aside></div>`;
-  drawerRoot.querySelector(".drawer").focus();
+function normalRoute(route) {
+  if (route === "home") { state.walletTab = "active"; return "wallet"; }
+  if (route === "approvals") { state.walletTab = "needs"; return "wallet"; }
+  if (route === "policy") { state.walletTab = "rules"; return "wallet"; }
+  return route;
 }
 
-function showRuleDetails() {
-  const rules = currentRoute === "policy" ? currentPolicy?.effective_policy.rules : activeDraft?.rules;
-  if (!rules) throw new Error("Policy rules have not been loaded.");
-  drawerSerial += 1;
-  drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Policy rule details" tabindex="-1"><div class="drawer-header"><h2>Rule details</h2><button class="close-button" type="button" aria-label="Close rule details" data-action="close-drawer">×</button></div>${rules.map((rule) => `<section class="drawer-section"><h3>${esc(rule.plain_english)}</h3><p class="section-subtitle">From your request: <mark>${esc(rule.source_text)}</mark></p><small>${esc(rule.field)} ${esc(rule.operator)} ${esc(Array.isArray(rule.value) ? rule.value.join(", ") : rule.value)}</small></section>`).join("")}</aside></div>`;
-  drawerRoot.querySelector(".drawer").focus();
+function navigate(route, { keepScroll = false } = {}) {
+  route = normalRoute(route);
+  if (!["shop", "wallet", "activity", "review"].includes(route)) {
+    setScreen(errorPanel("This page is unavailable", new Error(`Unknown page: ${route}`)));
+    return;
+  }
+  state.route = route;
+  state.serial += 1;
+  state.pendingSerial += 1;
+  state.detailSerial += 1;
+  window.clearTimeout(state.timer);
+  window.clearTimeout(state.exampleTimer);
+  state.timer = null;
+  state.exampleTimer = null;
+  closeOverlay();
+  if (window.location.hash !== `#${route}`) window.history.replaceState(null, "", `#${route}`);
+  document.querySelectorAll(".nav-button").forEach((button) => {
+    const selected = button.dataset.route === (route === "review" ? "wallet" : route);
+    button.classList.toggle("is-active", selected);
+    if (selected) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+  if (!keepScroll) window.scrollTo(0, 0);
+  void render();
 }
 
-async function loadDraft() {
-  const draftId = new URLSearchParams(window.location.search).get("draft_id");
-  requireString(draftId, "URL query parameter draft_id");
-  return api(`/drafts/${encodeURIComponent(draftId)}`);
+function sessionExpired(error) {
+  state.serial += 1;
+  state.pendingSerial += 1;
+  window.clearTimeout(state.timer);
+  window.clearTimeout(state.exampleTimer);
+  state.detailSerial += 1;
+  state.timer = null;
+  state.user = null;
+  state.mandate = null;
+  state.pending = [];
+  state.draft = null;
+  state.answers = {};
+  state.details.clear();
+  state.history = [];
+  state.detail = null;
+  state.prompt = "";
+  state.extraDetails = "";
+  closeOverlay();
+  state.overlayTrigger = null;
+  document.querySelector("#wallet-indicator").hidden = true;
+  renderLogin();
+  toast(error.message);
 }
 
-async function renderReview() {
-  const serial = ++screenSerial;
+async function render() {
+  const serial = state.serial;
+  if (!state.user) { renderLogin(); return; }
   try {
-    const selectedAnswers = { ...answers };
-    const draft = validateDraft(await loadDraft());
-    if (serial !== screenSerial || currentRoute !== "review") return;
-    activeDraft = draft;
-    answers = {};
-    draft.open_questions.forEach((question) => {
-      if (question.answer !== null && question.answer !== undefined) answers[question.question] = question.answer;
-    });
-    Object.keys(selectedAnswers).forEach((question) => {
-      if (draft.open_questions.some((item) => item.question === question)) answers[question] = selectedAnswers[question];
-    });
-    const unanswered = draft.open_questions.filter((question) => !answers[question.question]).length;
-    const needsRevision = draft.open_questions.filter((question) => answers[question.question] && !question.confirming_answers.includes(answers[question.question])).length;
-    const request = draft.instruction;
-    setScreen(`${heading("Wallet permission", "Review your agent's plan", "Only you can confirm these limits.")}
-      <div class="review-layout">
-        <section class="review-card">
-          <div class="section-head"><h2 class="section-title">Your agent can buy</h2><span class="small-meta">Version ${esc(draft.version)}</span></div>
-          <div class="permission-list">${ruleRows(draft.rules)}</div>
-          <details class="request-details"><summary>Original request</summary><p>${esc(request)}</p></details>
-          <div class="review-links"><button type="button" data-action="show-rule-details">Rule details</button><button type="button" data-action="show-examples">Test this policy</button></div>
-        </section>
-        ${draft.open_questions.length ? `<section class="review-card"><div class="section-head"><h2 class="section-title">${draft.open_questions.length} choice${draft.open_questions.length === 1 ? "" : "s"} need your answer</h2><span class="small-meta">${unanswered ? `${unanswered} unanswered` : needsRevision ? "Needs revision" : "Ready"}</span></div><div class="question-list">${questionCards(draft.open_questions)}</div></section>` : ""}
-        <div class="review-actions">${needsRevision ? "" : `<span class="actions-note">You will confirm version ${esc(draft.version)}.</span>`}<div class="button-row"><button type="button" class="button button-quiet" data-action="reject-draft">Reject draft</button><button type="button" class="button button-primary" data-action="confirm-draft" ${unanswered || needsRevision ? "disabled" : ""}>Confirm policy</button></div></div>
-      </div>`);
+    if (state.route === "shop") await renderShop(serial);
+    else if (state.route === "wallet") await renderWallet(serial);
+    else if (state.route === "review") await renderReview(serial);
+    else await renderActivity(serial);
   } catch (error) {
-    if (serial === screenSerial && currentRoute === "review") setScreen(`${heading("POLICY REQUEST", "Make sure it feels right.", "Review the policy saved by your shopping agent.")}${dataError("The policy draft could not be loaded.", error)}`);
-    else showToast(`A previous policy load failed: ${error.message}`, "error");
+    if (serial !== state.serial) return;
+    if (error.status === 401) { sessionExpired(error); return; }
+    setScreen(`<div class="page-title"><h1>${esc(state.route === "review" ? "Review spending permission" : state.route)}</h1></div>${errorPanel("This screen could not be loaded", error)}`);
   }
 }
 
-function stepUpCard(stepUp) {
-  requireString(stepUp.authorization_id, "StepUp.authorization_id");
-  requireString(stepUp.expires_at, `StepUp ${stepUp.authorization_id}.expires_at`);
-  if (!stepUp.event || !stepUp.event.authorization || !stepUp.event.authorization.merchant || !stepUp.decision) throw new Error(`StepUp ${stepUp.authorization_id} is missing its event or decision.`);
-  const event = stepUp.event;
-  const auth = event.authorization;
-  const merchant = auth.merchant;
-  const purchase = requireString(auth.purchase_description, `StepUp ${stepUp.authorization_id} purchase_description`);
-  const decision = stepUp.decision;
-  const amount = Number(auth.billing_amount_chf);
-  if (!Number.isFinite(amount)) throw new Error(`StepUp ${stepUp.authorization_id} has no valid billing_amount_chf.`);
-  requireString(decision.customer_message, "StepUp.decision.customer_message");
-  requireString(merchant.merchant_name, "Event.authorization.merchant.merchant_name");
-  const left = new Date(stepUp.expires_at).getTime() - Date.now();
-  if (!Number.isFinite(left)) throw new Error(`StepUp ${stepUp.authorization_id} has an invalid expires_at timestamp.`);
-  const remaining = left > 0 ? `${Math.floor(left / 60000)}m ${String(Math.floor(left / 1000) % 60).padStart(2, "0")}s left` : "Deadline reached";
-  if (!Array.isArray(decision.evidence)) throw new Error(`StepUp ${stepUp.authorization_id} has no decision evidence.`);
-  const labels = {
-    "authorization.billing_amount_chf": "Amount", "facts.product_type": "Product", "facts.size": "Size", "facts.return_days": "Return window",
-    "authorization.merchant.merchant_category": "Merchant", "state.approvals_count": "Purchase count",
-  };
-  const checks = [...decision.evidence];
-  const priority = { fail: 0, uncertain: 1, pass: 2 };
-  checks.forEach((check) => {
-    requireString(check.name, "StepUp Check.name");
-    if (!Object.hasOwn(priority, check.result)) throw new Error(`StepUp check result ${check.result} is unsupported.`);
-  });
-  checks.sort((a, b) => priority[a.result] - priority[b.result]);
-  const preview = checks.slice(0, 4).map((check) => {
-    const field = check.name.startsWith("rule ") ? check.name.slice(5).split(" ")[0] : check.name;
-    const label = labels[field] || pretty(field.split(".").at(-1));
-    const status = check.result === "pass" ? "Passed" : check.result === "fail" ? "Failed" : "Unknown";
-    return `<li><span class="approval-check-mark ${esc(check.result)}" aria-hidden="true">${check.result === "pass" ? "✓" : check.result === "fail" ? "×" : "?"}</span><span>${esc(label)}</span><strong>${status}</strong></li>`;
-  }).join("");
-  return `<article class="approval-card">
-    <div class="approval-topline"><span>${esc(remaining)}</span><span>Needs your decision</span></div>
-    <div class="approval-purchase"><span>${esc(merchant.merchant_name)}</span><strong>${esc(money(amount, "CHF"))}</strong><p>${esc(purchase)}</p></div>
-    <div class="approval-checks"><h2>Checked against your wallet</h2><ul>${preview}</ul><p>${esc(decision.customer_message)}</p><button class="section-link" type="button" data-action="show-step-up-details" data-id="${esc(stepUp.authorization_id)}">Why?</button></div>
-    <p class="approval-binding">Your answer applies only to this exact purchase.</p>
-    <div class="approval-actions"><button class="button button-secondary" type="button" data-action="answer-step-up" data-id="${esc(stepUp.authorization_id)}" data-decision="decline" ${left <= 0 || submittingStepUps.has(stepUp.authorization_id) ? "disabled" : ""}>Decline</button><button class="button button-primary" type="button" data-action="answer-step-up" data-id="${esc(stepUp.authorization_id)}" data-decision="approve" ${left <= 0 || submittingStepUps.has(stepUp.authorization_id) ? "disabled" : ""}>Approve</button></div>
-  </article>`;
+function renderLogin() {
+  setScreen(`<section class="login-view"><span class="section-kicker">LOCAL DEMO ACCOUNT</span><h1>Welcome to your Wallet.</h1><p>Sign in to review spending permissions sent by your shopping agent. This demo uses a local username, not a Viseca account.</p><label for="username">Username</label><input id="username" maxlength="80" autocomplete="username" placeholder="Your name" /><button class="primary-button" type="button" data-action="login">Continue</button></section>`);
 }
 
-function showStepUpDetails(id) {
-  const stepUp = pendingStepUps.get(id);
-  if (!stepUp) throw new Error(`Pending purchase ${id} is no longer available.`);
-  if (!Array.isArray(stepUp.decision.evidence)) throw new Error(`StepUp ${id} has no evidence list.`);
-  drawerSerial += 1;
-  const checks = stepUp.decision.evidence.map((check, index) => {
-    requireString(check.name, `StepUp.evidence[${index}].name`);
-    requireString(check.source, `StepUp.evidence[${index}].source`);
-    return `<div class="check-row"><span class="check-copy"><strong>${esc(pretty(check.name))}</strong><small>${esc(check.note)}</small><small>Value: ${check.value === null ? "unknown" : esc(check.value)} · Source: ${esc(check.source)}</small></span><span class="check-result ${esc(check.result)}">${esc(check.result)}</span></div>`;
-  }).join("");
-  const details = stepUp.event.authorization.items.map((item) => esc(item.item_details)).join("\n");
-  drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Why this purchase needs approval" tabindex="-1"><div class="drawer-header"><div><h2>Why we paused</h2><p>${esc(stepUp.authorization_id)}</p></div><button class="close-button" type="button" aria-label="Close details" data-action="close-drawer">×</button></div><section class="drawer-section"><p>${esc(stepUp.decision.customer_message)}</p></section><section class="drawer-section"><h3>Wallet checks</h3>${checks}</section><details class="drawer-section"><summary>Merchant-supplied text · untrusted</summary><div class="event-copy">${details}</div></details><details class="drawer-section"><summary>Raw authorization event</summary><pre class="event-json">${esc(JSON.stringify(stepUp.event, null, 2))}</pre></details></aside></div>`;
-  drawerRoot.querySelector(".drawer").focus();
+async function initialize() {
+  try {
+    const session = await walletApi.session();
+    state.user = text(session.username, "Session username");
+    const hash = window.location.hash.slice(1);
+    navigate(hash || (linkedDraftId() ? "review" : "shop"));
+  } catch (error) {
+    if (error.status === 401) { renderLogin(); return; }
+    setScreen(errorPanel("Your session could not be checked", error));
+  }
 }
 
-function expiredNote(count) {
-  return count ? `<div class="toast is-success" role="status">${count} previous request${count === 1 ? " was" : "s were"} resolved and removed from your list.</div>` : "";
+function growTextArea(input, minimum) {
+  input.style.height = "auto";
+  input.style.height = `${Math.max(minimum, input.scrollHeight)}px`;
 }
 
-async function loadApprovals() {
-  const container = document.querySelector("#approvals-list");
-  const errorContainer = document.querySelector("#approvals-error");
+function startExamples() {
+  window.clearTimeout(state.exampleTimer);
+  if (reducedMotion.matches) return;
+  let index = 0, position = 0, erasing = false;
+  function tick() {
+    const composer = document.querySelector("#shop-prompt");
+    const example = document.querySelector("#animated-example");
+    if (!composer || !example || document.activeElement === composer || document.activeElement === example || composer.value) return;
+    const current = examples[index];
+    example.dataset.example = current;
+    example.setAttribute("aria-label", `Use example: ${current}`);
+    example.textContent = current.slice(0, position);
+    if (!erasing && position < current.length) { position += 1; state.exampleTimer = window.setTimeout(tick, 44); }
+    else if (!erasing) { erasing = true; state.exampleTimer = window.setTimeout(tick, 1900); }
+    else if (position > 0) { position -= 1; state.exampleTimer = window.setTimeout(tick, 22); }
+    else { erasing = false; index = (index + 1) % examples.length; state.exampleTimer = window.setTimeout(tick, 350); }
+  }
+  tick();
+}
+
+function purchaseCap(rules) {
+  const caps = rules.filter((rule) => rule.field === "authorization.billing_amount_chf" && rule.scope === "purchase" && ["<", "<="].includes(rule.operator) && typeof rule.value === "number");
+  if (!caps.length) return null;
+  const amount = Math.min(...caps.map((rule) => rule.value));
+  return { amount, strict: caps.some((rule) => rule.value === amount && rule.operator === "<") };
+}
+
+function productName(draft) {
+  const product = draft.rules.find((rule) => rule.field === "facts.product_type" && rule.operator === "=" && typeof rule.value === "string");
+  return product ? product.value : draft.instruction;
+}
+
+async function renderShop(serial) {
+  loading("Preparing Shop…");
+  let plan = null;
+  if (linkedDraftId()) plan = validateDraft(await walletApi.draft(linkedDraftId()));
+  if (serial !== state.serial) return;
+  const cap = plan && purchaseCap(plan.rules);
+  setScreen(`<section class="shop-view"><div class="shop-intro"><h1>What can I<br />get for you?</h1><div class="orbit" aria-hidden="true"><span class="orbit-glow"></span><span class="orbit-ring one"></span><span class="orbit-ring two"></span><span class="orbit-core">✓</span><span class="orbit-dot"></span><span class="category-float tech"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Tech</span><span class="category-float travel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5" y="3" width="14" height="16" rx="4"/><path d="M5 12h14M9 19l-2 3m8-3 2 3"/></svg>Travel</span><span class="category-float gifts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M2 9h20M12 9v12M12 9c-5 0-7-2-5-5s5 0 5 5Zm0 0c5 0 7-2 5-5s-5 0-5 5Z"/></svg>Gifts</span><span class="category-float home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 10 12 3l9 7v11H3V10Z"/><path d="M9 21v-7h6v7"/></svg>Home</span><span class="category-float style"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m8 3-5 4-1 5 4 2v7h12v-7l4-2-1-5-5-4-4 3-4-3Z"/></svg>Style</span></div></div>
+    <div class="composer"><label for="shop-prompt" class="sr-only">Your shopping request</label><textarea id="shop-prompt" rows="2" placeholder="Ask Viseca to buy something…">${esc(state.prompt)}</textarea><button class="send-button" type="button" data-action="copy-prompt" aria-label="Copy request for your shopping agent" title="Copy request for your shopping agent" ${state.prompt.trim() ? "" : "disabled"}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 20V4M5 11l7-7 7 7"/></svg></button></div>
+    <div class="prompt-example" aria-live="off" ${state.prompt.trim() ? "hidden" : ""}><span>TRY ASKING</span><button type="button" data-action="use-example" id="animated-example" data-example="${esc(examples[0])}" aria-label="Use example: ${esc(examples[0])}">${esc(examples[0])}</button></div><p class="request-hint" ${state.prompt.trim() ? "hidden" : ""}>Include details that matter to you, such as colour, size, shape, price or returns.</p>
+    <div class="clarification" ${state.prompt.trim() ? "" : "hidden"}><label for="request-details">Anything else your agent should know?</label><textarea id="request-details" rows="2" placeholder="Colour, size, shape, delivery or returns…">${esc(state.extraDetails)}</textarea><small>These details are copied with your request. Review any spending limits in the Wallet before authorizing.</small></div>
+    <p class="agent-state">Shopping agent <span>· use an external MCP client</span></p><p class="external-agent">The arrow copies your request for your external agent. This demo has no in-app shopping model. Your agent can send you a Wallet review link after saving a plan.</p>
+    ${plan ? `<section class="shop-plan"><span class="section-kicker">PLAN SAVED BY YOUR AGENT</span><h2>${esc(productName(plan))}</h2><p>${cap ? `${cap.strict ? "Below" : "Up to"} ${esc(money(cap.amount))}` : "Review the saved limits"}</p><button type="button" class="text-button" data-route="review">Review in Wallet <span aria-hidden="true">→</span></button></section>` : ""}
+  </section>`);
+  growTextArea(document.querySelector("#shop-prompt"), 62);
+  if (state.prompt.trim()) growTextArea(document.querySelector("#request-details"), 72);
+  startExamples();
+}
+
+function walletTabs() {
+  return `<div class="wallet-tabs" role="tablist" aria-label="Wallet sections">${[
+    ["needs", "Needs you"], ["active", "Active"], ["rules", "Rules"],
+  ].map(([id, label]) => `<button type="button" role="tab" aria-selected="${state.walletTab === id}" tabindex="${state.walletTab === id ? 0 : -1}" class="${state.walletTab === id ? "selected" : ""}" data-action="wallet-tab" data-tab="${id}">${label}</button>`).join("")}</div>`;
+}
+
+function schedulePendingRefresh() {
+  window.clearTimeout(state.timer);
+  if (state.route !== "wallet" || state.walletTab !== "needs" || !state.user) return;
+  state.timer = window.setTimeout(async () => {
+    state.timer = null;
+    if (await refreshPending()) schedulePendingRefresh();
+  }, 2000);
+}
+
+async function renderWallet(serial) {
+  loading("Loading Wallet…");
+  let markup;
+  if (state.walletTab === "needs") markup = await needsContent(serial);
+  else if (state.walletTab === "active") markup = await activeContent(serial);
+  else markup = await rulesContent(serial);
+  if (serial !== state.serial) return;
+  setScreen(`<section class="wallet-view"><div class="page-title"><h1>Wallet</h1></div>${walletTabs()}${markup}</section>`);
+  if (state.pendingTabFocus === "wallet") {
+    screen.querySelector('.wallet-tabs [aria-selected="true"]').focus();
+    state.pendingTabFocus = null;
+  }
+  if (state.walletTab === "needs") schedulePendingRefresh();
+}
+
+async function needsContent(serial) {
+  const [draft, pending] = await Promise.all([
+    linkedDraftId() ? walletApi.draft(linkedDraftId()).then(validateDraft) : Promise.resolve(null),
+    walletApi.pending(),
+  ]);
+  if (serial !== state.serial) return "";
+  if (!Array.isArray(pending)) throw new Error("The Wallet did not return a list of pending purchases.");
+  state.pending = pending;
+  state.draft = draft;
+  document.querySelector("#wallet-indicator").hidden = !(draft || pending.length);
+  return `<div class="wallet-section"><h2 id="needs-heading">${draft || pending.length ? `${(draft ? 1 : 0) + pending.length} thing${(draft ? 1 : 0) + pending.length === 1 ? " needs" : "s need"} you` : "You're all caught up"}</h2>
+    ${draft ? `<button type="button" class="need-card" data-route="review"><span class="section-kicker">SPENDING REQUEST</span><strong>Review shopping plan</strong><span>${esc(productName(draft))}${purchaseCap(draft.rules) ? ` · ${esc(money(purchaseCap(draft.rules).amount))}` : ""}</span><b aria-hidden="true">›</b></button>` : ""}
+    <div id="pending-list">${pending.map(pendingCard).join("")}</div>
+    ${draft || pending.length ? "" : `<p class="calm-copy">Spending requests and purchases that need a decision will appear here.</p>`}</div>`;
+}
+
+function pendingTimeLabel(expiresAt) {
+  const remaining = new Date(expiresAt).getTime() - Date.now();
+  if (!Number.isFinite(remaining)) throw new Error("A pending purchase has an invalid deadline.");
+  return remaining > 0 ? `${Math.floor(remaining / 60000)}m ${String(Math.floor(remaining / 1000) % 60).padStart(2, "0")}s left` : "Deadline reached";
+}
+
+function pendingCard(item) {
+  text(item.authorization_id, "Pending purchase ID");
+  text(item.expires_at, "Pending purchase deadline");
+  if (!item.event?.authorization?.merchant || !item.decision || !Array.isArray(item.decision.evidence)) throw new Error("A pending purchase is incomplete.");
+  const auth = item.event.authorization;
+  const merchant = text(auth.merchant.merchant_name, "Pending merchant");
+  const issue = item.decision.evidence.find((check) => check.result === "uncertain" || check.result === "fail");
+  return `<button type="button" class="need-card uncertain-card" data-action="open-pending" data-id="${esc(item.authorization_id)}"><span class="section-kicker" aria-live="off">PURCHASE REVIEW · ${esc(pendingTimeLabel(item.expires_at))}</span><strong>One detail needs a decision</strong><span>${esc(merchant)} · ${esc(money(auth.billing_amount_chf, auth.currency))}</span><small>${esc(issue?.note || item.decision.customer_message)}</small><b aria-hidden="true">›</b></button>`;
+}
+
+async function refreshPending() {
+  if (state.route !== "wallet" || state.walletTab !== "needs" || !state.user) return;
+  const container = document.querySelector("#pending-list");
   if (!container) return;
+  const request = ++state.pendingSerial;
+  const route = state.serial;
+  const id = mandateId();
   try {
-    const requests = await api("/step-ups/pending");
-    if (!Array.isArray(requests)) throw new Error("/step-ups/pending must return a list of pending StepUp records.");
-    requests.forEach((item, index) => {
-      requireString(item.authorization_id, `step-ups[${index}].authorization_id`);
-      requireString(item.expires_at, `step-ups[${index}].expires_at`);
-      if (!item.event || !item.event.authorization || !Array.isArray(item.event.authorization.items)) throw new Error(`step-ups[${index}] has no complete Event.authorization.`);
-      if (!item.event.authorization.merchant || !item.decision) throw new Error(`step-ups[${index}] has no merchant or Decision.`);
-      requireString(item.event.authorization.merchant.merchant_name, `step-ups[${index}].event.authorization.merchant.merchant_name`);
-      requireString(item.decision.customer_message, `step-ups[${index}].decision.customer_message`);
-      if (!Number.isFinite(new Date(item.expires_at).getTime())) throw new Error(`step-ups[${index}].expires_at is invalid.`);
-    });
-    if (!container.isConnected) return;
-    const ids = new Set(requests.map((item) => item.authorization_id));
-    const removed = [...pendingIds].filter((id) => !ids.has(id));
-    pendingIds = ids;
-    pendingStepUps = new Map(requests.map((item) => [item.authorization_id, item]));
-    document.querySelector("#approval-count").textContent = requests.length ? String(requests.length) : "0";
-    container.innerHTML = requests.length ? `<div class="list-stack">${requests.map(stepUpCard).join("")}</div>` : `<section class="wallet-empty"><h2>No approvals waiting</h2><p>Purchases that need your decision will appear here.</p></section>`;
-    if (errorContainer) errorContainer.innerHTML = removed.length ? expiredNote(removed.length) : "";
-  } catch (error) {
-    if (!container.isConnected) {
-      showToast(`A previous approval refresh failed: ${error.message}`, "error");
-      return;
+    const pending = await walletApi.pending();
+    if (!Array.isArray(pending)) throw new Error("Pending purchases must be a list.");
+    if (request !== state.pendingSerial || route !== state.serial || id !== mandateId() || !container.isConnected) return;
+    const markup = pending.map(pendingCard).join("");
+    const unchanged = pending.length === state.pending.length && pending.every((item, index) =>
+      item.authorization_id === state.pending[index].authorization_id &&
+      item.expires_at === state.pending[index].expires_at &&
+      item.decision.customer_message === state.pending[index].decision.customer_message);
+    if (unchanged) {
+      pending.forEach((item, index) => {
+        const label = container.children[index]?.querySelector(".section-kicker");
+        if (!label) throw new Error("The pending purchase card is missing its deadline.");
+        const next = `PURCHASE REVIEW · ${pendingTimeLabel(item.expires_at)}`;
+        if (label.textContent !== next) label.textContent = next;
+      });
+    } else {
+      const focusedId = container.contains(document.activeElement) ? document.activeElement.closest('[data-action="open-pending"]')?.dataset.id : null;
+      container.innerHTML = markup;
+      if (focusedId) {
+        const card = [...container.querySelectorAll('[data-action="open-pending"]')].find((item) => item.dataset.id === focusedId);
+        if (card) card.focus();
+        else {
+          const heading = document.querySelector("#needs-heading");
+          heading.tabIndex = -1;
+          heading.focus();
+        }
+      }
     }
-    document.querySelector("#approval-count").textContent = "—";
-    container.replaceChildren();
-    if (errorContainer) errorContainer.innerHTML = dataError("Pending approvals could not be refreshed.", error);
-    else container.innerHTML = dataError("Pending approvals could not be loaded.", error);
+    state.pending = pending;
+    const openAnswer = overlayRoot.querySelector('[data-action="resolve"]');
+    if (openAnswer) {
+      const current = pending.find((item) => item.authorization_id === openAnswer.dataset.id);
+      if (!current || new Date(current.expires_at).getTime() <= Date.now()) {
+        overlayRoot.querySelectorAll('[data-action="resolve"]').forEach((button) => { button.disabled = true; });
+        const deadline = overlayRoot.querySelector("#pending-deadline");
+        if (deadline) deadline.textContent = "This decision window has closed. Refresh Wallet for the final outcome.";
+      }
+    }
+    const count = pending.length + (state.draft ? 1 : 0);
+    const heading = document.querySelector("#needs-heading");
+    const title = count ? `${count} thing${count === 1 ? " needs" : "s need"} you` : "You're all caught up";
+    if (heading.textContent !== title) heading.textContent = title;
+    document.querySelector("#wallet-indicator").hidden = !count;
+    return true;
+  } catch (error) {
+    if (request !== state.pendingSerial || route !== state.serial || !container.isConnected) return;
+    if (error.status === 401) { sessionExpired(error); return; }
+    window.clearTimeout(state.timer);
+    state.timer = null;
+    state.pending = [];
+    closeOverlay();
+    container.innerHTML = errorPanel("Pending purchases could not be refreshed", error);
+    return false;
   }
 }
 
-async function renderApprovals() {
-  setScreen(`${heading("PURCHASE CHECKS", "Approvals", "Review each purchase before it expires.")}
-    <div class="approvals-layout"><div id="approvals-error"></div><div id="approvals-list"><div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Checking for pending purchases…</span></div></div></div>`);
-  const container = document.querySelector("#approvals-list");
-  await loadApprovals();
-  if (container.isConnected && currentRoute === "approvals") approvalTimer = window.setInterval(() => loadApprovals(), 2000);
+function ruleGroup(rule) {
+  if (rule.field.startsWith("authorization.billing_amount") || rule.field === "state.approvals_count") return "Spending";
+  if (rule.field.startsWith("facts.") || rule.field.startsWith("items.")) return "Products and extras";
+  if (rule.field.startsWith("authorization.merchant.") || rule.field.startsWith("history.merchant")) return "Merchants";
+  return "Other checks";
 }
 
-function noMandate() {
-  const hasDraft = new URLSearchParams(window.location.search).has("draft_id");
-  return `<section class="wallet-empty"><h2>No agent wallet yet</h2><p>Your shopping agent can send a policy draft for you to review. Only your confirmation activates it.</p>${hasDraft ? `<button class="button button-primary" type="button" data-route="review">Review policy</button>` : ""}</section>`;
-}
-
-function formatRuleValue(rule) {
-  const value = Array.isArray(rule.value) ? rule.value.join(", ") : rule.value;
-  return `${esc(rule.operator)} ${rule.currency ? `${esc(rule.currency)} ` : ""}${esc(value)}`;
-}
-
-function ruleViews(rules = []) {
-  return rules.map((rule) => `<div class="rule-view-row"><div><strong>${esc(rule.plain_english)}</strong><small>From your request: ${esc(rule.source_text)}</small></div><span class="rule-value">${formatRuleValue(rule)}</span></div>`).join("");
-}
-
-function getPayloadParts(payload) {
-  if (!payload || !payload.mandate || !payload.draft || !payload.effective_policy || !payload.state) throw new Error("GET /mandates/{mandate_id} must return { mandate, draft, effective_policy, state }.");
-  requireString(payload.mandate.mandate_id, "Mandate.mandate_id");
-  requireString(payload.mandate.status, "Mandate.status");
-  if (!["active", "revoked", "expired", "superseded"].includes(payload.mandate.status)) throw new Error(`Mandate.status ${payload.mandate.status} is not supported.`);
-  requireString(payload.mandate.confirmed_at, "Mandate.confirmed_at");
-  if (!Number.isFinite(new Date(payload.mandate.confirmed_at).getTime())) throw new Error("Mandate.confirmed_at is not a valid timestamp.");
-  if (!Number.isInteger(payload.mandate.version)) throw new Error("Mandate.version must be an integer.");
-  validateDraft(payload.draft);
-  validateRules(payload.effective_policy.rules, "effective_policy.rules");
-  if (!["ask", "decline", "approve"].includes(payload.effective_policy.uncertainty_policy)) throw new Error("effective_policy.uncertainty_policy is unsupported.");
-  if (payload.state.mandate_id !== payload.mandate.mandate_id) throw new Error("MandateState.mandate_id does not match Mandate.mandate_id.");
-  if (!Array.isArray(payload.state.approvals)) throw new Error("MandateState.approvals must be a list.");
-  payload.state.approvals.forEach((approval, index) => {
-    requireString(approval.authorization_id, `state.approvals[${index}].authorization_id`);
-    requireString(approval.timestamp, `state.approvals[${index}].timestamp`);
-    if (!Number.isFinite(new Date(approval.timestamp).getTime())) throw new Error(`state.approvals[${index}].timestamp is invalid.`);
-    if (typeof approval.amount_chf !== "number" || !Number.isFinite(approval.amount_chf)) throw new Error(`state.approvals[${index}].amount_chf is invalid.`);
+function ruleGroups(rules) {
+  const groups = new Map();
+  rules.forEach((rule) => {
+    const name = ruleGroup(rule);
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(rule);
   });
-  return { mandate: payload.mandate, draft: payload.draft, effective_policy: payload.effective_policy, state: payload.state };
+  return ["Spending", "Products and extras", "Merchants", "Other checks"].filter((name) => groups.has(name)).map((name) => `<section class="rule-group"><h3>${esc(name)}</h3>${groups.get(name).map((rule) => `<div class="rule-item"><span class="rule-check" aria-hidden="true">✓</span><span>${esc(rule.plain_english)}</span></div>`).join("")}</section>`).join("");
 }
 
-function periodSpendRules(rules = []) {
-  return rules.filter((rule) => rule.scope === "period" && rule.field === "authorization.billing_amount_chf");
-}
-
-function spendMetrics(approvals, rules) {
-  const periodRules = periodSpendRules(rules);
-  if (!approvals.length) return `<div class="metric-grid"><div class="metric-card"><div class="metric-label">Approved purchases</div><div class="metric-value">0</div><div class="metric-foot">This mandate</div></div><div class="metric-card"><div class="metric-label">Spend so far</div><div class="metric-value">CHF 0</div><div class="metric-foot">No accepted approvals yet</div></div></div>`;
-  if (!periodRules.length) {
-    const total = approvals.reduce((sum, item) => sum + Number(item.amount_chf), 0);
-    return `<div class="metric-grid"><div class="metric-card"><div class="metric-label">Approved purchases</div><div class="metric-value">${approvals.length}</div><div class="metric-foot">This mandate</div></div><div class="metric-card"><div class="metric-label">Approved spend</div><div class="metric-value">${esc(money(total, "CHF"))}</div><div class="metric-foot">This mandate · no rolling window set</div></div></div>`;
-  }
-  return `<div class="metric-grid">${periodRules.map((rule) => {
-    const timestamps = approvals.map((item) => new Date(item.timestamp).getTime());
-    const simulatedNow = Math.max(...timestamps);
-    const cutoff = simulatedNow - rule.period_days * 86400000;
-    const recent = approvals.filter((item) => new Date(item.timestamp).getTime() >= cutoff);
-    const total = recent.reduce((sum, item) => sum + Number(item.amount_chf), 0);
-    return `<div class="metric-card"><div class="metric-label">Spend · last ${esc(rule.period_days)} days</div><div class="metric-value">${esc(money(total, "CHF"))}</div><div class="metric-foot">${recent.length} approved purchases · as of ${esc(timeLabel(simulatedNow))}</div></div>`;
-  }).join("")}</div>`;
-}
-
-async function renderHome() {
-  const serial = ++screenSerial;
+async function activeContent(serial) {
   const id = mandateId();
-  if (!id) {
-    if (new URLSearchParams(window.location.search).has("draft_id")) {
-      setActiveRoute("review");
-      return;
-    }
-    setScreen(`${heading("YOUR WALLET", "Agent wallet", "Your agent needs a policy you have confirmed.")}${noMandate()}`);
-    return;
-  }
-  setScreen(`${heading("YOUR WALLET", "Agent wallet", "Your current permissions and recent purchases.")}<div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Loading wallet…</span></div>`);
-  try {
-    const [payload, entries] = await Promise.all([
-      api(`/mandates/${encodeURIComponent(id)}`),
-      api(`/mandates/${encodeURIComponent(id)}/decisions`),
-    ]);
-    const { mandate, draft, effective_policy, state } = getPayloadParts(payload);
-    if (!Array.isArray(entries)) throw new Error("GET /mandates/{mandate_id}/decisions must return a list.");
-    if (serial !== screenSerial || currentRoute !== "home") return;
-    const caps = effective_policy.rules.filter((rule) => rule.field === "authorization.billing_amount_chf" && rule.scope === "purchase" && ["<", "<="].includes(rule.operator) && typeof rule.value === "number");
-    const limit = caps.length ? Math.min(...caps.map((rule) => rule.value)) : null;
-    const product = effective_policy.rules.find((rule) => rule.field === "facts.product_type");
-    const size = effective_policy.rules.find((rule) => rule.field === "facts.size");
-    const merchant = effective_policy.rules.find((rule) => rule.field === "authorization.merchant.merchant_category");
-    const returns = effective_policy.rules.find((rule) => rule.field === "facts.return_days");
-    const description = product ? String(product.value).replaceAll("_", " ") : draft.instruction;
-    const details = [size ? `Size ${size.value}` : null, merchant ? String(merchant.value).replaceAll("_", " ") : null, returns ? `Returns ${returns.operator} ${returns.value} days` : null].filter((value) => value !== null);
-    const spend = state.approvals.reduce((sum, approval) => sum + approval.amount_chf, 0);
-    const recent = [...entries].reverse().slice(0, 3);
-    recent.forEach((entry, index) => {
-      if (!entry || !entry.decision || !entry.state_after) throw new Error(`History entry ${index} must include decision and state_after.`);
-      requireString(entry.decision.customer_message, `Decision ${index}.customer_message`);
-      requireString(entry.decision.authorization_id, `Decision ${index}.authorization_id`);
-      outcomePill(entry.decision.decision);
-    });
-    const active = mandate.status === "active";
-    setScreen(`${heading("YOUR WALLET", "Agent wallet", "Your agent's current purchase limits.")}
-      <div class="wallet-layout">
-        <section class="wallet-surface" aria-label="Agent wallet permissions"><div class="wallet-surface-top"><span>Maximum purchase</span><span class="wallet-status ${active ? "is-active" : ""}"><i aria-hidden="true"></i>${esc(pretty(mandate.status))}</span></div>
-          <strong class="wallet-limit ${limit === null ? "is-unset" : ""}">${limit === null ? "No purchase cap" : esc(money(limit, "CHF"))}</strong>
-          <div class="wallet-permissions"><strong>${esc(description)}</strong>${details.length ? `<p>${details.map(esc).join(" · ")}</p>` : ""}</div>
-          <div class="wallet-spend"><span>Approved spend</span><strong>${esc(money(spend, "CHF"))}</strong><span>Approved purchases</span><strong>${state.approvals.length}</strong></div>
-        </section>
-        <section class="wallet-activity"><div class="section-head"><h2>Recent activity</h2><button class="section-link" type="button" data-route="activity">View all</button></div>
-          ${recent.length ? `<div class="activity-rows">${recent.map((entry) => `<button class="activity-row" type="button" data-action="open-decision" data-id="${esc(entry.decision.authorization_id)}"><span class="activity-outcome" aria-label="${esc(pretty(entry.decision.decision))}">${entry.decision.decision === "approve" ? "✓" : entry.decision.decision === "decline" ? "×" : "?"}</span><span><strong>${esc(pretty(entry.decision.decision))}</strong><small>${esc(entry.decision.customer_message)}</small></span><span aria-hidden="true">›</span></button>`).join("")}</div>` : `<p class="wallet-empty-inline">No purchases yet. Decisions will appear here when your agent tries to buy something.</p>`}
-        </section>
-      </div>`);
-  } catch (error) {
-    if (serial === screenSerial && currentRoute === "home") setScreen(`${heading("YOUR WALLET", "Agent wallet", "Your current permissions and recent purchases.")}${dataError("Your wallet could not be loaded.", error)}`);
-    else showToast(`A previous wallet load failed: ${error.message}`, "error");
-  }
+  if (!id) return `<div class="wallet-section"><h2>No active spending permission</h2><p class="calm-copy">An external shopping agent can send you a spending plan. Your Wallet will ask you to approve it.</p><button type="button" class="outline-button" data-route="shop">Go to Shop</button></div>`;
+  const payload = validateMandate(await walletApi.mandate(id));
+  if (serial !== state.serial) return "";
+  state.mandate = payload;
+  const { mandate, draft, effective_policy, state: usage } = payload;
+  const cap = purchaseCap(effective_policy.rules);
+  return `<div class="wallet-section"><h2>Spending permission</h2><section class="permission-card"><span class="section-kicker">${esc(mandate.status.toUpperCase())}</span><h3>${esc(productName(draft))}</h3><strong>${cap ? esc(money(cap.amount)) : "No per-purchase amount limit"}</strong><p>${cap ? cap.strict ? "Each purchase must stay below this amount." : "Maximum per purchase." : "Review the confirmed rules before your agent shops."}</p><div class="permission-stats"><span>Approved purchases</span><b>${usage.approvals.length}</b><span>Approved spend</span><b>${esc(money(usage.approvals.reduce((sum, entry) => sum + entry.amount_chf, 0)))}</b></div></section><p class="calm-copy">${mandate.status === "active" ? "Only the rules you confirmed grant purchasing authority." : `This permission is ${esc(mandate.status)} and cannot authorize new purchases.`}</p><button type="button" class="text-button" data-action="wallet-tab" data-tab="rules">View current rules <span aria-hidden="true">→</span></button></div>`;
 }
 
-async function renderPolicy() {
-  const serial = ++screenSerial;
+async function rulesContent(serial) {
   const id = mandateId();
-  if (!id) {
-    setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.")}${noMandate()}`);
-    return;
-  }
-  setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.")}<div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Loading your mandate…</span></div>`);
-  try {
-    const { mandate, draft, effective_policy, state } = getPayloadParts(await api(`/mandates/${encodeURIComponent(id)}`));
-    if (serial !== screenSerial || currentRoute !== "policy") return;
-    currentPolicy = { mandate, draft, effective_policy, state };
-    const approvals = state.approvals;
-    const isActive = mandate.status === "active";
-    const approvedSpend = approvals.reduce((sum, approval) => sum + approval.amount_chf, 0);
-    setScreen(`${heading("YOUR WALLET", "Agent permissions", "Confirmed ${esc(new Date(mandate.confirmed_at).toLocaleDateString())} · version ${esc(mandate.version)}", `<span class="wallet-status ${isActive ? "is-active" : ""}"><i aria-hidden="true"></i>${esc(pretty(mandate.status))}</span>`)}
-      <div class="policy-layout">
-        <section class="policy-surface"><div class="permission-list">${ruleRows(effective_policy.rules)}<div class="permission-row"><span>Uncertainty</span><strong>${esc(pretty(effective_policy.uncertainty_policy))}</strong></div></div><button class="section-link" type="button" data-action="show-rule-details">Rule details</button></section>
-        <div class="policy-summary"><span>Approved spend</span><strong>${esc(money(approvedSpend, "CHF"))}</strong><span>Purchases approved</span><strong>${approvals.length}</strong></div>
-        <section class="policy-controls"><h2>Change permissions</h2><button class="button button-secondary" type="button" data-action="open-tighten" ${isActive && effective_policy.uncertainty_policy !== "decline" ? "" : "disabled"}>Decline uncertain purchases</button><button class="policy-revoke" type="button" data-action="revoke-mandate" ${isActive ? "" : "disabled"}>Revoke access</button><p>New rule limits are unavailable while the simulator rejects rule additions.</p></section>
-      </div>`);
-  } catch (error) {
-    if (serial === screenSerial && currentRoute === "policy") setScreen(`${heading("YOUR WALLET", "Your policy, in your hands.", "See what your shopping agent can do and narrow the rules whenever you like.")}${dataError("Your mandate could not be loaded.", error)}`);
-    else showToast(`A previous mandate load failed: ${error.message}`, "error");
-  }
+  if (!id) return `<div class="wallet-section"><h2>Rules for your permissions</h2><p class="calm-copy">You have no confirmed permission to inspect. Account-wide defaults are not available in this demo.</p></div>`;
+  const payload = validateMandate(await walletApi.mandate(id));
+  if (serial !== state.serial) return "";
+  state.mandate = payload;
+  const { mandate, effective_policy } = payload;
+  return `<div class="wallet-section"><h2>Rules for this permission</h2><p class="calm-copy">These limits belong to the spending permission you confirmed. Account-wide defaults are not available in this demo.</p>${ruleGroups(effective_policy.rules)}<section class="rule-group"><h3>Missing information</h3><p>${esc(effective_policy.uncertainty_policy === "ask" ? "Ask me before buying" : effective_policy.uncertainty_policy === "decline" ? "Decline the purchase" : "Use the confirmed uncertainty setting")}</p></section><section class="rule-group"><h3>Security</h3><p>Purchase decisions and unfamiliar evidence are checked by the Wallet backend. Your agent cannot change these confirmed rules.</p></section><div class="rule-actions"><button type="button" class="outline-button" data-action="open-tighten" ${mandate.status !== "active" || effective_policy.uncertainty_policy === "decline" ? "disabled" : ""}>Decline uncertain purchases</button><button type="button" class="danger-link" data-action="open-revoke" ${mandate.status !== "active" ? "disabled" : ""}>Revoke this permission</button></div></div>`;
 }
 
-function outcomePill(outcome) {
-  if (!["approve", "decline", "step_up"].includes(outcome)) throw new Error(`Decision outcome ${outcome} is not supported.`);
-  const value = outcome;
-  return `<span class="outcome-pill ${esc(value)}"><i class="outcome-dot"></i>${esc(pretty(value))}</span>`;
+async function renderReview(serial) {
+  loading("Loading saved spending plan…");
+  const id = text(linkedDraftId(), "Draft link");
+  const draft = validateDraft(await walletApi.draft(id));
+  if (serial !== state.serial) return;
+  if (state.draft?.draft_id !== id || state.draft.version !== draft.version || state.draft.hash !== draft.hash) state.answers = {};
+  state.draft = draft;
+  const cap = purchaseCap(draft.rules);
+  const questions = draft.open_questions;
+  const ready = questions.every((question) => question.confirming_answers.includes(state.answers[question.question] ?? question.answer));
+  const needsRevision = questions.some((question) => {
+    const answer = state.answers[question.question] ?? question.answer;
+    return answer && !question.confirming_answers.includes(answer);
+  });
+  setScreen(`<section class="review-view"><button class="back-button" type="button" data-route="wallet">‹ Wallet</button><div class="page-title"><h1>Review spending permission</h1></div><p class="review-subtitle">Your Wallet loaded the plan saved by your shopping agent. Only you can authorize it.</p><section class="review-summary"><span class="section-kicker">YOUR AGENT MAY BUY</span><h2>${esc(productName(draft))}</h2><strong>${cap ? esc(money(cap.amount)) : "No per-purchase cap"}</strong><small>${cap ? cap.strict ? "SPEND MUST STAY BELOW THIS AMOUNT" : "MAXIMUM PER PURCHASE" : "REVIEW ALL RULES BEFORE AUTHORIZING"}</small></section><section class="review-rules"><h2>The limits you'll authorize</h2>${ruleGroups(draft.rules)}<details><summary>Original request</summary><p>${esc(draft.instruction)}</p></details><details><summary>Examples from the agent</summary>${draft.examples.map((example) => `<p><strong>${esc(example.expected)}</strong> · ${esc(example.description)}. ${esc(example.why)}</p>`).join("")}</details></section>
+    ${questions.length ? `<section class="questions"><h2>Confirm these details</h2>${questions.map((question) => { const selected = state.answers[question.question] ?? question.answer; return `<div class="question"><strong>${esc(question.question)}</strong><div class="choices">${question.options.map((option) => `<button type="button" class="${selected === option ? "selected" : ""}" aria-pressed="${selected === option}" data-action="answer-question" data-question="${esc(question.question)}" data-answer="${esc(option)}">${esc(option)}</button>`).join("")}</div></div>`; }).join("")}${needsRevision ? `<p class="uncertainty-note">Your selection requires a revised plan from the shopping agent before authorization.</p>` : ""}</section>` : ""}<div class="review-spacer"></div><div class="review-actions"><button type="button" class="outline-button" data-action="open-reject">Reject</button><button type="button" class="primary-button" data-action="confirm" ${ready ? "" : "disabled"}>Authorize agent</button></div></section>`);
 }
 
-function timeLabel(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) throw new Error(`Invalid timestamp: ${value}`);
-  return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+function activityTabs() {
+  return `<div class="activity-tabs" role="tablist" aria-label="Filter decisions">${[["all", "All"], ["purchases", "Purchases"], ["blocked", "Blocked"]].map(([id, label]) => `<button type="button" role="tab" tabindex="${state.activityFilter === id ? 0 : -1}" aria-selected="${state.activityFilter === id}" class="${state.activityFilter === id ? "selected" : ""}" data-action="activity-filter" data-filter="${id}">${label}</button>`).join("")}</div>`;
 }
 
-async function renderActivity() {
-  const serial = ++screenSerial;
+function activityRows() {
+  const filtered = state.history.filter(({ decision }) => state.activityFilter === "all" || (state.activityFilter === "purchases" ? decision.decision === "approve" : decision.decision === "decline"));
+  if (!filtered.length) return `<section class="wallet-empty"><h2>No ${state.activityFilter === "all" ? "decisions" : state.activityFilter} yet</h2><p>Decisions for this permission will appear here after the backend records them.</p></section>`;
+  let lastDay = "";
+  return filtered.map(({ decision }) => {
+    const payload = state.details.get(decision.authorization_id);
+    if (!payload) throw new Error(`Transaction ${decision.authorization_id} has no details.`);
+    const auth = payload.event.authorization;
+    const day = new Date(decision.decided_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" }) + " · UTC";
+    const heading = day === lastDay ? "" : `<h2 class="date-group">${esc(day)}</h2>`;
+    lastDay = day;
+    const merchant = text(auth.merchant.merchant_name, "Merchant");
+    const item = auth.items.map((entry) => text(entry.item_name, "Item")).join(" + ");
+    const label = decision.decision === "approve" ? decision.reason_codes.includes("customer_confirmation") ? "Approved after review" : "Approved" : decision.decision === "decline" ? "Blocked" : "Needs a decision";
+    const kind = decision.decision === "approve" ? "approved" : decision.decision === "decline" ? "blocked" : "uncertain";
+    return `${heading}<button type="button" class="activity-card" data-action="open-detail" data-id="${esc(decision.authorization_id)}"><span class="activity-card-top"><span class="outcome-icon ${kind}" aria-hidden="true">${decision.decision === "approve" ? "✓" : decision.decision === "decline" ? "×" : "?"}</span><strong>${esc(merchant)}</strong><b>${esc(money(auth.billing_amount_chf, auth.currency))}</b></span><span class="activity-product">${esc(item)}</span><span class="activity-card-bottom"><span class="${kind}">${esc(label)}</span><time datetime="${esc(decision.decided_at)}">${esc(new Date(decision.decided_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }))}</time></span></button>`;
+  }).join("");
+}
+
+async function renderActivity(serial) {
   const id = mandateId();
-  if (!id) {
-    setScreen(`${heading("PURCHASE HISTORY", "Activity", "Your agent's purchase decisions.")}${noMandate()}`);
-    return;
-  }
-  setScreen(`${heading("PURCHASE HISTORY", "Activity", "Your agent's purchase decisions.")}<div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Loading recent decisions…</span></div>`);
-  try {
-    const decisions = await api(`/mandates/${encodeURIComponent(id)}/decisions`);
-    if (serial !== screenSerial || currentRoute !== "activity") return;
-    if (!Array.isArray(decisions)) throw new Error("GET /mandates/{mandate_id}/decisions must return a list.");
-    if (!decisions.length) {
-      setScreen(`${heading("PURCHASE HISTORY", "Activity", "Your agent's purchase decisions.")}<section class="wallet-empty"><h2>No purchases yet</h2><p>Your agent's purchase decisions will appear here.</p></section>`);
-      return;
-    }
-    decisions.forEach((entry, index) => {
-      if (!entry || !entry.decision || !entry.state_after) throw new Error(`History entry ${index} must include decision and state_after.`);
-      const decision = entry.decision;
-      requireString(decision.authorization_id, "Decision.authorization_id");
-      outcomePill(decision.decision);
-      requireString(decision.customer_message, `Decision ${decision.authorization_id}.customer_message`);
-      requireString(decision.explanation, `Decision ${decision.authorization_id}.explanation`);
-      requireString(decision.engine_version, `Decision ${decision.authorization_id}.engine_version`);
-      requireString(decision.decided_at, `Decision ${decision.authorization_id}.decided_at`);
-      if (!Array.isArray(decision.reason_codes) || !Array.isArray(decision.evidence)) throw new Error(`Decision ${decision.authorization_id} must include reason_codes and evidence lists.`);
-    });
-    setScreen(`${heading("PURCHASE HISTORY", "Activity", "Select a purchase to see its decision.")}
-      <section class="history-list"><div class="section-head"><h2>${decisions.length} decision${decisions.length === 1 ? "" : "s"}</h2></div><div class="activity-rows">${[...decisions].reverse().map((entry) => {
-      const decision = entry.decision;
-      const label = decision.decision === "approve" ? "Approved" : decision.decision === "decline" ? "Blocked" : "Needs you";
-      const symbol = decision.decision === "approve" ? "✓" : decision.decision === "decline" ? "×" : "?";
-      return `<button class="activity-row history-row" type="button" data-action="open-decision" data-id="${esc(decision.authorization_id)}"><span class="activity-outcome" aria-hidden="true">${symbol}</span><span><strong>${label}</strong><small>${esc(decision.customer_message)}</small></span><time class="activity-time" datetime="${esc(decision.decided_at)}">${esc(timeLabel(decision.decided_at))}</time></button>`;
-      }).join("")}</div></section>`);
-  } catch (error) {
-    if (serial === screenSerial && currentRoute === "activity") setScreen(`${heading("PURCHASE HISTORY", "Activity", "Your agent's purchase decisions.")}${dataError("Purchase history could not be loaded.", error)}`);
-    else showToast(`A previous history load failed: ${error.message}`, "error");
-  }
+  if (!id) { setScreen(`<section class="activity-view"><div class="page-title"><h1>Activity</h1></div><p class="calm-copy">No confirmed permission is selected. Recorded purchase decisions will appear here.</p></section>`); return; }
+  loading("Loading recorded decisions…");
+  await walletApi.mandate(id);
+  const history = await walletApi.history(id);
+  if (!Array.isArray(history)) throw new Error("The Wallet did not return a decision history.");
+  history.forEach((entry) => {
+    if (!entry?.decision || !entry.state_after) throw new Error("A history entry is incomplete.");
+    text(entry.decision.authorization_id, "History authorization ID");
+  });
+  const details = await Promise.all(history.map(({ decision }) => walletApi.decision(decision.authorization_id).then(validateDecision)));
+  if (serial !== state.serial) return;
+  state.history = history.map((entry, index) => ({ decision: details[index].decision, state_after: details[index].state_after }))
+    .sort((a, b) => new Date(b.decision.decided_at) - new Date(a.decision.decided_at));
+  state.details = new Map(details.map((detail) => [detail.decision.authorization_id, detail]));
+  setScreen(`<section class="activity-view"><div class="page-title"><h1>Activity</h1></div>${activityTabs()}<div id="activity-list">${activityRows()}</div><p class="activity-disclaimer">Recorded purchase decisions for the selected permission. Permission changes are not in this history.</p></section>`);
 }
 
-function renderCustomerDecision(payload) {
+function openOverlay(body, title) {
+  if (!overlayRoot.childElementCount) state.overlayTrigger = document.activeElement;
+  overlayRoot.innerHTML = `<div class="overlay-backdrop" data-action="close-overlay"><section class="overlay" role="dialog" aria-modal="true" aria-label="${esc(title)}" tabindex="-1"><button type="button" class="overlay-close" data-action="close-overlay" aria-label="Close">×</button>${body}</section></div>`;
+  overlayRoot.querySelector(".overlay").focus();
+}
+
+function closeOverlay() {
+  if (!overlayRoot.childElementCount) return;
+  overlayRoot.replaceChildren();
+}
+
+function openPending(id) {
+  const item = state.pending.find((entry) => entry.authorization_id === id);
+  if (!item) throw new Error("This purchase is no longer waiting for your decision.");
+  const auth = item.event.authorization;
+  const issue = item.decision.evidence.filter((check) => check.result !== "pass");
+  const remaining = new Date(item.expires_at).getTime() - Date.now();
+  openOverlay(`<span class="section-kicker amber-text">VISECA NEEDS YOU</span><h2>One detail needs a decision</h2><p class="overlay-intro">${esc(item.decision.customer_message)}</p><div class="purchase-highlight"><span>${esc(auth.merchant.merchant_name)}</span><strong>${esc(money(auth.billing_amount_chf, auth.currency))}</strong><p>${esc(auth.items.map((entry) => text(entry.item_name, "Item")).join(" + "))}</p></div><h3>Why you're seeing this</h3><div class="evidence-list">${issue.map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(check.name.replaceAll("_", " "))}</strong><p>${esc(check.note)}</p><small>Source: ${esc(check.source)}</small></div></div>`).join("")}</div><p class="calm-copy">This answer applies only to this purchase. It does not change your confirmed limits.</p><p id="pending-deadline" class="calm-copy">${remaining > 0 ? `Decision window: ${Math.floor(remaining / 60000)}m ${String(Math.floor(remaining / 1000) % 60).padStart(2, "0")}s left` : "The decision window has closed."}</p><div class="overlay-actions"><button class="outline-button" type="button" data-action="resolve" data-id="${esc(id)}" data-decision="decline" ${remaining <= 0 ? "disabled" : ""}>Don't buy</button><button class="primary-button" type="button" data-action="resolve" data-id="${esc(id)}" data-decision="approve" ${remaining <= 0 ? "disabled" : ""}>Buy anyway</button></div>${remaining <= 0 ? `<p class="uncertainty-note">The decision window has closed. Refresh Wallet for the final result.</p>` : ""}`, "Purchase review");
+}
+
+function openDetail(payload) {
+  state.detail = validateDecision(payload);
   const { decision, event } = payload;
   const auth = event.authorization;
-  const merchant = requireString(auth.merchant.merchant_name, "Decision merchant");
-  const item = requireString(auth.items[0].item_name, "Decision item name");
-  const outcome = decision.decision === "approve" ? "Approved" : decision.decision === "decline" ? "Blocked" : "Needs you";
-  const alerts = decision.evidence.filter((check) => check.result !== "pass").slice(0, 3);
-  drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer decision-drawer" role="dialog" aria-modal="true" aria-label="Purchase decision" tabindex="-1">
-    <div class="drawer-header"><div><span class="eyebrow">PURCHASE DECISION</span><h2>${outcome}</h2></div><button class="close-button" type="button" aria-label="Close decision" data-action="close-drawer">×</button></div>
-    <div class="decision-purchase"><strong>${esc(money(auth.billing_amount_chf, "CHF"))}</strong><p>${esc(merchant)} · ${esc(item)}</p></div>
-    <p class="decision-message">${esc(decision.customer_message)}</p>
-    ${alerts.length ? `<div class="decision-alerts">${alerts.map((check) => `<div><span aria-hidden="true">${check.result === "fail" ? "×" : "?"}</span><span>${esc(pretty(check.name))}</span></div>`).join("")}</div>` : ""}
-    <button class="button button-secondary" type="button" data-action="inspect-decision">Inspect decision</button>
-  </aside></div>`;
-  drawerRoot.querySelector(".drawer").focus();
+  const failed = decision.evidence.filter((check) => check.result === "fail");
+  const uncertain = decision.evidence.filter((check) => check.result === "uncertain");
+  const outcome = decision.decision === "approve" ? "Approved" : decision.decision === "decline" ? "Blocked" : "Needs a decision";
+  openOverlay(`<span class="section-kicker">TRANSACTION</span><h2>${decision.decision === "decline" ? "Why was this blocked?" : "Why was this purchase " + outcome.toLowerCase() + "?"}</h2><div class="purchase-highlight"><span>${esc(auth.merchant.merchant_name)}</span><strong>${esc(money(auth.billing_amount_chf, auth.currency))}</strong><p>${esc(auth.items.map((entry) => text(entry.item_name, "Item")).join(" + "))}</p></div><p class="overlay-intro">${esc(decision.customer_message)}</p>${failed.length || uncertain.length ? `<div class="evidence-list">${[...failed, ...uncertain].slice(0, 4).map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(check.name.replaceAll("_", " "))}</strong><p>${esc(check.note)}</p></div></div>`).join("")}</div>` : ""}<button type="button" class="text-button" data-action="inspector" data-tab="summary">View technical details <span aria-hidden="true">→</span></button>`, "Transaction explanation");
 }
 
-function renderDebugger(payload, tab = "decision") {
-  const tabs = ["decision", "policy", "evidence", "state", "security", "raw"];
-  if (!tabs.includes(tab)) throw new Error(`Unknown debugger tab: ${tab}`);
-  const { decision, event, state_before, state_after } = payload;
-  const auth = event.authorization;
-  const securityReasons = new Set(["injected_instructions", "unrequested_item", "protection_plan", "gift_card", "subscription", "duplicate_order", "velocity", "new_device", "unfamiliar_merchant", "lookalike_merchant", "country_blocked"]);
-  const securityCodes = decision.reason_codes.filter((code) => securityReasons.has(code));
-  const checkRows = decision.evidence.map((check) => `<div class="debug-row"><span><strong>${esc(pretty(check.name))}</strong><small>${esc(check.note)}</small></span><span class="debug-result ${esc(check.result)}">${esc(check.result)}</span></div>`).join("");
-  const sections = {
-    decision: `<div class="debug-metadata"><span>Outcome</span><strong>${esc(pretty(decision.decision))}</strong><span>Latency</span><strong>${esc(decision.elapsed_ms)} ms</strong><span>Policy</span><strong>v${esc(decision.mandate_version)}</strong><span>Receipt</span><strong>${esc(decision.authorization_id)}</strong></div><h3>Rule evaluation</h3>${checkRows}`,
-    policy: `<p class="debug-copy">${esc(event.mandate.instruction)}</p><h3>Confirmed rules</h3>${event.mandate.hard_rules.map((rule) => `<div class="debug-row"><span>${esc(rule.field)}</span><strong>${esc(rule.operator)} ${esc(Array.isArray(rule.value) ? rule.value.join(", ") : rule.value)}</strong></div>`).join("")}`,
-    evidence: `<h3>Evidence and provenance</h3>${decision.evidence.map((check) => `<div class="debug-row"><span><strong>${esc(pretty(check.name))}</strong><small>${esc(check.note)}</small><small>Value: ${check.value === null ? "unknown" : esc(check.value)}</small></span><strong>${esc(check.source)}</strong></div>`).join("")}`,
-    state: `<h3>State before</h3><pre class="event-json">${esc(JSON.stringify(state_before, null, 2))}</pre><h3>State after</h3><pre class="event-json">${esc(JSON.stringify(state_after, null, 2))}</pre>`,
-    security: `<h3>Authorized intent</h3><p class="debug-copy">${esc(event.mandate.instruction)}</p><h3>Proposed purchase</h3><p class="debug-copy">${esc(auth.items.map((item) => item.item_name).join(" + "))} · ${esc(money(auth.billing_amount_chf, "CHF"))}</p><h3>Security signals</h3><p class="debug-copy">${esc(securityCodes.length ? securityCodes.map(pretty).join(", ") : "No security-specific reason code recorded")}</p><details><summary>Merchant-supplied text · untrusted</summary>${auth.items.filter((item) => item.item_details).map((item) => `<p class="event-copy">${esc(item.item_details.slice(0, 120))}${item.item_details.length > 120 ? "…" : ""}</p>`).join("")}</details>`,
-    raw: `<h3>Raw records</h3><details><summary>Authorization Event</summary><pre class="event-json">${esc(JSON.stringify(event, null, 2))}</pre></details><details><summary>Decision</summary><pre class="event-json">${esc(JSON.stringify(decision, null, 2))}</pre></details><details><summary>State</summary><pre class="event-json">${esc(JSON.stringify({ before: state_before, after: state_after }, null, 2))}</pre></details>`,
-  };
-  drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer debugger-drawer" role="dialog" aria-modal="true" aria-label="Decision inspector" tabindex="-1">
-    <div class="drawer-header"><div><span class="eyebrow">INSPECTOR</span><h2>Decision inspector</h2><p>${esc(auth.merchant.merchant_name)} · ${esc(money(auth.billing_amount_chf, "CHF"))}</p></div><button class="close-button" type="button" aria-label="Close inspector" data-action="close-drawer">×</button></div>
-    <nav class="debug-tabs" aria-label="Inspector sections">${tabs.map((name) => `<button type="button" data-action="debug-tab" data-tab="${name}" ${name === tab ? 'aria-current="page"' : ""}>${esc(pretty(name))}</button>`).join("")}</nav>
-    <div class="debug-content">${sections[tab]}</div>
-  </aside></div>`;
-  drawerRoot.querySelector(".drawer").focus();
+function inspector(tab) {
+  if (!state.detail) throw new Error("The transaction details are not loaded.");
+  if (!["summary", "checks", "record"].includes(tab)) throw new Error("Unknown inspector section.");
+  const { decision, event, state_before, state_after } = state.detail;
+  const status = decision.decision === "approve" ? "Approved" : decision.decision === "decline" ? "Blocked" : "Needs a decision";
+  const content = tab === "summary"
+    ? `<div class="inspector-outcome ${decision.decision}"><span>${esc(status.toUpperCase())}</span><h3>${esc(decision.customer_message)}</h3></div><h3>How the decision was made</h3><p>${esc(decision.explanation)}</p><p class="check-count">${decision.evidence.filter((check) => check.result === "pass").length} passed · ${decision.evidence.filter((check) => check.result === "fail").length} failed · ${decision.evidence.filter((check) => check.result === "uncertain").length} unknown</p>`
+    : tab === "checks"
+      ? `<div class="evidence-list">${decision.evidence.map((check) => `<div class="evidence-card ${check.result}"><span>${check.result === "pass" ? "✓" : check.result === "fail" ? "×" : "?"}</span><div><strong>${esc(check.name.replaceAll("_", " "))}</strong><p>${esc(check.note)}</p><small>${check.value === null ? "Value unknown" : `Value: ${esc(check.value)}`} · Source: ${esc(check.source)}</small></div></div>`).join("")}</div>`
+      : `<div class="record-grid"><span>Authorization</span><strong>${esc(decision.authorization_id)}</strong><span>Engine</span><strong>${esc(decision.engine_version)}</strong><span>Version</span><strong>${esc(decision.mandate_version)}</strong><span>Time</span><strong>${esc(decision.elapsed_ms)} ms</strong></div><details><summary>Original payment event and merchant text</summary><p class="calm-copy">Merchant-provided item details are untrusted evidence. They cannot grant spending authority.</p><pre>${esc(JSON.stringify(event, null, 2))}</pre></details><details><summary>Decision and state</summary><pre>${esc(JSON.stringify({ decision, state_before, state_after }, null, 2))}</pre></details>`;
+  openOverlay(`<span class="section-kicker">ADVANCED DETAILS</span><h2>Decision details</h2><p class="overlay-intro">${esc(event.authorization.merchant.merchant_name)} · ${esc(money(event.authorization.billing_amount_chf, event.authorization.currency))}</p><div class="inspector-tabs" role="tablist" aria-label="Decision sections">${["summary", "checks", "record"].map((name) => `<button type="button" role="tab" aria-selected="${tab === name}" tabindex="${tab === name ? 0 : -1}" data-action="inspector" data-tab="${name}" class="${tab === name ? "selected" : ""}">${name[0].toUpperCase() + name.slice(1)}</button>`).join("")}</div><div class="inspector-body" role="tabpanel" tabindex="0">${content}</div>`, "Decision details");
 }
 
-async function openDecision(id) {
-  const serial = ++drawerSerial;
-  drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Decision evidence"><div class="loading-panel"><span class="spinner" aria-hidden="true"></span><span>Loading decision evidence…</span></div></aside></div>`;
-  try {
-    const payload = await api(`/decisions/${encodeURIComponent(id)}`);
-    if (serial !== drawerSerial) return;
-    if (!payload || !payload.decision || !payload.event || !("state_before" in payload) || !("state_after" in payload)) throw new Error("GET /decisions/{authorization_id} must return decision, event, state_before and state_after.");
-    const decision = payload.decision;
-    const event = payload.event;
-    requireString(decision.authorization_id, "Decision.authorization_id");
-    outcomePill(decision.decision);
-    requireString(decision.customer_message, "Decision.customer_message");
-    requireString(decision.explanation, "Decision.explanation");
-    requireString(decision.engine_version, "Decision.engine_version");
-    requireString(decision.decided_at, "Decision.decided_at");
-    if (!Array.isArray(decision.reason_codes) || !Array.isArray(decision.evidence)) throw new Error("Decision.reason_codes and Decision.evidence must be arrays.");
-    if (!event.authorization || !Array.isArray(event.authorization.items)) throw new Error("Event.authorization.items must be a list.");
-    event.authorization.items.forEach((item, index) => {
-      if (typeof item.item_details !== "string") throw new Error(`Event.authorization.items[${index}].item_details must be a string.`);
-    });
-    decision.evidence.forEach((check, index) => {
-      requireString(check.name, `Decision.evidence[${index}].name`);
-      requireString(check.source, `Decision.evidence[${index}].source`);
-      if (typeof check.note !== "string" || !["pass", "fail", "uncertain"].includes(check.result) || !("value" in check)) throw new Error(`Decision.evidence[${index}] is invalid.`);
-    });
-    currentDecisionPayload = payload;
-    renderCustomerDecision(payload);
-  } catch (error) {
-    if (serial === drawerSerial) drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Decision evidence"><div class="drawer-header"><div><span class="eyebrow"><i class="eyebrow-mark"></i>DECISION RECORD</span><h2>Evidence unavailable</h2></div><button class="close-button" type="button" aria-label="Close evidence" data-action="close-drawer">×</button></div>${dataError("The decision record could not be loaded.", error)}</aside></div>`;
-    else showToast(`A previous decision load failed: ${error.message}`, "error");
-  }
+function confirmDialog(title, message, action, label) {
+  openOverlay(`<span class="section-kicker">VISECA WALLET</span><h2>${esc(title)}</h2><p class="overlay-intro">${esc(message)}</p><div class="overlay-actions"><button type="button" class="outline-button" data-action="close-overlay">Cancel</button><button type="button" class="primary-button" data-action="${esc(action)}">${esc(label)}</button></div>`, title);
 }
 
-async function renderRoute(route) {
-  if (route === "home") return renderHome();
-  if (route === "review") return renderReview();
-  if (route === "approvals") return renderApprovals();
-  if (route === "policy") return renderPolicy();
-  if (route === "activity") return renderActivity();
-  throw new Error(`Unknown app route: ${route}`);
+async function performConfirm() {
+  const draft = state.draft;
+  if (!draft) throw new Error("The spending plan is not loaded.");
+  const answers = Object.fromEntries(draft.open_questions.map((question) => [question.question, state.answers[question.question] ?? question.answer]));
+  if (draft.open_questions.some((question) => !question.confirming_answers.includes(answers[question.question]))) throw new Error("Answer every question with a confirming choice before authorizing.");
+  const mandate = await walletApi.confirm(draft.draft_id, draft.version, draft.hash, answers);
+  text(mandate?.mandate_id, "Confirmed permission ID");
+  window.sessionStorage.setItem(MANDATE_KEY, mandate.mandate_id);
+  window.sessionStorage.setItem(MANDATE_OWNER_KEY, text(state.user, "Current customer"));
+  clearDraftLink();
+  state.walletTab = "active";
+  setScreen(`<section class="confirmed-state" role="status"><span aria-hidden="true">✓</span><h1>Agent authorized</h1><p>Your spending limits are active. Return to your shopping agent to continue.</p></section>`);
+  const serial = state.serial;
+  window.setTimeout(() => { if (serial === state.serial && state.route === "review") navigate("wallet"); }, 750);
 }
 
-function modal(title, body, primaryLabel, action, danger = false) {
-  drawerSerial += 1;
-  drawerRoot.innerHTML = `<div class="drawer-backdrop" data-action="close-drawer"><section class="drawer" role="dialog" aria-modal="true" aria-label="${esc(title)}" style="height:auto;max-height:min(90vh,700px);align-self:center;margin:auto 18px;overflow:auto;border-radius:17px"><div class="drawer-header"><div><span class="eyebrow"><i class="eyebrow-mark"></i>YOUR WALLET</span><h2>${esc(title)}</h2></div><button class="close-button" type="button" aria-label="Close" data-action="close-drawer">×</button></div><div>${body}</div><div class="button-row" style="justify-content:flex-end;margin-top:18px"><button class="button button-secondary" type="button" data-action="close-drawer">Cancel</button><button class="button ${danger ? "button-danger" : "button-primary"}" type="button" data-action="${esc(action)}">${esc(primaryLabel)}</button></div></section></div>`;
-  drawerRoot.querySelector("[role=dialog]").focus();
+async function performReject() {
+  const draft = state.draft;
+  if (!draft) throw new Error("The spending plan is not loaded.");
+  await walletApi.reject(draft.draft_id, draft.version, draft.hash, "Rejected in the customer Wallet.");
+  clearDraftLink();
+  closeOverlay();
+  state.walletTab = "needs";
+  navigate("wallet");
+  toast("The spending request was rejected.", "success");
 }
 
-function openTighten() {
-  if (!currentPolicy || currentPolicy.mandate.status !== "active") throw new Error("Only an active mandate can be tightened.");
-  if (currentPolicy.effective_policy.uncertainty_policy === "decline") throw new Error("This mandate already declines uncertain purchases.");
-  modal("Decline uncertain purchases?", `<p class="section-subtitle">Purchases with missing information will be declined instead of sent to you for approval. This affects future purchases.</p>`, "Decline uncertainty", "submit-tighten");
+async function performResolution(button) {
+  const id = text(button.dataset.id, "Pending purchase ID");
+  const pending = state.pending.find((item) => item.authorization_id === id);
+  if (!pending) throw new Error("This purchase is no longer pending.");
+  if (new Date(pending.expires_at).getTime() <= Date.now()) throw new Error("The decision window has closed. Refresh Wallet for the final outcome.");
+  const decision = button.dataset.decision;
+  if (!["approve", "decline"].includes(decision)) throw new Error("Choose whether to buy or decline.");
+  state.pendingSerial += 1;
+  window.clearTimeout(state.timer);
+  state.timer = null;
+  overlayRoot.querySelectorAll('[data-action="resolve"]').forEach((action) => { action.disabled = true; });
+  await walletApi.answer(id, decision);
+  closeOverlay();
+  toast(decision === "approve" ? "Your answer was accepted for this purchase." : "Your decline was accepted for this purchase.", "success");
+  const refreshed = await refreshPending();
+  if (refreshed) schedulePendingRefresh();
 }
 
-function openRevoke() {
-  modal("Revoke this mandate?", `<p class="section-subtitle">The shopping agent will no longer be able to use this mandate. This action cannot be undone in the app.</p>`, "Revoke mandate", "confirm-revoke", true);
+async function performTighten() {
+  const mandate = state.mandate?.mandate;
+  if (!mandate || mandate.status !== "active") throw new Error("No active permission is available to tighten.");
+  await walletApi.tighten(mandate.mandate_id);
+  closeOverlay();
+  navigate("wallet");
+  toast("Uncertain purchases will now be declined.", "success");
 }
 
-async function confirmDraft() {
-  if (!activeDraft) throw new Error("There is no loaded draft to confirm.");
-  const missing = activeDraft.open_questions.filter((question) => !(answers[question.question] ?? question.answer));
-  if (missing.length) throw new Error("Answer every open question before confirming this draft.");
-  const needsRevision = activeDraft.open_questions.some((question) => !question.confirming_answers.includes(answers[question.question] ?? question.answer));
-  if (needsRevision) throw new Error("A selected answer needs a revised policy. Ask your shopping agent to update the draft before confirming.");
-  const body = {
-    version: activeDraft.version,
-    hash: activeDraft.hash,
-    answers: Object.fromEntries(activeDraft.open_questions.map((question) => [question.question, answers[question.question] ?? question.answer])),
-  };
-  try {
-    const mandate = await api(`/drafts/${encodeURIComponent(activeDraft.draft_id)}/confirm`, { method: "POST", body: JSON.stringify(body) });
-    requireString(mandate && mandate.mandate_id, "Policy confirmation response mandate_id");
-    window.sessionStorage.setItem(MANDATE_SESSION_KEY, mandate.mandate_id);
-    showToast("Your policy is confirmed. The mandate is now active.", "success");
-    setActiveRoute("home");
-  } catch (error) {
-    if (error.status === 409) {
-      showToast("The draft changed. Reloading the latest version for you.", "error");
-      activeDraft = null;
-      answers = {};
-      await renderReview();
-      return;
-    }
-    throw error;
-  }
-}
-
-async function rejectDraft() {
-  if (!activeDraft) throw new Error("There is no loaded draft to reject.");
-  modal("Reject this policy request?", `<p class="section-subtitle">The shopping agent will not receive a mandate from this draft. You can review another request later.</p>`, "Reject request", "confirm-reject", true);
-}
-
-async function answerStepUp(id, decision) {
-  const pending = pendingStepUps.get(id);
-  if (!pending) throw new Error(`Purchase ${id} is no longer pending.`);
-  const answer = {
-    authorization_id: id,
-    decision,
-    customer_message: decision === "approve" ? "Customer approved the purchase in the app." : "Customer declined the purchase in the app.",
-    answered_at: new Date().toISOString(),
-  };
-  await api(`/step-ups/${encodeURIComponent(id)}/answer`, { method: "POST", body: JSON.stringify(answer) });
-  const merchant = requireString(pending.event.authorization.merchant.merchant_name, "Pending purchase merchant");
-  showToast(`${decision === "approve" ? "Approved" : "Declined"} for this purchase: ${money(pending.event.authorization.billing_amount_chf, "CHF")} at ${merchant}.`, "success");
-  await loadApprovals();
-}
-
-async function submitTighten() {
-  if (!currentPolicy) throw new Error("The current mandate has not been loaded.");
-  if (currentPolicy.mandate.status !== "active") throw new Error("Only an active mandate can be tightened.");
-  if (currentPolicy.effective_policy.uncertainty_policy === "decline") throw new Error("This mandate already declines uncertain purchases.");
-  await api(`/mandates/${encodeURIComponent(currentPolicy.mandate.mandate_id)}/tighten`, { method: "POST", body: JSON.stringify({ uncertainty_policy: "decline" }) });
-  drawerRoot.replaceChildren();
-  showToast("Uncertain purchases will now be declined.", "success");
-  await renderPolicy();
-}
-
-async function revokeMandate() {
-  if (!currentPolicy) throw new Error("The current mandate has not been loaded.");
-  if (currentPolicy.mandate.status !== "active") throw new Error("Only an active mandate can be revoked.");
-  await api(`/mandates/${encodeURIComponent(currentPolicy.mandate.mandate_id)}/revoke`, { method: "POST" });
-  drawerRoot.replaceChildren();
-  showToast("The mandate has been revoked.", "success");
-  await renderPolicy();
+async function performRevoke() {
+  const mandate = state.mandate?.mandate;
+  if (!mandate || mandate.status !== "active") throw new Error("No active permission is available to revoke.");
+  await walletApi.revoke(mandate.mandate_id);
+  closeOverlay();
+  navigate("wallet");
+  toast("The spending permission was revoked.", "success");
 }
 
 document.addEventListener("click", async (event) => {
-  const routeButton = event.target.closest("[data-route]");
-  if (routeButton) {
-    setActiveRoute(routeButton.dataset.route);
-    return;
-  }
+  const route = event.target.closest("[data-route]");
+  if (route) { navigate(route.dataset.route); return; }
   const button = event.target.closest("[data-action]");
-  if (!button) return;
+  if (!button || button.disabled) return;
   const action = button.dataset.action;
+  if (action !== "open-detail") state.detailSerial += 1;
   try {
-    if (action === "login") {
-      button.disabled = true;
-      await login();
-    } else if (action === "logout") {
-      button.disabled = true;
-      await logout();
-    } else if (action === "answer") {
-      answers[button.dataset.question] = button.dataset.value;
-      await renderReview();
-    } else if (action === "confirm-draft") {
-      button.disabled = true;
-      await confirmDraft();
-    } else if (action === "reject-draft") {
-      await rejectDraft();
-    } else if (action === "confirm-reject") {
-      if (!activeDraft) throw new Error("There is no loaded draft to reject.");
+    if (action === "close-overlay") {
+      if (button === event.target || button.classList.contains("overlay-close") || event.target.classList.contains("overlay-backdrop")) closeOverlay();
+      return;
+    }
+    if (action === "wallet-tab") { state.walletTab = button.dataset.tab; navigate("wallet", { keepScroll: true }); return; }
+    if (action === "activity-filter") { state.activityFilter = button.dataset.filter; document.querySelector("#activity-list").innerHTML = activityRows(); document.querySelectorAll(".activity-tabs [role=tab]").forEach((tab) => { const active = tab === button; tab.classList.toggle("selected", active); tab.setAttribute("aria-selected", String(active)); tab.tabIndex = active ? 0 : -1; }); return; }
+    if (action === "use-example") { const composer = document.querySelector("#shop-prompt"); composer.value = text(button.dataset.example, "Example request"); state.prompt = composer.value; composer.focus(); composer.dispatchEvent(new Event("input", { bubbles: true })); return; }
+    if (action === "account") { openOverlay(`<span class="section-kicker">LOCAL DEMO ACCOUNT</span><h2>${esc(state.user || "Sign in")}</h2><p class="calm-copy">This demo uses a local username and session cookie. It is not a Viseca banking login.</p>${state.user ? `<button type="button" class="outline-button" data-action="logout">Sign out</button>` : `<button type="button" class="outline-button" data-action="close-overlay">Close</button>`}`, "Account"); return; }
+    if (action === "open-pending") { openPending(button.dataset.id); return; }
+    if (action === "inspector") { inspector(button.dataset.tab); return; }
+    if (action === "open-reject") { confirmDialog("Reject this spending plan?", "Your agent will not receive authority from this request.", "reject", "Reject request"); return; }
+    if (action === "open-tighten") { confirmDialog("Decline uncertain purchases?", "Future purchases with missing evidence will be declined instead of asking you.", "tighten", "Decline uncertainty"); return; }
+    if (action === "open-revoke") { confirmDialog("Revoke this permission?", "Your shopping agent will no longer be able to use it.", "revoke", "Revoke permission"); return; }
+    if (action === "answer-question") { state.answers[button.dataset.question] = button.dataset.answer; await renderReview(state.serial); return; }
+    if (action === "open-detail") {
+      const id = button.dataset.id;
+      const screenAtClick = state.serial;
+      const request = ++state.detailSerial;
+      let detail;
       try {
-        await api(`/drafts/${encodeURIComponent(activeDraft.draft_id)}/reject`, { method: "POST", body: JSON.stringify({ version: activeDraft.version, hash: activeDraft.hash, reason: "Rejected in the customer app." }) });
-        drawerRoot.replaceChildren();
-        showToast("The policy request was rejected.", "success");
-        await renderReview();
+        detail = validateDecision(await walletApi.decision(id));
       } catch (error) {
-        if (error.status !== 409) throw error;
-        drawerRoot.replaceChildren();
-        activeDraft = null;
-        answers = {};
-        showToast("The draft changed. Reloading the latest version for you.", "error");
-        await renderReview();
+        if (request !== state.detailSerial || screenAtClick !== state.serial) return;
+        throw error;
       }
-    } else if (action === "show-step-up-details") {
-      showStepUpDetails(button.dataset.id);
-    } else if (action === "answer-step-up") {
-      button.disabled = true;
-      submittingStepUps.add(button.dataset.id);
-      try {
-        await answerStepUp(button.dataset.id, button.dataset.decision);
-      } finally {
-        submittingStepUps.delete(button.dataset.id);
+      if (request !== state.detailSerial || screenAtClick !== state.serial || state.route !== "activity") return;
+      state.details.set(id, detail);
+      const entry = state.history.find((item) => item.decision.authorization_id === id);
+      if (!entry) throw new Error("This purchase is no longer in the current history.");
+      if (entry.decision.decision !== detail.decision.decision || entry.decision.decided_at !== detail.decision.decided_at) {
+        entry.decision = detail.decision;
+        entry.state_after = detail.state_after;
+        state.history.sort((a, b) => new Date(b.decision.decided_at) - new Date(a.decision.decided_at));
+        document.querySelector("#activity-list").innerHTML = activityRows();
+        const updated = [...document.querySelectorAll('[data-action="open-detail"]')].find((item) => item.dataset.id === id);
+        if (updated) updated.focus();
+        else document.querySelector('.activity-tabs [aria-selected="true"]').focus();
       }
-    } else if (action === "open-decision") {
-      await openDecision(button.dataset.id);
-    } else if (action === "inspect-decision") {
-      if (!currentDecisionPayload) throw new Error("The decision record is not loaded.");
-      renderDebugger(currentDecisionPayload);
-    } else if (action === "debug-tab") {
-      if (!currentDecisionPayload) throw new Error("The decision record is not loaded.");
-      renderDebugger(currentDecisionPayload, button.dataset.tab);
-    } else if (action === "close-drawer") {
-      if (event.target === button || button === event.target.closest(".close-button") || event.target.classList.contains("drawer-backdrop")) {
-        drawerSerial += 1;
-        currentDecisionPayload = null;
-        drawerRoot.replaceChildren();
+      openDetail(detail);
+      return;
+    }
+    if (action === "reload") { void render(); return; }
+    button.disabled = true;
+    if (action === "login") {
+      const username = text(document.querySelector("#username").value.trim(), "Username");
+      const session = await walletApi.login(username);
+      state.user = text(session.username, "Session username");
+      const previousOwner = window.sessionStorage.getItem(MANDATE_OWNER_KEY);
+      if (previousOwner && previousOwner !== state.user) {
+        window.sessionStorage.removeItem(MANDATE_KEY);
+        window.sessionStorage.removeItem(MANDATE_OWNER_KEY);
       }
-    } else if (action === "open-tighten") {
-      openTighten();
-    } else if (action === "revoke-mandate") {
-      openRevoke();
-    } else if (action === "submit-tighten") {
-      button.disabled = true;
-      await submitTighten();
-    } else if (action === "confirm-revoke") {
-      button.disabled = true;
-      await revokeMandate();
-    } else if (action === "show-rule-details") {
-      showRuleDetails();
-    } else if (action === "show-examples") {
-      showExamples();
+      navigate(linkedDraftId() ? "review" : "shop");
+    } else if (action === "logout") {
+      await walletApi.logout();
+      window.sessionStorage.removeItem(MANDATE_KEY);
+      window.sessionStorage.removeItem(MANDATE_OWNER_KEY);
+      state.pendingSerial += 1;
+      window.clearTimeout(state.timer);
+      window.clearTimeout(state.exampleTimer);
+      state.serial += 1;
+      state.user = null;
+      state.mandate = null;
+      state.pending = [];
+      state.draft = null;
+      state.answers = {};
+      state.history = [];
+      state.detail = null;
+      state.prompt = "";
+      state.extraDetails = "";
+      state.details.clear();
+      document.querySelector("#wallet-indicator").hidden = true;
+      closeOverlay();
+      renderLogin();
+    } else if (action === "confirm") await performConfirm();
+    else if (action === "reject") await performReject();
+    else if (action === "resolve") await performResolution(button);
+    else if (action === "tighten") await performTighten();
+    else if (action === "revoke") await performRevoke();
+    else if (action === "copy-prompt") {
+      const prompt = text(document.querySelector("#shop-prompt").value.trim(), "Shopping request");
+      const details = document.querySelector("#request-details").value.trim();
+      const request = details ? `${prompt}\nMore details: ${details}` : prompt;
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard access requires a secure browser connection. Copy the request and any extra details manually.");
+      await navigator.clipboard.writeText(request);
+      button.disabled = false;
+      toast("Request copied. Paste it into your connected shopping agent.", "success");
     }
   } catch (error) {
-    showToast(error.message, "error");
+    if (error.status === 401) { sessionExpired(error); return; }
+    if (error.status === 409 && state.route === "review") { state.draft = null; state.answers = {}; void render(); }
+    toast(error.message);
+    if (action === "resolve") { navigate("wallet"); return; }
     if (button.isConnected) button.disabled = false;
   }
 });
 
-window.addEventListener("hashchange", () => setActiveRoute(window.location.hash.slice(1)));
-window.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && event.target.id === "demo-username") {
-    event.preventDefault();
-    document.querySelector('[data-action="login"]').click();
+document.addEventListener("input", (event) => {
+  if (event.target.id === "request-details") { state.extraDetails = event.target.value; growTextArea(event.target, 72); return; }
+  if (event.target.id !== "shop-prompt") return;
+  state.prompt = event.target.value;
+  growTextArea(event.target, 62);
+  const hasPrompt = Boolean(state.prompt.trim());
+  if (!hasPrompt) {
+    state.extraDetails = "";
+    const details = document.querySelector("#request-details");
+    if (details) details.value = "";
   }
-  if (event.key === "Escape" && drawerRoot.childElementCount) {
-    drawerSerial += 1;
-    currentDecisionPayload = null;
-    drawerRoot.replaceChildren();
+  const send = document.querySelector(".send-button");
+  if (send) send.disabled = !hasPrompt;
+  if (state.exampleTimer) window.clearTimeout(state.exampleTimer);
+  const example = document.querySelector(".prompt-example");
+  if (example) example.hidden = hasPrompt;
+  const hint = document.querySelector(".request-hint");
+  if (hint) hint.hidden = hasPrompt;
+  const clarification = document.querySelector(".clarification");
+  if (clarification) clarification.hidden = !hasPrompt;
+});
+
+document.addEventListener("focusin", (event) => {
+  if (event.target.id === "shop-prompt") window.clearTimeout(state.exampleTimer);
+  if (event.target.id === "animated-example") {
+    window.clearTimeout(state.exampleTimer);
+    event.target.textContent = text(event.target.dataset.example, "Example request");
   }
 });
 
+document.addEventListener("focusout", (event) => {
+  if (event.target.id === "shop-prompt" && !event.target.value) startExamples();
+  if (event.target.id === "animated-example" && !state.prompt && state.route === "shop") startExamples();
+});
+
+new MutationObserver(() => {
+  const dialog = overlayRoot.querySelector("[role=dialog]");
+  document.querySelector(".app-shell").inert = Boolean(dialog);
+  document.body.classList.toggle("dialog-open", Boolean(dialog));
+  if (dialog && !dialog.contains(document.activeElement)) dialog.focus();
+  if (!dialog && state.overlayTrigger?.isConnected) {
+    state.overlayTrigger.focus();
+    state.overlayTrigger = null;
+  }
+}).observe(overlayRoot, { childList: true });
+
+window.addEventListener("keydown", (event) => {
+  const dialog = overlayRoot.querySelector("[role=dialog]");
+  if (event.key === "Escape" && dialog) { closeOverlay(); return; }
+  if (dialog && event.key === "Tab") {
+    const focusable = [...dialog.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), summary, [tabindex="0"]')].filter((node) => node.getClientRects().length);
+    if (!focusable.length) { event.preventDefault(); dialog.focus(); return; }
+    const first = focusable[0], last = focusable.at(-1);
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
+  if (event.target.matches('[role="tab"]') && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    const tabs = [...event.target.closest('[role="tablist"]').querySelectorAll('[role="tab"]')];
+    const index = tabs.indexOf(event.target);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    const group = event.target.closest('[role="tablist"]');
+    if (group.classList.contains("wallet-tabs")) state.pendingTabFocus = "wallet";
+    tabs[next].click();
+    if (!group.classList.contains("wallet-tabs")) {
+      window.queueMicrotask(() => document.querySelector('.inspector-tabs [aria-selected="true"], .activity-tabs [aria-selected="true"]')?.focus());
+    }
+  }
+  if (event.key === "Enter" && event.target.id === "username") {
+    event.preventDefault();
+    document.querySelector('[data-action="login"]').click();
+  }
+});
+
+window.addEventListener("hashchange", () => navigate(window.location.hash.slice(1) || (linkedDraftId() ? "review" : "shop")));
+reducedMotion.addEventListener("change", () => {
+  window.clearTimeout(state.exampleTimer);
+  const example = document.querySelector("#animated-example");
+  if (!example || state.route !== "shop") return;
+  if (reducedMotion.matches) example.textContent = text(example.dataset.example, "Example request");
+  else startExamples();
+});
 initialize();
