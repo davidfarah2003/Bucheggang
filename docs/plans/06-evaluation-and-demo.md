@@ -1,6 +1,6 @@
 # 06 Evaluation and demo
 
-- Status: report generator merged in #38 and exercised. Labels remain provisional; human Wallet E2E, two full live dry runs and pitch/submission work remain open. The 45-input real Jev exercise has not passed.
+- Status: report generator merged in #38. Reconciled labels are docs/eval/labels.csv (strict reading, #55) and the labelled report is docs/eval/report-labelled.md: 43/45 agreement, autonomous error 1/43. The 45-input real Jev exercise passed on the merged classifier head (plan 02 Log, 13:25). The demo video is take 26 on main and on release demo-2026-09-25.
 - Owner: everyone; Rishabh drives the pitch
 - Channel: `team.zurichbuchegg` (spine)
 - Papers: [Selective Conformal Risk Control](../papers/2512.12844v2.pdf) (report the two numbers: how often the system decides alone, and how often it is wrong when it does; its guarantees need more labelled, exchangeable data than 45 attempts, so no guarantee is claimed), [CaMeL](../papers/2503.18813v2.pdf) (report lost utility next to blocked attacks)

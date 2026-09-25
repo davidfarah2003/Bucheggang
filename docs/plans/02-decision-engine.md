@@ -1,6 +1,6 @@
 # 02 Decision engine
 
-- Status: deterministic foundation and P1/P2 assessment contracts/composition merged. The real-provider exercise stopped on invalid Jev distributions; model-enabled runner integration and live customer verification remain incomplete.
+- Status: deterministic engine, assessment contracts, model composition, runner model stage and the classifier lane (O4 overlay, history evidence, Jev grid check, runner rescoring) are on main. A 45-input run with real Jev and CatBoost calls matches the saved production decisions, and the full local Wallet flow with models on runs end to end (Log, 2026-09-25 13:25). No live simulator submission with models on has been made.
 - Owner: David (proposed)
 - Lane: engine. Channel `team.zurichbuchegg.engine`, branch `lane/engine`, worktree `.worktrees/engine`
 - User flow step: one proposed purchase in, `approve` / `decline` / `step_up` out, with evidence
