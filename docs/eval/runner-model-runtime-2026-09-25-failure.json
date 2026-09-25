@@ -1,0 +1,45 @@
+{
+  "runtime_head": "17d15fca841238c1ac56766565f1e9de7fc26272",
+  "producer_head": "e4ba7ba1f0707164ddfd6071779501a880598b44",
+  "artifact_sha256": "e4815c5677073c4e985c56f09f045be3d72c4e3ae624b75f9d06870630c828cf",
+  "driver_sha256": "32246b5059059ef7f1125d094bfa6beae9e158d268ebf0777c7218a5c9aea1f8",
+  "started_at": "2026-09-25T04:24:48.064330+00:00",
+  "response_captured_at": "2026-09-25T04:24:48.574200+00:00",
+  "mode": "paired_baseline_projection",
+  "authorization_id": "AU0001",
+  "baseline_decision": "approve",
+  "error_type": "JevResponseError",
+  "error": "activity_pattern: probabilities do not sum to one",
+  "completed_rows": 0,
+  "provider_responses": 1,
+  "latency_ms": 494,
+  "replacement_decision_returned": false,
+  "request_retried": false,
+  "simulator_calls": 0,
+  "customer_answers": 0,
+  "behavioural_escalation": false,
+  "stage_cap_s": 1.0,
+  "reserve_s": 2.0,
+  "requested_model": "typesafe/jev-1.13-20260917",
+  "response": {
+    "model": "typesafe/jev-1.13-20260917",
+    "answers": {
+      "spend_pattern": {
+        "type": "choice",
+        "choice": "ordinary",
+        "probabilities": {"unusual": 0.07, "unclear": 0.16, "ordinary": 0.77},
+        "confidence": 0.66
+      },
+      "activity_pattern": {
+        "type": "choice",
+        "choice": "ordinary",
+        "probabilities": {"unusual": 0.16, "unclear": 0.02, "ordinary": 0.81},
+        "confidence": 0.72
+      }
+    },
+    "usage": {"input_tokens": 1954, "output_tokens": 82, "cost": 0.000082068},
+    "id": "gen-dec-1790310288-sTo2D3Rfh2pKgBO7nRN0",
+    "provider": "TypeSafe"
+  },
+  "activity_probability_sum_decimal": "0.99"
+}
