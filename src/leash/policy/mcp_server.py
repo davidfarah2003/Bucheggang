@@ -75,7 +75,7 @@ def authoring_guide() -> dict[str, Any]:
             "Any expansion of allowed purchases needs a new reviewed draft and explicit customer confirmation.",
             "Do not use scenario IDs, authorization IDs, or replay order as policy conditions.",
             "The backend validates and stores the proposal. It never asks a model to write or repair it.",
-            "Pair first, propose the policy, wait for Wallet confirmation, then search and authorize a purchase.",
+            "Pair the agent, propose the policy, wait for the customer to confirm it in the Wallet, and check policy status until it is confirmed before searching and authorizing a purchase.",
             "External search or browsing before confirmation is outside backend control; only authorization is governed.",
             "No agent purchase API is active. Demo purchase authorizations still arrive from the simulator.",
             "The customer confirms only in the authenticated app. This server cannot confirm, resolve, tighten, or revoke.",
@@ -249,7 +249,7 @@ def create_server(
 
     @server.tool()
     def begin_pairing(agent_label: str) -> dict[str, Any]:
-        """First, pair this labelled shopping agent in the customer's Wallet."""
+        """First, pair this labelled agent in the customer's Wallet. Then propose policy, wait for Wallet confirmation, check status is confirmed, and only then search and authorize. External browsing before confirmation is outside backend control; no agent purchase API is active."""
         try:
             return identity_store.begin_pairing(agent_label)
         except ValueError as exc:
@@ -285,7 +285,7 @@ def create_server(
 
     @server.tool()
     def propose_task_policy(instruction: str, proposal: dict[str, Any]) -> dict[str, Any]:
-        """After pairing, validate and store a proposal for Wallet confirmation; this does not buy anything."""
+        """After pairing, store a proposal for Wallet confirmation. Check policy status is confirmed before searching and authorizing. External browsing before confirmation is outside backend control; no agent purchase API is active, and this tool does not buy anything."""
         agent = server.require_agent("policy:propose")
         try:
             return submit_policy_proposal(store, instruction, proposal, created_for=agent["account_id"])
