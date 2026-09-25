@@ -1,0 +1,289 @@
+{
+  "head": "4e4a5e5d523784bf36b6028bac61800e6de9b341",
+  "observations": [
+    {
+      "check": "Anonymous GET /session",
+      "status": 401,
+      "expected": 401,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Anonymous GET /drafts",
+      "status": 401,
+      "expected": 401,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Anonymous GET /mandates",
+      "status": 401,
+      "expected": 401,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Anonymous GET /global-policy",
+      "status": 401,
+      "expected": 401,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Anonymous GET /agents",
+      "status": 401,
+      "expected": 401,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Register disposable account",
+      "status": 201,
+      "expected": 201,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Duplicate registration",
+      "status": 409,
+      "expected": 409,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Authenticated session",
+      "status": 200,
+      "expected": 200,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Empty owned list /drafts",
+      "status": 200,
+      "expected": 200,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Empty owned list /mandates",
+      "status": 200,
+      "expected": 200,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Empty owned list /agents",
+      "status": 200,
+      "expected": 200,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Initial account policy",
+      "status": 200,
+      "expected": 200,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Global PUT missing Origin",
+      "status": 403,
+      "expected": 403,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Global PUT foreign Origin",
+      "status": 403,
+      "expected": 403,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Global PUT exact Origin",
+      "status": 200,
+      "expected": 200,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Stale global-policy revision",
+      "status": 409,
+      "expected": 409,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Malformed draft identifier",
+      "status": 422,
+      "expected": 422,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Unknown valid draft identifier",
+      "status": 404,
+      "expected": 404,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Unknown owned mandate",
+      "status": 404,
+      "expected": 404,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Authenticated pending pairing read, code redacted",
+      "status": 200,
+      "expected": 200,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Wallet pairing shell",
+      "status": 200,
+      "expected": 200,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "MCP pairing remains unapproved",
+      "passed": true,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Agents after refused completion",
+      "status": 200,
+      "expected": 200,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Register separate Unicode account",
+      "status": 201,
+      "expected": 201,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Separate account policy isolation",
+      "status": 200,
+      "expected": 200,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Concurrent same-username registration",
+      "statuses": [
+        201,
+        409
+      ],
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Session survives API process restart",
+      "status": 200,
+      "expected": 200,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Policy survives API process restart",
+      "status": 200,
+      "expected": 200,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Logout missing Origin",
+      "status": 403,
+      "expected": 403,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Logout exact Origin",
+      "status": 204,
+      "expected": 204,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Session invalid after logout",
+      "status": 401,
+      "expected": 401,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Password login",
+      "status": 200,
+      "expected": 200,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Unknown-account login attempt 1",
+      "status": 401,
+      "expected": 401,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Unknown-account login attempt 2",
+      "status": 401,
+      "expected": 401,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Unknown-account login attempt 3",
+      "status": 401,
+      "expected": 401,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Unknown-account login attempt 4",
+      "status": 401,
+      "expected": 401,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Unknown-account login attempt 5",
+      "status": 401,
+      "expected": 401,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Unknown-account login attempt 6",
+      "status": 429,
+      "expected": 429,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    },
+    {
+      "check": "Credential storage",
+      "json_files": 8,
+      "mode": "0600",
+      "plaintext_secrets_found": false,
+      "execution": "identity-http-v3",
+      "candidate_commit": "4e4a5e5d523784bf36b6028bac61800e6de9b341"
+    }
+  ],
+  "pairing_approvals": 0,
+  "mandate_confirmations": 0,
+  "customer_answers": 0,
+  "simulator_calls": 0,
+  "execution": "identity-http-v3",
+  "record_written_at": "2026-09-25T03:10:54.504888+00:00",
+  "outcome": "completed_exit_0",
+  "transport": "real_loopback_http_and_mcp_stdio",
+  "driver_sha256": "265f1a28b5d0f67e80882ea16723ddb1e1a9ae0288b9aef005dd4f6b1f07fcd6"
+}
