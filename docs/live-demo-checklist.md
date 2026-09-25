@@ -13,7 +13,7 @@ Recorded state: 25 September 2026, before the morning dry run. Unchecked items b
 | Platform expiry while worker was down | [Restart reconciliation](eval/restart-reconcile-2026-09-24.md) | Strictly verified timeout declines only |
 | MCP proposal, status and summary with a real mandate | [MCP transcript](samples/mcp-transcript-scen0002.md) | Does not establish an actual human Wallet step-up answer |
 | Current-checkout paired Wallet and MCP rehearsal | [Local paired rehearsal](eval/takeover-local-rehearsal-2026-09-25.md) | Disposable store; draft rejected without a simulator mandate or human purchase answer |
-| Full local user flow with models on, recorded | [Demo video](demo/leash-user-flow.mp4), produced by `scripts/record_demo.py` driving the real Wallet while `scripts/flow_sim.py --manual` runs the agent over MCP | Local purchases only; the step-up answer comes from a scripted browser tap, not a person |
+| Full local user flow with models on, recorded | [Demo video](https://github.com/davidfarah2003/Bucheggang/releases/download/demo-2026-09-25/leash-user-flow.mp4) (also `docs/demo/leash-user-flow.mp4`), produced by `scripts/record_demo.py` driving the real Wallet while `scripts/flow_sim.py --manual` runs the agent over MCP | Local purchases only; the step-up answer comes from a scripted browser tap, not a person |
 
 ## Before a live run
 

@@ -20,6 +20,19 @@ The quick start explicitly disables model calls. Enabling them requires the `cla
 
 See the [classifier implementation and measurements](eval/classifier/) and [runner configuration](../src/leash/runner/settings.py). The optional `harness` dependency group belongs to the unfinished in-app provider adapter.
 
+## Run the demo as recorded
+
+The demo video runs the Wallet with local purchases and both risk models on. Two scripts set the same environment for the Wallet and the agent's MCP server (purchase budget 20 s, step-up window 5 min, demo card CA0001, models on with the behavioural threshold 0.498):
+
+```sh
+rm -rf data/policy data/state data/decisions data/stepups data/purchases data/mandate_edits data/locks data/intents
+scripts/wallet.sh                       # Wallet on http://127.0.0.1:8000
+```
+
+Point the agent at `scripts/mcp-stdio.sh` (the repo's `opencode.json` already does). To watch the whole flow without an agent client, run `uv run --group classifier python scripts/flow_sim.py --manual` and act in the Wallet as the customer. Both need the classifier dependency group, the model manifest and the OpenRouter credential in `.env`.
+
+To re-record the video: start the Wallet on a wiped `data/` as above, then `uv run --group classifier --with playwright python scripts/record_demo.py`. It writes `docs/demo/leash-user-flow.mp4` and the gif. Wipe `data/` before every take; the Wallet, the MCP server and the browser share it, and a stale account hides the new draft.
+
 ## Connect an agent
 
 Leash supports MCP over stdio and streamable HTTP. The customer can approve a pending connection in the Wallet; the agent then uses the policy and purchase tools within its granted scopes.
