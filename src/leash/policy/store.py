@@ -49,6 +49,10 @@ NUMBER_FIELDS = frozenset(
     {"authorization.billing_amount_chf", "authorization.items_subtotal", "authorization.delivery_fee",
      "items.count", "facts.return_days", "state.approvals_count"}
 )
+PERIOD_FIELDS = frozenset({"authorization.billing_amount_chf", "state.approvals_count"})
+MONEY_FIELDS = frozenset(
+    {"authorization.billing_amount_chf", "authorization.items_subtotal", "authorization.delivery_fee"}
+)
 BOOLEAN_STRING_FIELDS = frozenset(
     {"facts.is_gift_card", "facts.is_subscription", "facts.is_protection_plan",
      "facts.is_addon", "history.merchant_seen_on_card", "history.device_seen_on_card"}
@@ -117,10 +121,18 @@ def _validate_rule(rule: dict[str, Any], instruction: str) -> None:
         values = value if isinstance(value, list) else [value]
         if any(item not in {"true", "false"} for item in values):
             raise InvalidDraft(f"{rule['field']} needs 'true' or 'false'")
-    if rule.get("scope") == "period" and rule["field"] not in NUMBER_FIELDS:
-        raise InvalidDraft("period scope requires a numeric field")
+    if rule["operator"] in {"<", "<=", ">", ">="} and rule["field"] not in NUMBER_FIELDS:
+        raise InvalidDraft("numeric comparison requires a numeric field")
+    if rule["operator"] in {"in", "not_in"} and not isinstance(value, list):
+        raise InvalidDraft("in and not_in require a string list")
+    if rule["operator"] in {"=", "!="} and isinstance(value, list):
+        raise InvalidDraft("= and != require one value")
+    if rule.get("scope") == "period" and rule["field"] not in PERIOD_FIELDS:
+        raise InvalidDraft(f"period scope is not supported for {rule['field']}")
     if "currency" in rule and rule["currency"] not in CURRENCIES:
         raise InvalidDraft("unsupported currency")
+    if "currency" in rule and rule["field"] not in MONEY_FIELDS:
+        raise InvalidDraft("currency only applies to money fields")
     if "scope" in rule and rule["scope"] not in {"purchase", "period"}:
         raise InvalidDraft("unsupported rule scope")
     if "period_days" in rule and (
@@ -129,6 +141,8 @@ def _validate_rule(rule: dict[str, Any], instruction: str) -> None:
         raise InvalidDraft("period_days must be a positive integer")
     if rule.get("scope") == "period" and "period_days" not in rule:
         raise InvalidDraft("period rules need period_days")
+    if "period_days" in rule and rule.get("scope") != "period":
+        raise InvalidDraft("period_days requires period scope")
     source = rule.get("source_text")
     if not isinstance(source, str) or not source or source not in instruction:
         raise InvalidDraft("each rule must quote a phrase from the instruction")
